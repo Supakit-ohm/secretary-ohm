@@ -2302,6 +2302,103 @@ function AddBuyModal({holding,fx,onClose,onSave}) {
     </div>
   );
 }
+function AddCoinModal({fx,onClose,onSave}) {
+  const [coin,setCoin]=useState("");
+  const [platform,setPlatform]=useState("");
+  const [quantity,setQuantity]=useState("");
+  const [firstHeldDate,setFirstHeldDate]=useState(todayISO());
+  const [avgCost,setAvgCost]=useState("");
+  const [costCurrency,setCostCurrency]=useState("THB");
+  const [costFxRate,setCostFxRate]=useState("");
+  const [currentPrice,setCurrentPrice]=useState("");
+  const [priceCurrency,setPriceCurrency]=useState("THB");
+  const ready=coin.trim()&&Number(quantity)>0;
+  const save=()=>{
+    if(!ready) return;
+    onSave({coin:coin.trim(),platform:platform.trim(),quantity,firstHeldDate,avgCost,costCurrency,costFxRate,currentPrice,priceCurrency,buys:[]});
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>➕ เพิ่มเหรียญ</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-body">
+          <div className="fin-row-2">
+            <div><label className="field-label">เหรียญ</label><input className="modal-input" value={coin} onChange={e=>setCoin(e.target.value)} placeholder="BTC"/></div>
+            <div>
+              <label className="field-label">เก็บไว้ที่</label>
+              <input className="modal-input" list="coin-platform-suggest" value={platform} onChange={e=>setPlatform(e.target.value)} placeholder="Binance Global"/>
+              <datalist id="coin-platform-suggest"><option value="Binance Global"/><option value="Binance TH"/></datalist>
+            </div>
+          </div>
+          <div className="fin-row-2">
+            <div><label className="field-label">จำนวน</label><input className="modal-input" inputMode="decimal" value={quantity} onChange={e=>setQuantity(e.target.value)} placeholder="0"/></div>
+            <div><label className="field-label">เริ่มถือ (ไม่บังคับ)</label><input type="date" className="modal-input" value={firstHeldDate} onChange={e=>setFirstHeldDate(e.target.value)}/></div>
+          </div>
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">ต้นทุนเฉลี่ย/หน่วย</label>
+              <div style={{display:"flex",gap:4}}>
+                <input className="modal-input" inputMode="decimal" value={avgCost} onChange={e=>setAvgCost(e.target.value)} placeholder="0"/>
+                <select className="modal-input" style={{maxWidth:78}} value={costCurrency} onChange={e=>setCostCurrency(e.target.value)}>
+                  <option value="THB">THB</option><option value="USD">USD</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="field-label">ราคาปัจจุบัน/หน่วย</label>
+              <div style={{display:"flex",gap:4}}>
+                <input className="modal-input" inputMode="decimal" value={currentPrice} onChange={e=>setCurrentPrice(e.target.value)} placeholder="0"/>
+                <select className="modal-input" style={{maxWidth:78}} value={priceCurrency} onChange={e=>setPriceCurrency(e.target.value)}>
+                  <option value="THB">THB</option><option value="USD">USD</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          {costCurrency==="USD"&&(
+            <div>
+              <label className="field-label">เรตตอนซื้อ (ไม่บังคับ)</label>
+              <input className="modal-input" inputMode="decimal" value={costFxRate} onChange={e=>setCostFxRate(e.target.value)} placeholder={fx?String(fx):"36.50"}/>
+            </div>
+          )}
+          <button className="modal-btn-save" style={{marginTop:12,width:"100%"}} disabled={!ready} onClick={save}>บันทึกเหรียญ</button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
+function AddInvestmentModal({onClose,onSave}) {
+  const [date,setDate]=useState(todayISO());
+  const [amount,setAmount]=useState("");
+  const [type,setType]=useState("other");
+  const [name,setName]=useState("");
+  const ready=Number(amount)>0;
+  const save=()=>{ if(!ready) return; onSave({date,amount,type,name}); };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>➕ เพิ่มรายการลงทุน</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-body">
+          <div className="fin-row-2">
+            <div><label className="field-label">Date</label><input type="date" className="modal-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
+            <div><label className="field-label">จำนวนเงิน</label><input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+          </div>
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">ประเภท</label>
+              <select className="modal-input" value={type} onChange={e=>setType(e.target.value)}>
+                {INVEST_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </div>
+            <div><label className="field-label">ชื่อรายการ (ไม่บังคับ)</label><input className="modal-input" placeholder={INVEST_TYPE_LABELS[type]} value={name} onChange={e=>setName(e.target.value)}/></div>
+          </div>
+          <button className="modal-btn-save" style={{marginTop:12,width:"100%"}} disabled={!ready} onClick={save}>บันทึกรายการ</button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
 function FinanceInvestmentsTab({finance,persist}) {
   const list=(finance.finance.investments||[]).slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const total=list.reduce((a,i)=>a+i.amount,0);
@@ -2320,18 +2417,7 @@ function FinanceInvestmentsTab({finance,persist}) {
     persist({...finance,finance:{...finance.finance,investments:(finance.finance.investments||[]).map(x=>x.id===editInvId?{...x,date:editInvDraft.date,name:editInvDraft.name.trim(),type:editInvDraft.type,amount:amt}:x)}});
     setEditInvId(null); setEditInvDraft(null);
   };
-  /* ── เพิ่มรายการลงทุนแบบ manual (ไม่ผ่าน CSV/payslip) ── */
-  const [invDate,setInvDate]=useState(todayISO());
-  const [invName,setInvName]=useState("");
-  const [invType,setInvType]=useState("other");
-  const [invAmount,setInvAmount]=useState("");
-  const addInvestment=()=>{
-    const amt=Number(invAmount);
-    if(!amt||amt<=0) return;
-    persist({...finance,finance:{...finance.finance,investments:[...(finance.finance.investments||[]),
-      {id:uid(),date:invDate,amount:Math.abs(amt),name:invName.trim()||INVEST_TYPE_LABELS[invType],type:invType,source:"manual"}]}});
-    setInvName("");setInvAmount("");
-  };
+  /* ── เพิ่มรายการลงทุนแบบ manual (ไม่ผ่าน CSV/payslip) — ตอนนี้ผ่าน AddInvestmentModal (ปุ่ม "+ เพิ่มรายการ" ด้านล่าง) ── */
   /* ── เฟส 2: มูลค่าปัจจุบัน (กรอกเอง) + พอร์ต crypto ── */
   const iv=finance.finance.investmentValues||{};
   const holdings=finance.finance.cryptoHoldings||[];
@@ -2349,8 +2435,7 @@ function FinanceInvestmentsTab({finance,persist}) {
   const valueOfType=(t)=>t==="crypto"?cryptoValue:num(iv[t]&&iv[t].value);
   const totalValue=portfolioValue(finance);
   const setTypeValue=(t,v)=>setIV({...iv,[t]:{value:v,updatedAt:todayISO()}});
-  const addHolding=()=>setHoldings([...holdings,{id:uid(),coin:"",quantity:"",avgCost:"",costCurrency:"USD",costFxRate:"",currentPrice:"",priceCurrency:"USD",platform:"",firstHeldDate:"",updatedAt:todayISO(),priceUpdatedAt:todayISO()}]);
-  // แก้ราคาปัจจุบันจะอัปเดต priceUpdatedAt แยกต่างหาก (แก้ชื่อ/จำนวนไม่นับว่าเช็คราคาใหม่)
+  // เพิ่มเหรียญใหม่ตอนนี้ผ่าน AddCoinModal (ปุ่ม "+ เพิ่มเหรียญ") — แก้ราคาปัจจุบันจะอัปเดต priceUpdatedAt แยกต่างหาก (แก้ชื่อ/จำนวนไม่นับว่าเช็คราคาใหม่)
   const editHolding=(id,field,v)=>setHoldings(holdings.map(h=>h.id===id?{...h,[field]:v,updatedAt:todayISO(),...(field==="currentPrice"?{priceUpdatedAt:todayISO()}:{})}:h));
   const removeHolding=(id)=>setHoldings(holdings.filter(h=>h.id!==id));
   /* สถิติต่อเหรียญ — ไม่เรียงอัตโนมัติ (แถวจะกระโดดระหว่างพิมพ์) ให้กดปุ่มเรียงเอง */
@@ -2368,15 +2453,26 @@ function FinanceInvestmentsTab({finance,persist}) {
       firstHeldDate:patch.firstHeldDate,buys:[...(h.buys||[]),patch.buy],updatedAt:todayISO()}:h));
     setBuyFor(null);
   };
-  /* สรุปแยกตามพอร์ต (Binance Global ถือยาว vs Binance TH ที่ DCA — กลยุทธ์คนละแบบ ควรวัดผลแยกกัน) */
+  /* ── รื้อ UI ตามที่คุยกับ ohm (2026-08-23): manual entry ใหม่ทุกอย่างเป็นปุ่ม+modal, แก้ไข/ลบยังกดที่การ์ดเดิม, เลิกตารางทั้งหมด ── */
+  const [showAddCoin,setShowAddCoin]=useState(false);
+  const addCoin=(row)=>{ setHoldings([...holdings,{id:uid(),...row,updatedAt:todayISO(),priceUpdatedAt:todayISO()}]); setShowAddCoin(false); };
+  const [editCoinId,setEditCoinId]=useState(null);
+  const [showAddInv,setShowAddInv]=useState(false);
+  /* แยกคอลัมน์ตามพอร์ต (Binance Global ถือยาว vs Binance TH ที่ DCA — กลยุทธ์คนละแบบ ควรวัดผลแยกกัน)
+     ใช้ h.platform ตรงตัว (free text) — ค่า "Binance Global"/"Binance TH" ขึ้นก่อนเสมอ ที่เหลือเรียงตามมูลค่า */
   const byPlatform={};
   holdings.forEach(h=>{
     const k=(h.platform||"").trim()||"ไม่ระบุที่เก็บ";
-    if(!byPlatform[k]) byPlatform[k]={name:k,cost:0,value:0,coins:0};
+    if(!byPlatform[k]) byPlatform[k]={name:k,cost:0,value:0,coins:0,items:[]};
     const st=coinStat(h);
-    byPlatform[k].cost+=st.cost; byPlatform[k].value+=st.value; byPlatform[k].coins++;
+    byPlatform[k].cost+=st.cost; byPlatform[k].value+=st.value; byPlatform[k].coins++; byPlatform[k].items.push(h);
   });
-  const platformList=Object.values(byPlatform).sort((a,b)=>b.value-a.value);
+  const PLATFORM_ORDER=["Binance Global","Binance TH"];
+  const platformList=Object.values(byPlatform).sort((a,b)=>{
+    const ia=PLATFORM_ORDER.indexOf(a.name), ib=PLATFORM_ORDER.indexOf(b.name);
+    if(ia!==-1||ib!==-1) return (ia===-1?99:ia)-(ib===-1?99:ib);
+    return b.value-a.value;
+  });
   const stalePrice=holdings.filter(h=>num(h.quantity)>0&&(!h.priceUpdatedAt||(-daysUntil(h.priceUpdatedAt))>=7));
   const best=holdings.length?holdings.slice().sort((a,b)=>coinStat(b).pct-coinStat(a).pct)[0]:null;
   const worst=holdings.length>1?holdings.slice().sort((a,b)=>coinStat(a).pct-coinStat(b).pct)[0]:null;
@@ -2396,6 +2492,18 @@ function FinanceInvestmentsTab({finance,persist}) {
     return {...t,contrib,value,pnl:value-contrib,share:totalValue>0?(value/totalValue)*100:0,color:INVEST_TYPE_COLORS[t.key]||"#8a82a8"};
   });
   const activeTypes=perType.filter(t=>t.contrib>0||t.value>0).sort((a,b)=>b.value-a.value||b.contrib-a.contrib);
+  const allocPieData=activeTypes.filter(t=>t.value>0).map(t=>({name:t.label,value:t.value,color:t.color}));
+  /* แถบ "ค่าพลัง" กำไร(เขียว)/ขาดทุน(แดง) เริ่มจาก 0 เสมอ ยาวตาม |%| (เพดาน 100% กันแถบทะลุกรอบ) */
+  const renderPnlBar=(pnlAmt,pct)=>{
+    const w=Math.min(100,Math.abs(pct));
+    const color=pnlAmt>=0?"#34d399":"#fb923c";
+    return (
+      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+        <div className="pnl-bar-track"><div className="pnl-bar-fill" style={{width:`${w}%`,background:color}}/></div>
+        <span style={{fontSize:14,color,minWidth:70,textAlign:"right",whiteSpace:"nowrap"}}>{pnlAmt>=0?"+":"-"}{Math.abs(pct).toFixed(1)}%</span>
+      </div>
+    );
+  };
   /* ── เฟส 3: เป้าหมายการลงทุน — ดึงจาก projects (Tracker) ที่ category==="finance" ── */
   const finGoals=(finance.projects||[]).filter(p=>p.category==="finance"&&p.status!=="archived");
   const goalTerm=(p)=>{ const d=daysUntil(p.targetDate); return (d!=null&&d<365)?"short":"long"; };
@@ -2450,25 +2558,39 @@ function FinanceInvestmentsTab({finance,persist}) {
         </div>
       </div>
       <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">ภาพรวมพอร์ตตามประเภท</div>
+        <div className="card-head">Allocation — ภาพรวมพอร์ตตามประเภท</div>
         {activeTypes.length===0&&<div className="empty">ยังไม่มีข้อมูลการลงทุน — เพิ่มรายการหรือกรอกมูลค่าปัจจุบันด้านล่าง</div>}
         {activeTypes.length>0&&(
-          <div style={{padding:"0 16px 14px"}}>
-            <div style={{display:"flex",height:12,borderRadius:8,overflow:"hidden",background:"#2f2745",marginBottom:12}}>
-              {activeTypes.filter(t=>t.share>0).map(t=>(
-                <div key={t.key} style={{width:`${t.share}%`,background:t.color}} title={`${t.label} ${t.share.toFixed(1)}%`}/>
+          <div className="inv-alloc-grid">
+            <div className="inv-alloc-pie-frame">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{top:10,right:10,bottom:10,left:10}}>
+                  <Pie data={allocPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="52%" outerRadius="82%" paddingAngle={3} isAnimationActive={false}>
+                    {allocPieData.map((d,i)=><Cell key={i} fill={d.color}/>)}
+                  </Pie>
+                  <Tooltip contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pie-center-overlay">
+                <div className="pie-center-total" style={{color:"#a78bfa",fontSize:22}}>฿{Math.round(totalValue).toLocaleString()}</div>
+                <div className="pie-center-label">มูลค่ารวม</div>
+              </div>
+            </div>
+            <div className="inv-alloc-list">
+              {activeTypes.map(t=>(
+                <div key={t.key} className="pnl-row">
+                  <span style={{width:10,height:10,borderRadius:3,background:t.color,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+                      <span style={{fontSize:16,color:"#f2eefc"}}>{t.label}</span>
+                      <span style={{fontSize:16,color:"#a78bfa",fontFamily:"'IBM Plex Mono',monospace"}}>฿{Math.round(t.value).toLocaleString()}</span>
+                    </div>
+                    <div style={{fontSize:14,color:"#a29bc4",marginTop:2}}>ใส่ไป ฿{Math.round(t.contrib).toLocaleString()} · {t.pnl>=0?"+":"-"}฿{Math.abs(Math.round(t.pnl)).toLocaleString()}</div>
+                    {renderPnlBar(t.pnl,t.contrib>0?(t.pnl/t.contrib)*100:0)}
+                  </div>
+                </div>
               ))}
             </div>
-            {activeTypes.map(t=>(
-              <div key={t.key} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #2f2745",flexWrap:"wrap"}}>
-                <span style={{width:10,height:10,borderRadius:3,background:t.color,flexShrink:0}}/>
-                <span style={{flex:"1 1 150px",fontSize:16,color:"#f2eefc"}}>{t.label}</span>
-                <span style={{fontSize:15,color:"#a29bc4",minWidth:120,textAlign:"right"}}>ใส่ไป ฿{Math.round(t.contrib).toLocaleString()}</span>
-                <span style={{fontSize:16,color:"#a78bfa",minWidth:120,textAlign:"right"}}>฿{Math.round(t.value).toLocaleString()}</span>
-                <span style={{fontSize:15,color:t.pnl>=0?"#34d399":"#fb923c",minWidth:110,textAlign:"right"}}>{t.pnl>=0?"+":"-"}฿{Math.abs(Math.round(t.pnl)).toLocaleString()}</span>
-                <span style={{fontSize:14,color:"#a29bc4",minWidth:52,textAlign:"right"}}>{t.share.toFixed(1)}%</span>
-              </div>
-            ))}
           </div>
         )}
       </div>
@@ -2497,35 +2619,32 @@ function FinanceInvestmentsTab({finance,persist}) {
             มูลค่าของ {staleTypes.map(t=>t.label).join(", ")} ไม่ได้อัปเดตเกิน 30 วันแล้ว — ตัวเลขกำไร/ขาดทุนด้านบนอาจคลาดเคลื่อน
           </div>
         )}
-        <div className="exp-table-wrap">
-          <table className="exp-table">
-            <thead><tr><th>ประเภท</th><th className="exp-col-amount">เงินที่ใส่ไป</th><th className="exp-col-amount">มูลค่าปัจจุบัน</th><th>อัปเดตล่าสุด</th></tr></thead>
-            <tbody>
-              {INVEST_TYPES.map(t=>(
-                <tr key={t.key}>
-                  <td>{t.label}</td>
-                  <td className="exp-col-amount exp-amount-value">฿{Math.round(contribByType[t.key]||0).toLocaleString()}</td>
-                  <td className="exp-col-amount">
-                    {t.key==="crypto"
-                      ? <span className="exp-amount-value" style={{color:"#a78bfa"}}>฿{Math.round(cryptoValue).toLocaleString()} <span style={{fontSize:14,color:"#a29bc4"}}>(จากตารางด้านล่าง)</span></span>
-                      : <input className="modal-input" style={{maxWidth:160,textAlign:"right"}} inputMode="decimal"
-                          value={(iv[t.key]&&iv[t.key].value)!==undefined?iv[t.key].value:""}
-                          onChange={e=>setTypeValue(t.key,e.target.value)} placeholder="0"/>}
-                  </td>
-                  <td style={{fontSize:15,color:"#a29bc4"}}>
-                    {t.key==="crypto"?"—":(()=>{
-                      const u=iv[t.key]&&iv[t.key].updatedAt;
-                      if(!u) return (contribByType[t.key]||0)>0?<span style={{color:"#fbbf24"}}>ยังไม่เคยกรอก</span>:"—";
-                      const age=-daysUntil(u);   // daysUntil ของวันในอดีตจะติดลบ
-                      if(age>=60) return <span style={{color:"#fb923c"}}>{u} · เก่า {age} วัน</span>;
-                      if(age>=30) return <span style={{color:"#fbbf24"}}>{u} · {age} วันแล้ว</span>;
-                      return u;
-                    })()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="inv-card-list">
+          {INVEST_TYPES.map(t=>{
+            const u=iv[t.key]&&iv[t.key].updatedAt;
+            const age=u?-daysUntil(u):null;
+            return (
+              <div key={t.key} className="inv-item-card">
+                <div className="inv-item-head">
+                  <span style={{fontSize:17,color:"#f2eefc"}}>{t.label}</span>
+                  <span style={{fontSize:15,color:"#a29bc4"}}>ใส่ไป ฿{Math.round(contribByType[t.key]||0).toLocaleString()}</span>
+                </div>
+                {t.key==="crypto"
+                  ? <div style={{marginTop:6,fontSize:16,color:"#a78bfa"}}>฿{Math.round(cryptoValue).toLocaleString()} <span style={{fontSize:14,color:"#a29bc4"}}>(คำนวณจากพอร์ตคริปโตด้านล่าง)</span></div>
+                  : (
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:6,flexWrap:"wrap"}}>
+                      <span style={{fontSize:15,color:"#a29bc4"}}>มูลค่าปัจจุบัน</span>
+                      <input className="modal-input" style={{maxWidth:160,textAlign:"right"}} inputMode="decimal"
+                        value={(iv[t.key]&&iv[t.key].value)!==undefined?iv[t.key].value:""}
+                        onChange={e=>setTypeValue(t.key,e.target.value)} placeholder="0"/>
+                      <span style={{fontSize:14,color:!u?"#fbbf24":age>=60?"#fb923c":age>=30?"#fbbf24":"#a29bc4"}}>
+                        {!u?((contribByType[t.key]||0)>0?"ยังไม่เคยกรอก":"—"):`อัปเดต ${u}${age>=30?` · ${age} วันแล้ว`:""}`}
+                      </span>
+                    </div>
+                  )}
+              </div>
+            );
+          })}
         </div>
       </div>
       <div className="card" style={{margin:"0 20px 20px"}}>
@@ -2533,7 +2652,7 @@ function FinanceInvestmentsTab({finance,persist}) {
           <span>พอร์ตคริปโต</span>
           <div className="card-head-right" style={{display:"flex",gap:8}}>
             {holdings.length>1&&<button className="text-btn" onClick={sortHoldings}>เรียงตามมูลค่า</button>}
-            <button className="text-btn" onClick={addHolding}>+ เพิ่มเหรียญ</button>
+            <button className="text-btn" onClick={()=>setShowAddCoin(true)}>+ เพิ่มเหรียญ</button>
           </div>
         </div>
         <div className="recat-hint" style={{margin:"0 16px 10px"}}>
@@ -2552,26 +2671,6 @@ function FinanceInvestmentsTab({finance,persist}) {
           <div style={{padding:"0 16px 8px",fontSize:15,color:"#a29bc4"}}>
             ดีที่สุด <b style={{color:"#34d399"}}>{best.coin||"—"} {coinStat(best).pct>=0?"+":""}{coinStat(best).pct.toFixed(1)}%</b>
             {worst&&worst.id!==best.id&&<> · แย่ที่สุด <b style={{color:"#fb923c"}}>{worst.coin||"—"} {coinStat(worst).pct>=0?"+":""}{coinStat(worst).pct.toFixed(1)}%</b></>}
-          </div>
-        )}
-        {platformList.length>1&&(
-          <div style={{padding:"0 16px 10px"}}>
-            {platformList.map(pl=>{
-              const pnl=pl.value-pl.cost;
-              const pct=pl.cost>0?(pnl/pl.cost)*100:0;
-              const share=cryptoValue>0?(pl.value/cryptoValue)*100:0;
-              return (
-                <div key={pl.name} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid #2f2745",flexWrap:"wrap"}}>
-                  <span style={{flex:"1 1 140px",fontSize:16,color:"#f2eefc"}}>{pl.name} <span style={{fontSize:14,color:"#a29bc4"}}>({pl.coins} เหรียญ)</span></span>
-                  <span style={{fontSize:15,color:"#a29bc4",minWidth:110,textAlign:"right"}}>ใส่ไป ฿{Math.round(pl.cost).toLocaleString()}</span>
-                  <span style={{fontSize:16,color:"#a78bfa",minWidth:110,textAlign:"right"}}>฿{Math.round(pl.value).toLocaleString()}</span>
-                  <span style={{fontSize:15,color:pnl>=0?"#34d399":"#fb923c",minWidth:130,textAlign:"right"}}>
-                    {pnl>=0?"+":"-"}฿{Math.abs(Math.round(pnl)).toLocaleString()} ({pnl>=0?"+":"-"}{Math.abs(pct).toFixed(1)}%)
-                  </span>
-                  <span style={{fontSize:14,color:"#a29bc4",minWidth:52,textAlign:"right"}}>{share.toFixed(1)}%</span>
-                </div>
-              );
-            })}
           </div>
         )}
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"0 16px 10px"}}>
@@ -2594,70 +2693,110 @@ function FinanceInvestmentsTab({finance,persist}) {
           </div>
         )}
         {buyFor&&<AddBuyModal holding={buyFor} fx={fx} onClose={()=>setBuyFor(null)} onSave={saveBuy}/>}
+        {showAddCoin&&<AddCoinModal fx={fx} onClose={()=>setShowAddCoin(false)} onSave={addCoin}/>}
         {holdings.length===0&&<div className="empty">ยังไม่มีเหรียญ — กด "เพิ่มเหรียญ" เพื่อกรอกพอร์ตที่มีอยู่</div>}
         {holdings.length>0&&(
-          <div className="exp-table-wrap">
-            <table className="exp-table">
-              <thead><tr><th>เหรียญ / เก็บไว้ที่</th><th className="exp-col-amount">จำนวน / เริ่มถือ</th><th className="exp-col-amount">ต้นทุนเฉลี่ย/หน่วย</th><th className="exp-col-amount">ราคาปัจจุบัน/หน่วย</th><th className="exp-col-amount">มูลค่า / กำไร-ขาดทุน (THB)</th><th className="exp-col-action"></th></tr></thead>
-              <tbody>
-                {holdings.map(h=>{
-                  const st=coinStat(h);
-                  const priceAge=h.priceUpdatedAt?-daysUntil(h.priceUpdatedAt):null;
-                  return (
-                  <tr key={h.id}>
-                    <td>
-                      <input className="modal-input" style={{maxWidth:120}} value={h.coin} onChange={e=>editHolding(h.id,"coin",e.target.value)} placeholder="BTC"/>
-                      <input className="modal-input" style={{maxWidth:120,marginTop:4,fontSize:15}} value={h.platform||""} onChange={e=>editHolding(h.id,"platform",e.target.value)} placeholder="Binance"/>
-                      {st.value>0&&<div style={{fontSize:14,color:"#a29bc4",marginTop:2}}>{st.share.toFixed(1)}% ของพอร์ตคริปโต</div>}
-                      {(h.buys||[]).length>0&&<div style={{fontSize:14,color:"#34d399",marginTop:2}}>บันทึกซื้อ {h.buys.length} งวด</div>}
-                    </td>
-                    <td className="exp-col-amount">
-                      <input className="modal-input" style={{maxWidth:120,textAlign:"right"}} inputMode="decimal" value={h.quantity} onChange={e=>editHolding(h.id,"quantity",e.target.value)} placeholder="0"/>
-                      <input type="date" className="modal-input" style={{maxWidth:145,marginTop:4,fontSize:15}} value={h.firstHeldDate||""} onChange={e=>editHolding(h.id,"firstHeldDate",e.target.value)}/>
-                    </td>
-                    <td className="exp-col-amount">
-                      <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                        <input className="modal-input" style={{maxWidth:110,textAlign:"right"}} inputMode="decimal" value={h.avgCost} onChange={e=>editHolding(h.id,"avgCost",e.target.value)} placeholder="0"/>
-                        <select className="modal-input" style={{maxWidth:78}} value={h.costCurrency||"THB"} onChange={e=>editHolding(h.id,"costCurrency",e.target.value)}>
-                          <option value="THB">THB</option><option value="USD">USD</option>
-                        </select>
-                      </div>
-                      {(h.costCurrency==="USD")&&(
-                        <div style={{display:"flex",gap:4,justifyContent:"flex-end",alignItems:"center",marginTop:4}}>
-                          <span style={{fontSize:14,color:"#a29bc4"}}>เรตตอนซื้อ</span>
-                          <input className="modal-input" style={{maxWidth:80,textAlign:"right",fontSize:15}} inputMode="decimal"
-                            value={h.costFxRate||""} onChange={e=>editHolding(h.id,"costFxRate",e.target.value)} placeholder={fx?String(fx):"36.50"}/>
+          <div className="crypto-platform-grid">
+            {platformList.map(pl=>{
+              const plPnl=pl.value-pl.cost;
+              const plPct=pl.cost>0?(plPnl/pl.cost)*100:0;
+              const plPie=pl.items.filter(h=>coinStat(h).value>0).map(h=>({name:h.coin||"—",value:coinStat(h).value}));
+              return (
+                <div key={pl.name} className="crypto-platform-col">
+                  <div className="crypto-platform-head">
+                    <span>{pl.name}</span>
+                    <span style={{fontSize:14,color:"#a29bc4",fontWeight:400}}>{pl.coins} เหรียญ</span>
+                  </div>
+                  <div style={{fontSize:15,color:"#a29bc4",padding:"6px 0 4px"}}>
+                    ใส่ไป ฿{Math.round(pl.cost).toLocaleString()} · มูลค่า <b style={{color:"#a78bfa"}}>฿{Math.round(pl.value).toLocaleString()}</b>{" "}
+                    <span style={{color:plPnl>=0?"#34d399":"#fb923c"}}>
+                      {plPnl>=0?"+":"-"}฿{Math.abs(Math.round(plPnl)).toLocaleString()} ({plPnl>=0?"+":"-"}{Math.abs(plPct).toFixed(1)}%)
+                    </span>
+                  </div>
+                  {plPie.length>0&&(
+                    <div className="crypto-mini-pie">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart margin={{top:4,right:4,bottom:4,left:4}}>
+                          <Pie data={plPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="50%" outerRadius="85%" paddingAngle={2} isAnimationActive={false}>
+                            {plPie.map((d,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                          </Pie>
+                          <Tooltip contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  <div className="inv-card-list" style={{padding:0}}>
+                    {pl.items.map(h=>{
+                      const st=coinStat(h);
+                      const priceAge=h.priceUpdatedAt?-daysUntil(h.priceUpdatedAt):null;
+                      const editing=editCoinId===h.id;
+                      return (
+                        <div key={h.id} className="inv-item-card">
+                          <div className="inv-item-head">
+                            <span style={{fontSize:16,color:"#f2eefc"}}>{h.coin||"(ไม่มีชื่อ)"} <span style={{fontSize:13,color:"#a29bc4"}}>· {st.share.toFixed(1)}%</span></span>
+                            <div className="inv-item-actions">
+                              <button className="del-btn" title="บันทึกการซื้อเพิ่ม / DCA" onClick={()=>setBuyFor(h)}><Plus size={18}/></button>
+                              <button className="del-btn" onClick={()=>setEditCoinId(editing?null:h.id)}><Edit3 size={16}/></button>
+                              <button className="del-btn" onClick={()=>removeHolding(h.id)}><Trash2 size={18}/></button>
+                            </div>
+                          </div>
+                          {!editing&&(
+                            <>
+                              <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:4,flexWrap:"wrap"}}>
+                                <span style={{fontSize:14,color:"#a29bc4"}}>{num(h.quantity).toLocaleString()} หน่วย</span>
+                                <span style={{fontSize:16,color:"#a78bfa",fontFamily:"'IBM Plex Mono',monospace"}}>฿{Math.round(st.value).toLocaleString()}</span>
+                              </div>
+                              {st.cost>0&&renderPnlBar(st.pnl,st.pct)}
+                              {(h.buys||[]).length>0&&<div style={{fontSize:13,color:"#34d399",marginTop:4}}>บันทึกซื้อ {h.buys.length} งวด</div>}
+                              {priceAge!=null&&priceAge>=7&&<div style={{fontSize:13,color:"#fbbf24",marginTop:4}}>ราคาค้าง {priceAge} วัน</div>}
+                            </>
+                          )}
+                          {editing&&(
+                            <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:8}}>
+                              <div className="fin-row-2">
+                                <div><label className="field-label">เหรียญ</label><input className="modal-input" value={h.coin} onChange={e=>editHolding(h.id,"coin",e.target.value)} placeholder="BTC"/></div>
+                                <div><label className="field-label">เก็บไว้ที่</label><input className="modal-input" value={h.platform||""} onChange={e=>editHolding(h.id,"platform",e.target.value)} placeholder="Binance Global"/></div>
+                              </div>
+                              <div className="fin-row-2">
+                                <div><label className="field-label">จำนวน</label><input className="modal-input" inputMode="decimal" value={h.quantity} onChange={e=>editHolding(h.id,"quantity",e.target.value)} placeholder="0"/></div>
+                                <div><label className="field-label">เริ่มถือ</label><input type="date" className="modal-input" value={h.firstHeldDate||""} onChange={e=>editHolding(h.id,"firstHeldDate",e.target.value)}/></div>
+                              </div>
+                              <div className="fin-row-2">
+                                <div>
+                                  <label className="field-label">ต้นทุนเฉลี่ย/หน่วย</label>
+                                  <div style={{display:"flex",gap:4}}>
+                                    <input className="modal-input" inputMode="decimal" value={h.avgCost} onChange={e=>editHolding(h.id,"avgCost",e.target.value)} placeholder="0"/>
+                                    <select className="modal-input" style={{maxWidth:78}} value={h.costCurrency||"THB"} onChange={e=>editHolding(h.id,"costCurrency",e.target.value)}>
+                                      <option value="THB">THB</option><option value="USD">USD</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="field-label">ราคาปัจจุบัน/หน่วย</label>
+                                  <div style={{display:"flex",gap:4}}>
+                                    <input className="modal-input" inputMode="decimal" value={h.currentPrice} onChange={e=>editHolding(h.id,"currentPrice",e.target.value)} placeholder="0"/>
+                                    <select className="modal-input" style={{maxWidth:78}} value={h.priceCurrency||"THB"} onChange={e=>editHolding(h.id,"priceCurrency",e.target.value)}>
+                                      <option value="THB">THB</option><option value="USD">USD</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                              {h.costCurrency==="USD"&&(
+                                <div>
+                                  <label className="field-label">เรตตอนซื้อ (ไม่บังคับ)</label>
+                                  <input className="modal-input" inputMode="decimal" value={h.costFxRate||""} onChange={e=>editHolding(h.id,"costFxRate",e.target.value)} placeholder={fx?String(fx):"36.50"}/>
+                                </div>
+                              )}
+                              <button className="modal-btn-save" onClick={()=>setEditCoinId(null)}>เสร็จแล้ว</button>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {st.cost>0&&<div style={{fontSize:14,color:"#a29bc4",marginTop:2}}>ต้นทุนรวม ฿{Math.round(st.cost).toLocaleString()}</div>}
-                    </td>
-                    <td className="exp-col-amount">
-                      <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                        <input className="modal-input" style={{maxWidth:110,textAlign:"right"}} inputMode="decimal" value={h.currentPrice} onChange={e=>editHolding(h.id,"currentPrice",e.target.value)} placeholder="0"/>
-                        <select className="modal-input" style={{maxWidth:78}} value={h.priceCurrency||"THB"} onChange={e=>editHolding(h.id,"priceCurrency",e.target.value)}>
-                          <option value="THB">THB</option><option value="USD">USD</option>
-                        </select>
-                      </div>
-                      <div style={{fontSize:14,marginTop:2,color:priceAge!=null&&priceAge>=7?"#fbbf24":"#a29bc4"}}>
-                        {h.priceUpdatedAt?`อัปเดต ${priceAge<=0?"วันนี้":`${priceAge} วันก่อน`}`:"ยังไม่เคยอัปเดต"}
-                      </div>
-                    </td>
-                    <td className="exp-col-amount">
-                      <div className="exp-amount-value" style={{color:"#a78bfa"}}>฿{Math.round(st.value).toLocaleString()}</div>
-                      {st.cost>0&&(
-                        <div style={{fontSize:15,marginTop:2,color:st.pnl>=0?"#34d399":"#fb923c"}}>
-                          {st.pnl>=0?"+":"-"}฿{Math.abs(Math.round(st.pnl)).toLocaleString()} ({st.pnl>=0?"+":"-"}{Math.abs(st.pct).toFixed(1)}%)
-                        </div>
-                      )}
-                    </td>
-                    <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" title="บันทึกการซื้อเพิ่ม / DCA" onClick={()=>setBuyFor(h)}><Plus size={19}/></button>
-                      <button className="del-btn" onClick={()=>removeHolding(h.id)}><Trash2 size={19}/></button>
-                    </td>
-                  </tr>
-                );})}
-              </tbody>
-            </table>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -2685,71 +2824,72 @@ function FinanceInvestmentsTab({finance,persist}) {
         )}
       </div>
       <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">เพิ่มรายการลงทุน (กรอกเอง)</div>
-        <div className="fin-row-2">
-          <div>
-            <label className="field-label">Date</label>
-            <input type="date" className="modal-input" value={invDate} onChange={e=>setInvDate(e.target.value)}/>
-          </div>
-          <div>
-            <label className="field-label">จำนวนเงิน</label>
-            <input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={invAmount} onChange={e=>setInvAmount(e.target.value)}/>
-          </div>
+        <div className="card-head">
+          <span>เพิ่มรายการลงทุน</span>
+          <button className="text-btn" onClick={()=>setShowAddInv(true)}>+ เพิ่มรายการ</button>
         </div>
-        <div className="fin-row-2">
-          <div>
-            <label className="field-label">ประเภท</label>
-            <select className="modal-input" value={invType} onChange={e=>setInvType(e.target.value)}>
-              {INVEST_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="field-label">ชื่อรายการ (ไม่บังคับ)</label>
-            <input className="modal-input" placeholder={INVEST_TYPE_LABELS[invType]} value={invName} onChange={e=>setInvName(e.target.value)}/>
-          </div>
-        </div>
-        <button className="icon-btn" disabled={!Number(invAmount)||Number(invAmount)<=0} onClick={addInvestment} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={24}/></button>
+        <div style={{padding:"0 16px 14px",fontSize:15,color:"#a29bc4"}}>สำหรับรายการที่ไม่ได้มาจาก CSV/สลิปเงินเดือน — กด "+ เพิ่มรายการ" เพื่อกรอก</div>
+        {showAddInv&&(
+          <AddInvestmentModal
+            onClose={()=>setShowAddInv(false)}
+            onSave={(row)=>{
+              persist({...finance,finance:{...finance.finance,investments:[...(finance.finance.investments||[]),
+                {id:uid(),date:row.date,amount:Math.abs(Number(row.amount)),name:row.name.trim()||INVEST_TYPE_LABELS[row.type],type:row.type,source:"manual"}]}});
+              setShowAddInv(false);
+            }}
+          />
+        )}
       </div>
       <div className="card" style={{margin:"0 20px"}}>
-        <div className="card-head">Savings & Investments</div>
+        <div className="card-head">Savings & Investments — รายการทั้งหมด</div>
         {list.length===0&&<div className="empty">ยังไม่มีรายการ — เงินสะสม กบข./กสจ. จากสลิปเงินเดือนจะมาอยู่ตรงนี้</div>}
         {list.length>0&&(
-          <div className="exp-table-wrap">
-            <table className="exp-table">
-              <thead><tr><th>Date</th><th>Name</th><th>ประเภท</th><th className="exp-col-amount">Amount</th><th>Source</th><th className="exp-col-action"></th></tr></thead>
-              <tbody>
-                {list.map(i=>editInvId===i.id?(
-                  <tr key={i.id}>
-                    <td className="exp-col-date"><input type="date" className="modal-input" style={{maxWidth:150}} value={editInvDraft.date} onChange={e=>setEditInvDraft({...editInvDraft,date:e.target.value})}/></td>
-                    <td><input className="modal-input" style={{maxWidth:150}} value={editInvDraft.name} onChange={e=>setEditInvDraft({...editInvDraft,name:e.target.value})}/></td>
-                    <td>
-                      <select className="modal-input" style={{maxWidth:150}} value={editInvDraft.type} onChange={e=>setEditInvDraft({...editInvDraft,type:e.target.value})}>
-                        {INVEST_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="exp-col-amount"><input type="number" className="modal-input" style={{maxWidth:120,textAlign:"right"}} inputMode="decimal" value={editInvDraft.amount} onChange={e=>setEditInvDraft({...editInvDraft,amount:e.target.value})}/></td>
-                    <td><span className="exp-csv-badge">{ORIGIN_LABELS[originOf(i)]||"กรอกเอง"}</span></td>
-                    <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" style={{color:"#34d399"}} onClick={saveEditInv}><Check size={19}/></button>
-                      <button className="del-btn" onClick={cancelEditInv}><X size={19}/></button>
-                      <button className="del-btn" onClick={()=>{cancelEditInv();remove(i.id);}}><Trash2 size={19}/></button>
-                    </td>
-                  </tr>
-                ):(
-                  <tr key={i.id}>
-                    <td className="exp-col-date">{i.date}</td>
-                    <td>{i.name}</td>
-                    <td><span className="exp-csv-badge" style={{color:"#c4b5fd",borderColor:"#3a3155",background:"#221b38"}}>{INVEST_TYPE_LABELS[i.type]||INVEST_TYPE_LABELS.other}</span></td>
-                    <td className="exp-col-amount exp-amount-value" style={{color:"#a78bfa"}}>฿{i.amount.toLocaleString()}</td>
-                    <td><span className="exp-csv-badge">{ORIGIN_LABELS[originOf(i)]||"กรอกเอง"}</span></td>
-                    <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" onClick={()=>startEditInv(i)}><Edit3 size={17}/></button>
-                      <button className="del-btn" onClick={()=>remove(i.id)}><Trash2 size={19}/></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="inv-card-list">
+            {list.map(i=>{
+              const editing=editInvId===i.id;
+              return (
+                <div key={i.id} className="inv-item-card">
+                  {!editing?(
+                    <>
+                      <div className="inv-item-head">
+                        <span style={{fontSize:16,color:"#f2eefc"}}>{i.name}</span>
+                        <span style={{fontSize:16,color:"#a78bfa",fontFamily:"'IBM Plex Mono',monospace"}}>฿{i.amount.toLocaleString()}</span>
+                      </div>
+                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:6}}>
+                        <span style={{fontSize:14,color:"#a29bc4"}}>{i.date}</span>
+                        <span className="exp-csv-badge" style={{color:"#c4b5fd",borderColor:"#3a3155",background:"#221b38"}}>{INVEST_TYPE_LABELS[i.type]||INVEST_TYPE_LABELS.other}</span>
+                        <span className="exp-csv-badge">{ORIGIN_LABELS[originOf(i)]||"กรอกเอง"}</span>
+                        <div className="inv-item-actions" style={{marginLeft:"auto"}}>
+                          <button className="del-btn" onClick={()=>startEditInv(i)}><Edit3 size={17}/></button>
+                          <button className="del-btn" onClick={()=>remove(i.id)}><Trash2 size={19}/></button>
+                        </div>
+                      </div>
+                    </>
+                  ):(
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      <div className="fin-row-2">
+                        <div><label className="field-label">Date</label><input type="date" className="modal-input" value={editInvDraft.date} onChange={e=>setEditInvDraft({...editInvDraft,date:e.target.value})}/></div>
+                        <div><label className="field-label">Name</label><input className="modal-input" value={editInvDraft.name} onChange={e=>setEditInvDraft({...editInvDraft,name:e.target.value})}/></div>
+                      </div>
+                      <div className="fin-row-2">
+                        <div>
+                          <label className="field-label">ประเภท</label>
+                          <select className="modal-input" value={editInvDraft.type} onChange={e=>setEditInvDraft({...editInvDraft,type:e.target.value})}>
+                            {INVEST_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+                          </select>
+                        </div>
+                        <div><label className="field-label">Amount</label><input type="number" className="modal-input" inputMode="decimal" value={editInvDraft.amount} onChange={e=>setEditInvDraft({...editInvDraft,amount:e.target.value})}/></div>
+                      </div>
+                      <div style={{display:"flex",gap:6}}>
+                        <button className="del-btn" style={{color:"#34d399"}} onClick={saveEditInv}><Check size={19}/></button>
+                        <button className="del-btn" onClick={cancelEditInv}><X size={19}/></button>
+                        <button className="del-btn" onClick={()=>{cancelEditInv();remove(i.id);}}><Trash2 size={19}/></button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
