@@ -316,6 +316,7 @@ const Percent = makeIcon("fa-percent");
 const Flag = makeIcon("fa-flag");
 const Lightbulb = makeIcon("fa-lightbulb");
 const SplitIcon = makeIcon("fa-code-branch");
+const Flame = makeIcon("fa-fire");
 
 // ---- จำลอง window.storage ด้วย localStorage (พรีวิวเท่านั้น ยังไม่ต่อ Google Drive) ----
 window.storage = {
@@ -536,6 +537,105 @@ function projectHealth(p,data){
   if(diff>=5) return {key:"ahead",label:"เร็วกว่าแผน",color:"#34d399",prog,exp};
   if(diff>=-8) return {key:"ontrack",label:"ตามแผน",color:"#60a5fa",prog,exp};
   return {key:"behind",label:"ช้ากว่าแผน",color:"#fb923c",prog,exp};
+}
+/* ═══ Momentum: ความคืบหน้ารวม + เทียบย้อนหลัง ═══ */
+function activeProjectsAt(data,dateStr){
+  return (data.projects||[]).filter(p=>{
+    if(p.status==="archived") return false;
+    const s=(p.startDate||p.createdAt||"").slice(0,10);
+    return !s||s<=dateStr;
+  });
+}
+function taskCompletionRateAt(t,asOf,periods=30){
+  if(!isRecurring(t)) return (t.status==="done"&&(!t.completedAt||t.completedAt.slice(0,10)<=asOf))?100:0;
+  const comp=t.completions||{};
+  const d=new Date(asOf+"T00:00:00");
+  const seen=new Set(); let total=0,done=0;
+  for(let i=0;i<periods*32&&total<periods;i++){
+    const key=periodKey(t.recurrence,isoDate(d));
+    if(!seen.has(key)){ seen.add(key); total++; if(comp[key]) done++; }
+    d.setDate(d.getDate()-1);
+  }
+  return total?Math.round((done/total)*100):0;
+}
+function projectProgressAt(p,data,dateStr){
+  if(!p) return 0;
+  if(p.measureType==="numeric"){
+    const base=p.baselineValue||0, span=(p.targetValue||0)-base;
+    if(!span) return 0;
+    const cs=projectCheckins(data,p.id).filter(c=>(c.date||"")<=dateStr);
+    const cur=cs.length?cs[cs.length-1].value:base;
+    return Math.max(0,Math.min(100,((cur-base)/span)*100));
+  }
+  if(p.measureType==="tasks"){
+    const ts=projectTasks(data,p.id);
+    if(!ts.length) return 0;
+    let totW=0,doneW=0;
+    ts.forEach(t=>{ const w=t.weight||1; totW+=w; doneW+=w*(taskCompletionRateAt(t,dateStr)/100); });
+    return totW?(doneW/totW)*100:0;
+  }
+  return Math.max(0,Math.min(100,p.manualValue||0));
+}
+function overallProgressNow(data){
+  const ps=(data.projects||[]).filter(p=>p.status!=="archived");
+  if(!ps.length) return 0;
+  return ps.reduce((a,p)=>a+projectProgress(p,data),0)/ps.length;
+}
+function overallProgressAt(data,dateStr){
+  const ps=activeProjectsAt(data,dateStr);
+  if(!ps.length) return null;
+  return ps.reduce((a,p)=>a+projectProgressAt(p,data,dateStr),0)/ps.length;
+}
+function earliestTrackerDate(data){
+  let min=null;
+  const take=(d)=>{ if(d&&(!min||d<min)) min=d; };
+  (data.projects||[]).forEach(p=>take((p.startDate||p.createdAt||"").slice(0,10)));
+  (data.checkins||[]).forEach(c=>take(c.date));
+  Object.keys(data.progressLog||{}).forEach(take);
+  return min;
+}
+function progressOn(data,dateStr){
+  const early=earliestTrackerDate(data);
+  if(early&&dateStr<early) return null;
+  const log=data.progressLog||{};
+  const keys=Object.keys(log).filter(k=>k<=dateStr).sort();
+  if(keys.length) return {value:log[keys[keys.length-1]],exact:true};
+  const v=overallProgressAt(data,dateStr);
+  return v==null?null:{value:v,exact:false};
+}
+function shiftISO(dateStr,{d=0,m=0,y=0}){
+  const dt=new Date(dateStr+"T00:00:00");
+  if(d) dt.setDate(dt.getDate()+d);
+  if(m) dt.setMonth(dt.getMonth()+m);
+  if(y) dt.setFullYear(dt.getFullYear()+y);
+  return isoDate(dt);
+}
+function movementDates(data){
+  const s=new Set();
+  (data.checkins||[]).forEach(c=>{ if(c.date) s.add(c.date); });
+  (data.tasks||[]).forEach(t=>{
+    if(isRecurring(t)){ if(t.recurrence==="daily") Object.keys(t.completions||{}).forEach(k=>s.add(k)); }
+    else if(t.status==="done"&&t.completedAt) s.add(t.completedAt.slice(0,10));
+  });
+  return s;
+}
+function momentumStreak(data){
+  const s=movementDates(data);
+  const d=new Date(todayISO()+"T00:00:00");
+  if(!s.has(isoDate(d))) d.setDate(d.getDate()-1);
+  let n=0;
+  for(let i=0;i<400;i++){ if(s.has(isoDate(d))){ n++; d.setDate(d.getDate()-1); } else break; }
+  return n;
+}
+function recordProgressSnapshot(data){
+  const t=todayISO();
+  const v=Math.round(overallProgressNow(data)*10)/10;
+  const log=data.progressLog||{};
+  if(log[t]===v) return null;
+  const next={...log,[t]:v};
+  const keys=Object.keys(next).sort();
+  if(keys.length>800) keys.slice(0,keys.length-800).forEach(k=>{ delete next[k]; });
+  return next;
 }
 function migrateToTracker(parsed){
   if(parsed.projects) return null;
@@ -4974,6 +5074,116 @@ function HistoryPanel({activity}) {
     </div>
   );
 }
+function useCountUp(target,ms=800){
+  const [v,setV]=useState(0);
+  useEffect(()=>{
+    let raf,start=null;
+    const from=0,to=Number(target)||0;
+    const tick=(ts)=>{
+      if(start===null) start=ts;
+      const t=Math.min(1,(ts-start)/ms);
+      const e=1-Math.pow(1-t,3);
+      setV(from+(to-from)*e);
+      if(t<1) raf=requestAnimationFrame(tick);
+    };
+    raf=requestAnimationFrame(tick);
+    return ()=>cancelAnimationFrame(raf);
+  },[target,ms]);
+  return v;
+}
+function MomentumSpark({points}){
+  const vals=points.filter(v=>v!=null);
+  if(vals.length<2) return <div className="mom-spark-empty">ยังไม่มีเส้นทาง 30 วัน</div>;
+  const min=Math.min(...vals), max=Math.max(...vals);
+  const span=(max-min)||1;
+  const W=100,H=28;
+  const step=points.length>1?W/(points.length-1):W;
+  let d="",started=false;
+  points.forEach((v,i)=>{
+    if(v==null) return;
+    const x=(i*step).toFixed(2);
+    const y=(H-((v-min)/span)*(H-4)-2).toFixed(2);
+    d+=(started?" L":"M")+x+" "+y; started=true;
+  });
+  return (
+    <svg className="mom-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      <path d={d+` L${W} ${H} L0 ${H} Z`} className="mom-spark-fill"/>
+      <path d={d} className="mom-spark-line"/>
+    </svg>
+  );
+}
+function MomentumCard({data,onOpen}){
+  const m=useMemo(()=>{
+    const today=todayISO();
+    const now=overallProgressNow(data);
+    const spans=[
+      {key:"d",label:"เมื่อวาน",date:shiftISO(today,{d:-1})},
+      {key:"w",label:"อาทิตย์ก่อน",date:shiftISO(today,{d:-7})},
+      {key:"m",label:"เดือนก่อน",date:shiftISO(today,{m:-1})},
+      {key:"y",label:"ปีก่อน",date:shiftISO(today,{y:-1})},
+    ].map(s=>{
+      const p=progressOn(data,s.date);
+      return {...s,delta:p?now-p.value:null,exact:p?p.exact:false};
+    });
+    const spark=[];
+    for(let i=29;i>=0;i--){
+      if(i===0){ spark.push(now); continue; }
+      const p=progressOn(data,shiftISO(today,{d:-i}));
+      spark.push(p?p.value:null);
+    }
+    const week=spans.find(s=>s.key==="w");
+    const streak=momentumStreak(data);
+    const state=(week&&week.delta!=null&&week.delta>=1)?"hot":(week&&week.delta!=null&&week.delta>0)?"warm":(streak===0?"cold":"warm");
+    return {now,spans,spark,streak,state,early:earliestTrackerDate(data),count:(data.projects||[]).filter(p=>p.status!=="archived").length};
+  },[data]);
+  const shown=useCountUp(m.now);
+  const C=2*Math.PI*42;
+  const off=C*(1-Math.max(0,Math.min(100,m.now))/100);
+  const stroke=m.state==="hot"?"#34d399":m.state==="warm"?"#8b5cf6":"#5a5175";
+  if(!m.count) return (
+    <div className="mom-card mom-cold" onClick={onOpen} role="button">
+      <div className="mom-head"><span className="mom-title">โมเมนตัม</span></div>
+      <div className="mom-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก ✨</div>
+    </div>
+  );
+  return (
+    <div className={`mom-card mom-${m.state}`} onClick={onOpen} role="button">
+      <div className="mom-head">
+        <span className="mom-title">โมเมนตัม</span>
+        {m.streak>0&&<span className="mom-streak"><Flame size={14}/> {m.streak} วัน</span>}
+      </div>
+      <div className="mom-body">
+        <div className="mom-ring">
+          <svg viewBox="0 0 100 100">
+            <circle className="mom-ring-bg" cx="50" cy="50" r="42"/>
+            <circle className="mom-ring-fg" cx="50" cy="50" r="42" stroke={stroke}
+              strokeDasharray={C} strokeDashoffset={off}/>
+          </svg>
+          <div className="mom-ring-center">
+            <div className="mom-ring-val">{shown.toFixed(0)}<span>%</span></div>
+            <div className="mom-ring-sub">{m.count} โปรเจกต์</div>
+          </div>
+        </div>
+        <div className="mom-right">
+          <MomentumSpark points={m.spark}/>
+          <div className="mom-spans">
+            {m.spans.map(s=>(
+              <div className="mom-span" key={s.key}>
+                <div className="mom-span-label">{s.label}</div>
+                {s.delta==null
+                  ? <div className="mom-span-none" title={m.early?`เริ่มเก็บข้อมูล ${thaiDate(m.early)}`:""}>—</div>
+                  : <div className={`mom-span-val ${s.delta>0.05?"up":s.delta<-0.05?"down":"flat"}`}>
+                      {s.delta>0.05?"+":""}{Math.abs(s.delta)<0.05?"0":s.delta.toFixed(1)}%
+                      {!s.exact&&<span className="mom-est" title="ประมาณการจากข้อมูลย้อนหลัง">~</span>}
+                    </div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function SecretaryDashboard() {
   const {data,loading,persist}=useSecretaryData();
   const [now,setNow]=useState(new Date());
@@ -4997,6 +5207,7 @@ function SecretaryDashboard() {
     return()=>window.removeEventListener("keydown",onKey);
   },[]);
   useEffect(()=>{ if(!data) return; const {data:r,changed}=applyResets(data); if(changed) persist(r); },[now]);
+  useEffect(()=>{ if(!data) return; const next=recordProgressSnapshot(data); if(next) persist({...data,progressLog:next}); },[data&&data.projects,data&&data.tasks,data&&data.checkins]);
   const dateStr=now.toLocaleDateString("th-TH",{weekday:"long",day:"numeric",month:"long",year:"numeric",calendar:"buddhist"});
   const timeStr=now.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
   const {text:greetText,Icon:GreetIcon}=greetingFor(now.getHours());
@@ -5029,6 +5240,7 @@ function SecretaryDashboard() {
   const deleteEvent=(id)=>persist({...data,events:events.filter(e=>e.id!==id)});
   const openEditEvent=(ev)=>{ setEditEvent(ev); setShowEventModal(true); };
   const notes=data.notes||[];
+  const bookStats=(()=>{ const bs=data.bookQueue||[]; return {total:bs.length,reading:bs.filter(b=>b.status==="reading").length,done:bs.filter(b=>b.status==="done").length}; })();
   const visibleNotes=notesExpanded?notes:notes.slice(0,NOTE_VISIBLE);
   const hiddenNotes=notes.length-NOTE_VISIBLE;
   const saveNote=(note)=>{ const existing=notes.find(n=>n.id===note.id); persist({...data,notes:existing?notes.map(n=>n.id===note.id?note:n):[...notes,note],activity:logActivity(data,{source:"note",text:`${existing?"แก้ไข":"เพิ่ม"}โน้ต "${note.text.slice(0,32)}${note.text.length>32?"…":""}"`})}); setShowNoteModal(false); setEditNote(null); };
@@ -5205,31 +5417,32 @@ function SecretaryDashboard() {
               <div className="hero-brand">เลขาส่วนตัว ✨</div>
               <div className="hero-tagline">สมองที่สองของคุณ · จำแทนคุณทุกอย่าง</div>
               <div className="hero-time-badge">{timeStr}</div>
+              <MomentumCard data={data} onOpen={()=>setPage(2)}/>
               <div className="hero-tiles">
-                <div className="hero-tile">
+                <div className="hero-tile" onClick={()=>setPage(2)} role="button">
                   <div className="hero-tile-icon"><ListTodo size={18}/></div>
                   <div className="hero-tile-value">{doneTodayCount}<span className="hero-tile-total">/{totalTodoCount}</span></div>
-                  <div className="hero-tile-label">งานสำเร็จ</div>
+                  <div className="hero-tile-label">งานวันนี้</div>
                   <div className="hero-tile-sub" style={{color:"#34d399"}}>{Math.round(rings.todo)}% แล้ว</div>
                 </div>
-                <div className="hero-tile">
+                <div className="hero-tile" onClick={()=>setPage(2)} role="button">
                   <div className="hero-tile-icon"><Target size={18}/></div>
                   <div className="hero-tile-value">{(data.projects||[]).length}</div>
                   <div className="hero-tile-label">โปรเจกต์</div>
                   <div className="hero-tile-sub" style={{color:"#60a5fa"}}>เฉลี่ย {Math.round(rings.goals)}%</div>
                 </div>
-                <div className="hero-tile">
-                  <div className="hero-tile-icon"><StickyNote size={18}/></div>
-                  <div className="hero-tile-value">{notes.length}</div>
-                  <div className="hero-tile-label">โน้ต</div>
-                  <div className="hero-tile-sub" style={{color:"#fbbf24"}}>{(data.activity||[]).length} กิจกรรม</div>
+                <div className="hero-tile" onClick={()=>setPage(5)} role="button">
+                  <div className="hero-tile-icon"><BookOpen size={18}/></div>
+                  <div className="hero-tile-value">{bookStats.reading}<span className="hero-tile-total">/{bookStats.total}</span></div>
+                  <div className="hero-tile-label">หนังสือ</div>
+                  <div className="hero-tile-sub" style={{color:"#fbbf24"}}>อ่านแล้ว {bookStats.done} เล่ม</div>
                 </div>
-                <button className="hero-tile hero-tile-cta" onClick={()=>setShowQuick(true)}>
-                  <div className="hero-cta-title">✨ Quick Capture</div>
-                  <div className="hero-cta-sub">จดอะไรก็ได้ ทันที</div>
-                  <div className="hero-cta-arrow"><ArrowRight size={18}/></div>
-                </button>
               </div>
+              <button className="hero-tile hero-tile-cta hero-cta-full" onClick={()=>setShowQuick(true)}>
+                <div className="hero-cta-title">✨ Quick Capture</div>
+                <div className="hero-cta-sub">จดอะไรก็ได้ ทันที</div>
+                <div className="hero-cta-arrow"><ArrowRight size={18}/></div>
+              </button>
               {todayEvents[0]&&(
                 <div className="hero-next-event">
                   <div className="hero-next-label">⏰ งานถัดไปวันนี้</div>
