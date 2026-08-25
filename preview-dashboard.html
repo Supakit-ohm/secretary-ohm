@@ -58,6 +58,147 @@
     URL.revokeObjectURL(url);
   }
 
+  // ---------- ตรวจโครงสร้างไฟล์ ----------
+  function isArr(v) { return Array.isArray(v); }
+
+  function validateShape(obj) {
+    var problems = [];
+    if (!obj.finance || typeof obj.finance !== "object" || isArr(obj.finance)) {
+      problems.push('ไม่พบ key "finance"');
+    } else {
+      if (!isArr(obj.finance.income)) problems.push('finance.income ไม่ใช่ array');
+      if (!isArr(obj.finance.expenses)) problems.push('finance.expenses ไม่ใช่ array');
+    }
+    if (!isArr(obj.projects)) problems.push('ไม่พบ key "projects" (หรือไม่ใช่ array)');
+    if (!isArr(obj.tasks)) problems.push('ไม่พบ key "tasks" (หรือไม่ใช่ array)');
+    return problems;
+  }
+
+  // ---------- สรุปข้อมูลเพื่อเทียบก่อนเขียนทับ ----------
+  var DATE_FIELDS = ["date", "createdAt", "created", "startDate", "dueDate", "due", "month"];
+
+  function pickDate(r) {
+    for (var i = 0; i < DATE_FIELDS.length; i++) {
+      var v = r && r[DATE_FIELDS[i]];
+      if (typeof v === "string" && /^\d{4}-\d{2}/.test(v)) return v.slice(0, 10);
+    }
+    return null;
+  }
+
+  function dateRange(rows) {
+    var min = null, max = null;
+    (rows || []).forEach(function (r) {
+      var d = pickDate(r);
+      if (!d) return;
+      if (min === null || d < min) min = d;
+      if (max === null || d > max) max = d;
+    });
+    if (!min) return "—";
+    return min === max ? min : min + " → " + max;
+  }
+
+  function sumAmount(rows) {
+    return (rows || []).reduce(function (s, r) { return s + (Number(r && r.amount) || 0); }, 0);
+  }
+
+  function fmtBaht(n) {
+    return Math.round(n).toLocaleString("en-US") + " ฿";
+  }
+
+  function statOf(rows, withSum) {
+    var arr = isArr(rows) ? rows : [];
+    return { n: arr.length, range: dateRange(arr), sum: withSum ? fmtBaht(sumAmount(arr)) : "" };
+  }
+
+  function summarize(obj) {
+    var f = (obj && obj.finance) || {};
+    return {
+      income: statOf(f.income, true),
+      expenses: statOf(f.expenses, true),
+      investments: statOf(f.investments, true),
+      projects: statOf(obj && obj.projects, false),
+      tasks: statOf(obj && obj.tasks, false)
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  // ---------- หน้ายืนยันก่อนเขียนทับ ----------
+  var CMP_ROWS = [
+    ["income", "รายรับ", "#34d399"],
+    ["expenses", "รายจ่าย", "#fb923c"],
+    ["investments", "เงินออม/ลงทุน", "#8b5cf6"],
+    ["projects", "โปรเจกต์", "#c9b8f0"],
+    ["tasks", "งาน (tasks)", "#c9b8f0"]
+  ];
+
+  function cellHtml(st, color) {
+    var sub = st.range;
+    if (st.sum) sub += "<br>" + st.sum;
+    return '<div style="font:600 17px/1.2 \'IBM Plex Mono\',monospace;color:' + color + ';">' + st.n +
+      '<span style="font-size:11px;color:#8a82a8;font-weight:400;"> รายการ</span></div>' +
+      '<div style="font-size:11px;color:#8a82a8;margin-top:3px;line-height:1.45;">' + sub + "</div>";
+  }
+
+  function showImportConfirm(fileName, fileSum, curSum) {
+    return new Promise(function (resolve) {
+      var rowsHtml = CMP_ROWS.map(function (r) {
+        var key = r[0], label = r[1], color = r[2];
+        var fSt = fileSum[key], cSt = curSum[key];
+        var delta = fSt.n - cSt.n;
+        var deltaTxt = delta === 0 ? "เท่าเดิม" : (delta > 0 ? "+" + delta : String(delta));
+        var deltaColor = delta === 0 ? "#8a82a8" : (delta > 0 ? "#34d399" : "#f87171");
+        return '<tr style="border-top:1px solid #2a2342;">' +
+          '<td style="padding:10px 8px;font-size:13px;color:#ece8f8;vertical-align:top;white-space:nowrap;">' + label + "</td>" +
+          '<td style="padding:10px 8px;vertical-align:top;">' + cellHtml(fSt, color) + "</td>" +
+          '<td style="padding:10px 8px;vertical-align:top;">' + cellHtml(cSt, "#8a82a8") + "</td>" +
+          '<td style="padding:10px 8px;vertical-align:top;font:600 13px/1.2 \'IBM Plex Mono\',monospace;color:' + deltaColor + ';white-space:nowrap;">' + deltaTxt + "</td>" +
+          "</tr>";
+      }).join("");
+
+      var ov = document.createElement("div");
+      ov.id = "importConfirmOverlay";
+      ov.setAttribute("style", "position:fixed;inset:0;z-index:9999;background:rgba(6,4,14,.82);display:flex;align-items:center;justify-content:center;padding:16px;font-family:'Noto Sans Thai',sans-serif;");
+      ov.innerHTML =
+        '<div style="background:#140f24;border:1px solid #3a3155;border-radius:16px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:22px;color:#ece8f8;box-shadow:0 24px 70px rgba(0,0,0,.65);">' +
+          '<div style="font-size:18px;font-weight:700;margin-bottom:4px;">ยืนยันการนำเข้าข้อมูล</div>' +
+          '<div style="font-size:12px;color:#8a82a8;word-break:break-all;margin-bottom:14px;">ไฟล์: ' + esc(fileName) + "</div>" +
+          '<div style="background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.4);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:#fca5a5;margin-bottom:14px;">' +
+            "การนำเข้าจะ<b>เขียนทับข้อมูลปัจจุบันทั้งหมด</b> และซิงก์ทับ Google Drive ถ้าเชื่อมต่ออยู่ — <b>กู้คืนไม่ได้</b> แนะนำกดปุ่ม &quot;สำรองก่อน&quot; เก็บไฟล์ของข้อมูลปัจจุบันไว้ก่อน" +
+          "</div>" +
+          '<table style="width:100%;border-collapse:collapse;">' +
+            '<thead><tr style="font-size:11px;color:#8a82a8;text-align:left;">' +
+              '<th style="padding:0 8px 6px;font-weight:600;"></th>' +
+              '<th style="padding:0 8px 6px;font-weight:600;">ไฟล์ที่จะนำเข้า</th>' +
+              '<th style="padding:0 8px 6px;font-weight:600;">ข้อมูลปัจจุบัน</th>' +
+              '<th style="padding:0 8px 6px;font-weight:600;">ต่าง</th>' +
+            "</tr></thead><tbody>" + rowsHtml + "</tbody></table>" +
+          '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:20px;">' +
+            '<button id="icBackup" style="padding:10px 16px;border-radius:10px;background:#221b38;border:1px solid #3a3155;color:#34d399;cursor:pointer;font-size:13px;font-family:inherit;">สำรองก่อน</button>' +
+            '<button id="icCancel" style="padding:10px 18px;border-radius:10px;background:#221b38;border:1px solid #3a3155;color:#ece8f8;cursor:pointer;font-size:13px;font-family:inherit;">ยกเลิก</button>' +
+            '<button id="icOk" style="padding:10px 18px;border-radius:10px;background:#dc2626;border:1px solid #ef4444;color:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;">เขียนทับข้อมูลเดิม</button>' +
+          "</div>" +
+        "</div>";
+      document.body.appendChild(ov);
+
+      function close(result) {
+        document.removeEventListener("keydown", onKey);
+        if (ov.parentNode) ov.parentNode.removeChild(ov);
+        resolve(result);
+      }
+      function onKey(e) { if (e.key === "Escape") close(false); }
+      document.addEventListener("keydown", onKey);
+      ov.addEventListener("click", function (e) { if (e.target === ov) close(false); });
+      ov.querySelector("#icBackup").addEventListener("click", function () { exportJson(); });
+      ov.querySelector("#icCancel").addEventListener("click", function () { close(false); });
+      ov.querySelector("#icOk").addEventListener("click", function () { close(true); });
+    });
+  }
+
   async function importJsonFile(file) {
     var text;
     try {
@@ -77,9 +218,19 @@
       alert("โครงสร้างข้อมูลในไฟล์ไม่ถูกต้อง");
       return;
     }
-    if (!confirm("นำเข้าไฟล์นี้จะแทนที่ข้อมูลทั้งหมดในเครื่องนี้ (และจะซิงก์ทับ Drive ถ้าเชื่อมต่ออยู่) ต้องการดำเนินการต่อหรือไม่?")) {
+    var problems = validateShape(parsed);
+    if (problems.length) {
+      alert(
+        "ไฟล์นี้ไม่ใช่ไฟล์สำรองของแอปเลขา Ohm — ยกเลิกการนำเข้า\n\nสิ่งที่ตรวจไม่ผ่าน:\n• " +
+        problems.join("\n• ") +
+        "\n\nไฟล์ที่ถูกต้องต้องมี key finance (income/expenses), projects และ tasks ครบ"
+      );
       return;
     }
+    var current = {};
+    try { current = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}") || {}; } catch (e) { current = {}; }
+    var ok = await showImportConfirm(file.name || "(ไม่ทราบชื่อไฟล์)", summarize(parsed), summarize(current));
+    if (!ok) return;
     var normalized = JSON.stringify(parsed);
     if (window.storage && window.storage.set) {
       try { await window.storage.set(STORAGE_KEY, normalized); }

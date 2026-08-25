@@ -1,6 +1,6 @@
 // Service Worker — เลขา Ohm
 // Cache-first สำหรับไฟล์แอปหลัก + CDN, network-first สำหรับทุกอย่างอื่น (เช่น Google Drive API)
-const CACHE_NAME = "secretary-ohm-v2";   // bump ทุกครั้งที่ deploy ของใหม่ ไม่งั้นเครื่องเก่าจะติด cache เดิม
+const CACHE_NAME = "secretary-ohm-v3";   // bump ทุกครั้งที่ deploy ของใหม่ ไม่งั้นเครื่องเก่าจะติด cache เดิม
 
 const PRECACHE_URLS = [
   "./preview-dashboard.html",
