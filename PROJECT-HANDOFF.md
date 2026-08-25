@@ -4,7 +4,7 @@
 > *"อ่าน PROJECT-HANDOFF.md ในโฟลเดอร์ก่อน แล้วทำ [สิ่งที่ต้องการ]"*
 > อย่าแปะเนื้อหาไฟล์นี้ลงในแชท — ให้ AI อ่านเองจากดิสก์ ประหยัด token กว่ามาก
 
-อัปเดตล่าสุด: 2026-08-25 (เพิ่มหน้ายืนยันก่อน Import JSON — ดูข้อ 20 ท้ายไฟล์ **ยังไม่ได้ทดสอบเปิดจริง รอ ohm เปิดแอปเช็คก่อน push**)
+อัปเดตล่าสุด: 2026-08-25 (หน้ายืนยัน Import JSON = ข้อ 20 **push แล้ว** / หมุดความคืบหน้าโปรเจกต์ = ข้อ 21 **ยังไม่ได้ทดสอบเปิดจริง รอ ohm เปิดแอปเช็คก่อน push**)
 
 > **หมายเหตุ (2026-08-20):** ตัดสินใจแล้วว่าแอปหลักคือ `preview-dashboard.html` (React+Babel ไฟล์เดียว, ฟีเจอร์ครบ) — จะ**ไม่**เขียนใหม่แยกเป็น vanilla-JS PWA เพราะเสียของที่ทำไว้เยอะ (Finance, Payslip import, Tracker ฯลฯ) แทนที่ด้วยการ **เพิ่มชั้น PWA + Google Drive sync เข้าไปใน preview-dashboard.html เอง** ดูแผนเต็มในข้อ 9
 > ไฟล์ที่ย้ายไป `_to_delete/` แล้ว (ลบทิ้งถาวรได้เมื่อสะดวก): `secretary-dashboard-preview.html` (รุ่นเก่า), `index.html`/`style.css`/`sw.js` เดิมของ secretary-app (UI คนละแนวทาง ไม่ใช้แล้ว)
@@ -610,3 +610,17 @@ js/app.js           — root + routing
    - helper ใหม่ใน IIFE เดียวกัน: `isArr`, `validateShape`, `pickDate` (ไล่ฟิลด์ `date/createdAt/created/startDate/dueDate/due/month` ตัวแรกที่ match `^\d{4}-\d{2}`), `dateRange`, `sumAmount`, `fmtBaht`, `statOf`, `summarize`, `esc`, `cellHtml`, `showImportConfirm` + const `DATE_FIELDS`, `CMP_ROWS`
    - ตรวจแล้ว: `node --check` ผ่าน (สคริปต์ plain), Babel `@babel/preset-react` ผ่าน (ส่วน JSX ไม่ได้แตะ), ทดสอบ logic ใน Node กับไฟล์ `secretary-backup-2026-08-23.json` จริง → validate ผ่าน, สรุปได้ รายรับ 11 (2026-01-27→2026-07-23, 375,226฿) / รายจ่าย 745 (2026-01-01→2026-07-31, -312,265฿) / ลงทุน 12 / โปรเจกต์ 2 / งาน 3 ถูกต้อง และ `{foo:1}` ถูกปฏิเสธพร้อมเหตุผล 3 ข้อ
    - **ยังไม่ได้เปิดแอปจริง** — ให้ ohm ทดสอบก่อน push: กดปุ่ม import แล้วเลือกไฟล์ `secretary-backup-2026-08-23.json` ดูว่าตารางขึ้นครบ แล้วกด **ยกเลิก** (อย่าเพิ่งกดเขียนทับ) + ลองเลือกไฟล์ JSON มั่วๆ ดูว่าเตือนแล้วไม่นำเข้า
+
+21. **หมุดความคืบหน้าโปรเจกต์ (milestones) + toast (2026-08-25)** — ทำต่อจากรายการค้างท้ายข้อ 19
+   **สเปกที่ ohm ยืนยันแล้ว (ห้ามถามซ้ำ):** (1) หมุดตั้งเป็น **% ล้วน** แต่ถ้าโปรเจกต์เป็น `numeric` ให้โชว์ค่าจริงคู่กัน เช่น 50% = 500,000 บาท (2) **ตั้งชื่อหมุดได้ ไม่ตั้งก็ใช้ % แทน** (3) toast **โผล่ได้ทุกหน้า + บันทึกลง activity**
+   - **โครงข้อมูล:** `p.milestones = [{id, pct:1..100, label:"", reachedAt:"YYYY-MM-DD"|null}]` อยู่ในแต่ละ project (ไม่ใช่ที่ root) · `EMPTY_PROJECT` เพิ่ม `milestones:[]`
+   - **helper ใหม่** (บล็อก `/* Milestones */` วางก่อน `/* Momentum */`): `AUTO_MILESTONE_PCTS=[25,50,75,100]`, `sortedMilestones`, `milestoneLabel`, `milestoneValue`, `milestoneValueText`, `autoMilestones` (ข้าม pct ที่มีอยู่แล้ว), `nextMilestone`, `syncMilestones`
+   - **กฎที่ห้ามพลาด:** `syncMilestones(data)` คืน **`null` ถ้าไม่มีอะไรเปลี่ยน** — จำเป็นมาก ไม่งั้น persist วนไม่จบ · และมันถูกเรียกใน **effect เดียวกันกับ `recordProgressSnapshot`** แล้ว persist ครั้งเดียว ถ้าแยกเป็นสอง effect จะ spread จาก `data` ก้อนเดียวกันแล้วเขียนทับกันเอง (progressLog หาย)
+   - **ProjectModal:** ส่วนตั้งหมุดอยู่เหนือ "สีประจำโปรเจกต์" — กรอก % + ชื่อ, ปุ่ม "เพิ่มหมุด" (เลือก % ว่างถัดไปทีละ 10) และ "แบ่งอัตโนมัติ 25/50/75/100" (disabled เมื่อมีครบแล้ว) · ตอนเซฟผ่าน `cleanMilestones()` clamp 1-100 + ตัด pct ซ้ำ + เรียง
+   - **ProjectDetail:** การ์ด "หมุดความคืบหน้า (n/m)" เหนือการ์ด Project Tasks — แถบ `.ms-track` มีขีดหมุด `.prj-bar-ms` + `.ms-list` แต่ละหมุดโชว์ชื่อ/`%`/ค่าจริง/วันที่ถึง หรือ "อีก N%"
+   - **ProjectCard (หน้า Tracker):** ขีดหมุดบนแถบเดิม + บรรทัด `.prj-card-next-ms` "หมุดถัดไป … อีก N%"
+   - **Toast:** `MilestoneToast` (วางก่อน `SecretaryDashboard`) + state `toasts` ใน `SecretaryDashboard` render เป็น `.ms-toast-wrap` **ที่ root ของ `<div className="app">` เลยโผล่ได้ทุกหน้า** หายเองใน 7 วิ กดปิดได้ เก็บพร้อมกันสูงสุด 3 อัน · ทุกหมุดที่ข้ามลง activity ด้วย `source:"goal"`, `status:"completed"`
+   - CSS ใหม่ท้าย `styles.css`: `.prj-bar-ms`, `.prj-card-next-ms`, `.ms-track`, `.ms-list/.ms-item*`, `.ms-edit-*`, `.ms-toast*` + `@keyframes msToastIn` + media 560px (toast เต็มความกว้าง) · `.ms-toast-icon` ใช้ `color-mix()` มี fallback สีทึบบรรทัดก่อนหน้า
+   - ตรวจ Babel ผ่าน + ทดสอบ logic ใน Node ผ่าน: แบ่งอัตโนมัติได้ 25/50/75/100 (ถ้ามี 50 แล้วเหลือ 25/75/100), หมุด 50% ของโปรเจกต์เป้า 1,000,000 โชว์ "500,000 บาท", ข้าม 30%→80% ยิง 2 หมุด, รันซ้ำคืน null, ถอยกลับ 40% ล้าง reachedAt โดยไม่ยิง toast
+   - **ที่ตัดสินใจเองแทน ohm ต้องรีเช็ค:** ความคืบหน้าถอยต่ำกว่าหมุด = **ล้าง `reachedAt`** (ข้ามใหม่จะเตือนซ้ำ) — โปรเจกต์แบบ `tasks` ที่ติ๊ก/ถอนติ๊กบ่อยอาจเด้ง toast บ่อย ถ้าไม่ชอบเปลี่ยนเป็น "ถึงแล้วถึงเลย" ได้ (ลบ branch `if(!hit&&m.reachedAt)` ใน `syncMilestones`)
+   - **ยังไม่ได้เปิดแอปจริง** ให้ ohm เช็คก่อน push: ตั้งหมุดในโมดัลแล้วบันทึกขึ้นจริงไหม, การ์ดหมุดในหน้ารายละเอียดแสดงถูกไหม, ลากสไลเดอร์โปรเจกต์แบบ manual ข้ามหมุดแล้ว toast เด้งไหม, ขีดหมุดบนการ์ดหน้า Tracker ตรงตำแหน่งไหม

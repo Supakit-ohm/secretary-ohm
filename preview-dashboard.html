@@ -689,6 +689,50 @@ function projectHealth(p,data){
   if(diff>=-8) return {key:"ontrack",label:"ตามแผน",color:"#60a5fa",prog,exp};
   return {key:"behind",label:"ช้ากว่าแผน",color:"#fb923c",prog,exp};
 }
+/* ═══ Milestones: หมุดความคืบหน้าต่อโปรเจกต์ ═══ */
+const AUTO_MILESTONE_PCTS=[25,50,75,100];
+function sortedMilestones(p){ return (((p&&p.milestones)||[]).slice()).sort((a,b)=>Number(a.pct)-Number(b.pct)); }
+function milestoneLabel(m){ return String((m&&m.label)||"").trim()||`${m?m.pct:0}%`; }
+function milestoneValue(p,pct){
+  if(!p||p.measureType!=="numeric") return null;
+  const base=p.baselineValue||0, span=(p.targetValue||0)-base;
+  if(!span) return null;
+  return base+span*(Number(pct)/100);
+}
+function milestoneValueText(p,pct){
+  const v=milestoneValue(p,pct);
+  return v==null?null:`${Math.round(v).toLocaleString()}${p.unit?" "+p.unit:""}`;
+}
+function autoMilestones(existing){
+  const have=new Set((existing||[]).map(m=>Number(m.pct)));
+  return AUTO_MILESTONE_PCTS.filter(v=>!have.has(v)).map(v=>({id:uid(),pct:v,label:"",reachedAt:null}));
+}
+function nextMilestone(p,prog){ return sortedMilestones(p).find(m=>Number(m.pct)>prog)||null; }
+/* ตรวจว่ามีหมุดไหน "เพิ่งข้าม" — คืน null ถ้าไม่มีอะไรเปลี่ยน (กัน persist วนซ้ำ)
+   ถ้าความคืบหน้าถอยกลับต่ำกว่าหมุด จะล้าง reachedAt ให้ (ไม่ยิง toast) — ข้ามใหม่อีกครั้งจะเตือนอีก */
+function syncMilestones(data){
+  const t=todayISO(); let changed=false; const reached=[];
+  const projects=(data.projects||[]).map(p=>{
+    const ms=p.milestones;
+    if(!ms||!ms.length) return p;
+    const prog=projectProgress(p,data);
+    let touched=false;
+    const next=ms.map(m=>{
+      const hit=prog>=Number(m.pct);
+      if(hit&&!m.reachedAt){
+        touched=true;
+        reached.push({id:uid(),projectId:p.id,title:p.title,color:p.color,label:milestoneLabel(m),pct:Number(m.pct),valueText:milestoneValueText(p,m.pct)});
+        return {...m,reachedAt:t};
+      }
+      if(!hit&&m.reachedAt){ touched=true; return {...m,reachedAt:null}; }
+      return m;
+    });
+    if(!touched) return p;
+    changed=true;
+    return {...p,milestones:next};
+  });
+  return changed?{projects,reached}:null;
+}
 /* ═══ Momentum: ความคืบหน้ารวม + เทียบย้อนหลัง ═══ */
 function activeProjectsAt(data,dateStr){
   return (data.projects||[]).filter(p=>{
@@ -4415,12 +4459,28 @@ function GoalCard({goal,onEdit,onDelete,onUpdate}) {
     </div>
   );
 }
-const EMPTY_PROJECT={title:"",description:"",category:"personal",priority:"medium",color:GOAL_COLORS[0],status:"active",measureType:"tasks",targetValue:100,baselineValue:0,unit:"",manualValue:0,startDate:todayISO(),targetDate:""};
+const EMPTY_PROJECT={title:"",description:"",category:"personal",priority:"medium",color:GOAL_COLORS[0],status:"active",measureType:"tasks",targetValue:100,baselineValue:0,unit:"",manualValue:0,startDate:todayISO(),targetDate:"",milestones:[]};
 function ProjectModal({onClose,onSave,initial}) {
-  const [form,setForm]=useState(()=>initial?{...EMPTY_PROJECT,...initial,targetDate:initial.targetDate||""}:{...EMPTY_PROJECT,startDate:todayISO()});
+  const [form,setForm]=useState(()=>initial?{...EMPTY_PROJECT,...initial,targetDate:initial.targetDate||"",milestones:(initial.milestones||[]).map(m=>({...m}))}:{...EMPTY_PROJECT,startDate:todayISO(),milestones:[]});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const canSave=form.title.trim()&&(form.measureType!=="numeric"||Number(form.targetValue)!==Number(form.baselineValue));
-  const save=()=>{ if(!canSave) return; onSave({...form,id:initial?.id||uid(),title:form.title.trim(),description:form.description.trim(),targetValue:Number(form.targetValue)||100,baselineValue:Number(form.baselineValue)||0,manualValue:Number(form.manualValue)||0,targetDate:form.targetDate||null}); };
+  const msSorted=sortedMilestones(form);
+  const addAutoMilestones=()=>set("milestones",[...form.milestones,...autoMilestones(form.milestones)]);
+  const addMilestone=()=>{
+    const used=new Set(form.milestones.map(m=>Number(m.pct)));
+    let pct=50; for(let v=10;v<=100;v+=10){ if(!used.has(v)){ pct=v; break; } }
+    set("milestones",[...form.milestones,{id:uid(),pct,label:"",reachedAt:null}]);
+  };
+  const setMilestone=(id,k,v)=>set("milestones",form.milestones.map(m=>m.id===id?{...m,[k]:v}:m));
+  const delMilestone=(id)=>set("milestones",form.milestones.filter(m=>m.id!==id));
+  const cleanMilestones=()=>{
+    const seen=new Set();
+    return form.milestones
+      .map(m=>({...m,pct:Math.max(1,Math.min(100,Math.round(Number(m.pct)||0))),label:String(m.label||"").trim()}))
+      .filter(m=>{ if(seen.has(m.pct)) return false; seen.add(m.pct); return true; })
+      .sort((a,b)=>a.pct-b.pct);
+  };
+  const save=()=>{ if(!canSave) return; onSave({...form,id:initial?.id||uid(),title:form.title.trim(),description:form.description.trim(),targetValue:Number(form.targetValue)||100,baselineValue:Number(form.baselineValue)||0,manualValue:Number(form.manualValue)||0,targetDate:form.targetDate||null,milestones:cleanMilestones()}); };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal goal-modal" onClick={e=>e.stopPropagation()}>
@@ -4479,6 +4539,27 @@ function ProjectModal({onClose,onSave,initial}) {
           <div className="modal-row2">
             <div><label className="field-label">วันเริ่มต้น</label><input type="date" className="modal-input" value={form.startDate} onChange={e=>set("startDate",e.target.value)}/></div>
             <div><label className="field-label">วันครบกำหนด</label><input type="date" className="modal-input" value={form.targetDate||""} onChange={e=>set("targetDate",e.target.value)}/></div>
+          </div>
+          <div>
+            <label className="field-label">หมุดความคืบหน้า (milestones)</label>
+            <div className="ms-edit-hint">ตั้งเป็น % ของความคืบหน้าโปรเจกต์ — ถึงเมื่อไหร่จะเด้งเตือนให้{form.measureType==="numeric"&&Number(form.targetValue)!==Number(form.baselineValue)?" · โปรเจกต์นี้เป็นตัวเลข จะโชว์ค่าจริงคู่ให้ด้วย":""}</div>
+            <div className="ms-edit-list">
+              {msSorted.map(m=>{
+                const vt=milestoneValueText(form,m.pct);
+                return (
+                  <div key={m.id} className="ms-edit-row">
+                    <input type="number" min="1" max="100" className="modal-input ms-edit-pct" value={m.pct} onChange={e=>setMilestone(m.id,"pct",e.target.value)}/>
+                    <span className="ms-edit-unit">%</span>
+                    <input className="modal-input ms-edit-label" placeholder={vt?`ไม่ตั้งชื่อ = ${vt}`:"ชื่อหมุด (ไม่ใส่ก็ได้)"} value={m.label||""} onChange={e=>setMilestone(m.id,"label",e.target.value)}/>
+                    <button type="button" className="del-btn" onClick={()=>delMilestone(m.id)}><Trash2 size={17}/></button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="ms-edit-actions">
+              <button type="button" className="text-btn" onClick={addMilestone}><Plus size={16}/> เพิ่มหมุด</button>
+              <button type="button" className="text-btn" onClick={addAutoMilestones} disabled={autoMilestones(form.milestones).length===0}><Flag size={16}/> แบ่งอัตโนมัติ 25/50/75/100</button>
+            </div>
           </div>
           <div>
             <label className="field-label">สีประจำโปรเจกต์</label>
@@ -4608,6 +4689,8 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
   const exp=expectedProgress(project);
   const dLeft=daysUntil(project.targetDate);
   const curVal=projectCurrentValue(project,data);
+  const msList=sortedMilestones(project);
+  const msDone=msList.filter(m=>m.reachedAt).length;
   const cat=goalCategoryInfo(project.category); const CatIcon=cat.icon;
   const r=42,c=2*Math.PI*r,off=c-(prog/100)*c;
   const saveCheckin=(ci)=>{ persist({...data,checkins:[...(data.checkins||[]),ci],activity:logActivity(data,{source:"goal",text:`บันทึกความคืบหน้า "${project.title}" → ${ci.value.toLocaleString()} ${project.unit||""}`})}); setShowCheckin(false); };
@@ -4712,6 +4795,32 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
           </div>
         </div>
       )}
+      {msList.length>0&&(
+        <div className="card">
+          <div className="card-head"><Flag size={22}/> หมุดความคืบหน้า ({msDone}/{msList.length})</div>
+          <div className="prj-bar ms-track">
+            <div className="prj-bar-fill" style={{width:`${prog}%`,background:project.color}}/>
+            {msList.map(m=>(
+              <div key={m.id} className={`prj-bar-ms ${prog>=Number(m.pct)?"hit":""}`} style={{left:`${Math.min(100,Number(m.pct))}%`,"--goal-color":project.color}} title={`${milestoneLabel(m)} · ${m.pct}%`}/>
+            ))}
+          </div>
+          <div className="ms-list">
+            {msList.map(m=>{
+              const hit=!!m.reachedAt; const vt=milestoneValueText(project,m.pct);
+              return (
+                <div key={m.id} className={`ms-item ${hit?"hit":""}`}>
+                  <div className="ms-item-dot" style={hit?{background:project.color,borderColor:project.color,color:"#0b0817"}:null}>{hit?<Check size={13}/>:null}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="ms-item-title">{milestoneLabel(m)}</div>
+                    <div className="ms-item-sub">{m.pct}%{vt?` · ${vt}`:""}</div>
+                  </div>
+                  <div className="ms-item-right" style={hit?{color:project.color}:null}>{hit?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:`อีก ${Math.max(0,Math.ceil(Number(m.pct)-prog))}%`}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="card">
         <div className="card-head">
           <ListChecks size={24}/> Project Tasks ({doneTasks.length}/{tasks.length})
@@ -4735,6 +4844,7 @@ function ProjectCard({project,data,onOpen}) {
   const dLeft=daysUntil(project.targetDate);
   const exp=expectedProgress(project);
   const curVal=projectCurrentValue(project,data);
+  const nextMs=nextMilestone(project,prog);
   return (
     <button className="prj-card" style={{"--goal-color":project.color}} onClick={()=>onOpen(project.id)}>
       <div className="goal-card-top">
@@ -4746,9 +4856,13 @@ function ProjectCard({project,data,onOpen}) {
         <div className="prj-bar">
           <div className="prj-bar-fill" style={{width:`${prog}%`,background:project.color}}/>
           {exp!=null&&prog<100&&<div className="prj-bar-marker" style={{left:`${Math.min(100,exp)}%`}} title={`ควรอยู่ที่ ${Math.round(exp)}%`}/>}
+          {sortedMilestones(project).map(m=>(
+            <div key={m.id} className={`prj-bar-ms ${prog>=Number(m.pct)?"hit":""}`} style={{left:`${Math.min(100,Number(m.pct))}%`,"--goal-color":project.color}} title={`${milestoneLabel(m)} · ${m.pct}%`}/>
+          ))}
         </div>
         <span className="prj-bar-pct" style={{color:project.color}}>{prog}%</span>
       </div>
+      {nextMs&&<div className="prj-card-next-ms"><Flag size={13}/> หมุดถัดไป {milestoneLabel(nextMs)} · อีก {Math.max(0,Math.ceil(Number(nextMs.pct)-prog))}%</div>}
       <div className="prj-card-foot">
         <span className="prj-health-badge" style={{background:`${health.color}1f`,color:health.color}}>● {health.label}</span>
         {project.measureType==="numeric"
@@ -5335,6 +5449,19 @@ function MomentumCard({data,onOpen}){
     </div>
   );
 }
+function MilestoneToast({toast,onClose}) {
+  useEffect(()=>{ const t=setTimeout(onClose,7000); return()=>clearTimeout(t); },[]);
+  return (
+    <div className="ms-toast" style={{"--goal-color":toast.color||"#8b5cf6"}}>
+      <div className="ms-toast-icon"><Flag size={19}/></div>
+      <div style={{flex:1,minWidth:0}}>
+        <div className="ms-toast-title">ถึงหมุดแล้ว · {toast.label}</div>
+        <div className="ms-toast-sub">{toast.title}{toast.valueText?` · ${toast.valueText}`:""}</div>
+      </div>
+      <button className="ms-toast-x" onClick={onClose}><X size={18}/></button>
+    </div>
+  );
+}
 function SecretaryDashboard() {
   const {data,loading,persist}=useSecretaryData();
   const [now,setNow]=useState(new Date());
@@ -5351,6 +5478,7 @@ function SecretaryDashboard() {
   const [search,setSearch]=useState("");
   const [showDashTask,setShowDashTask]=useState(false);
   const [editDashTask,setEditDashTask]=useState(null);
+  const [toasts,setToasts]=useState([]);
   useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),30000); return()=>clearInterval(t); },[]);
   useEffect(()=>{
     const onKey=(e)=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); setShowQuick(true); } };
@@ -5358,7 +5486,22 @@ function SecretaryDashboard() {
     return()=>window.removeEventListener("keydown",onKey);
   },[]);
   useEffect(()=>{ if(!data) return; const {data:r,changed}=applyResets(data); if(changed) persist(r); },[now]);
-  useEffect(()=>{ if(!data) return; const next=recordProgressSnapshot(data); if(next) persist({...data,progressLog:next}); },[data&&data.projects,data&&data.tasks,data&&data.checkins]);
+  // snapshot ความคืบหน้ารวม + ตรวจหมุดที่เพิ่งข้าม — รวมไว้ effect เดียวกัน persist ครั้งเดียว
+  // (ถ้าแยกสอง effect จะ spread จาก data ก้อนเดียวกันแล้วเขียนทับกันเอง)
+  useEffect(()=>{
+    if(!data) return;
+    const nextLog=recordProgressSnapshot(data);
+    const ms=syncMilestones(data);
+    if(!nextLog&&!ms) return;
+    const next={...data};
+    if(nextLog) next.progressLog=nextLog;
+    if(ms){
+      next.projects=ms.projects;
+      next.activity=ms.reached.reduce((acc,r)=>logActivity({activity:acc},{source:"goal",text:`ถึงหมุด ${r.label} ของ "${r.title}"`,status:"completed"}),data.activity||[]);
+    }
+    persist(next);
+    if(ms&&ms.reached.length) setToasts(prev=>[...prev,...ms.reached].slice(-3));
+  },[data&&data.projects,data&&data.tasks,data&&data.checkins]);
   const dateStr=now.toLocaleDateString("th-TH",{weekday:"long",day:"numeric",month:"long",year:"numeric",calendar:"buddhist"});
   const timeStr=now.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
   const {text:greetText,Icon:GreetIcon}=greetingFor(now.getHours());
@@ -5438,6 +5581,11 @@ function SecretaryDashboard() {
   })();
   return (
     <div className="app">
+      {toasts.length>0&&(
+        <div className="ms-toast-wrap">
+          {toasts.map(t=><MilestoneToast key={t.id} toast={t} onClose={()=>setToasts(prev=>prev.filter(x=>x.id!==t.id))}/>)}
+        </div>
+      )}
       {showDashTask&&<TaskModal initial={editDashTask} projects={data.projects||[]} onClose={()=>{setShowDashTask(false);setEditDashTask(null);}} onSave={(t)=>{
         const ex=(data.tasks||[]).find(x=>x.id===t.id);
         persist({...data,tasks:ex?(data.tasks||[]).map(x=>x.id===t.id?t:x):[...(data.tasks||[]),t],activity:ex?data.activity:logActivity(data,{source:"task",text:`เพิ่มงาน "${t.title}"`})});

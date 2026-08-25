@@ -626,3 +626,40 @@ input:focus,textarea:focus{border-color:#5b4e85;}
   .hero-panel .mom-body{flex-direction:column;align-items:stretch;gap:10px;}
   .hero-panel .mom-ring{align-self:center;}
 }
+
+/* ═══ Milestones (หมุดความคืบหน้าโปรเจกต์) ═══ */
+.prj-bar-ms{position:absolute;top:-2px;width:3px;height:12px;margin-left:-1.5px;border-radius:2px;background:#ffffff3d;transition:background .25s;}
+.prj-bar-ms.hit{background:var(--goal-color,#8b5cf6);box-shadow:0 0 6px var(--goal-color,#8b5cf6);}
+.prj-card-next-ms{display:flex;align-items:center;gap:6px;font-size:13px;color:#a29bc4;}
+.ms-track{margin:4px 0 18px;height:10px;border-radius:5px;}
+.ms-track .prj-bar-fill{border-radius:5px;}
+.ms-track .prj-bar-ms{top:-3px;height:16px;}
+.ms-list{display:flex;flex-direction:column;gap:8px;}
+.ms-item{display:flex;align-items:center;gap:12px;padding:10px 12px;background:#191330;border:1px solid #2f2745;border-radius:12px;}
+.ms-item.hit{background:#1d1738;border-color:#3a3155;}
+.ms-item-dot{width:24px;height:24px;flex-shrink:0;border-radius:50%;border:2px solid #3a3155;background:#221b38;display:flex;align-items:center;justify-content:center;}
+.ms-item-title{font-size:16px;font-weight:600;color:#ece8f8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ms-item.hit .ms-item-title{color:#fff;}
+.ms-item-sub{font-size:12.5px;color:#8a82a8;font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+.ms-item-right{font-size:13px;color:#8a82a8;flex-shrink:0;text-align:right;}
+
+/* ตัวแก้ไขหมุดใน ProjectModal */
+.ms-edit-hint{font-size:12.5px;color:#8a82a8;line-height:1.5;margin:-2px 0 8px;}
+.ms-edit-list{display:flex;flex-direction:column;gap:8px;}
+.ms-edit-row{display:flex;align-items:center;gap:8px;}
+.ms-edit-pct{width:74px;flex-shrink:0;text-align:right;font-family:'IBM Plex Mono',monospace;}
+.ms-edit-unit{font-size:14px;color:#8a82a8;flex-shrink:0;margin-left:-4px;}
+.ms-edit-label{flex:1;min-width:0;}
+.ms-edit-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;}
+.ms-edit-actions .text-btn:disabled{opacity:.4;cursor:default;}
+
+/* Toast ตอนข้ามหมุด — โผล่ได้ทุกหน้า */
+.ms-toast-wrap{position:fixed;right:18px;bottom:18px;z-index:120;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 36px));}
+.ms-toast{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:14px;background:#1d1738;border:1px solid #3a3155;border-left:3px solid var(--goal-color,#8b5cf6);box-shadow:0 14px 40px rgba(0,0,0,.5);animation:msToastIn .35s cubic-bezier(.2,.9,.3,1.2);}
+.ms-toast-icon{width:34px;height:34px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#2f2745;background:color-mix(in srgb,var(--goal-color,#8b5cf6) 22%,transparent);color:var(--goal-color,#8b5cf6);}
+.ms-toast-title{font-size:15px;font-weight:700;color:#fff;line-height:1.3;}
+.ms-toast-sub{font-size:12.5px;color:#a29bc4;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ms-toast-x{background:none;border:none;color:#7a7398;cursor:pointer;padding:2px;flex-shrink:0;display:flex;}
+.ms-toast-x:hover{color:#ece8f8;}
+@keyframes msToastIn{from{opacity:0;transform:translateY(14px) scale(.96);}to{opacity:1;transform:none;}}
+@media(max-width:560px){.ms-toast-wrap{right:12px;left:12px;bottom:12px;max-width:none;}}
