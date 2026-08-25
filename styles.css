@@ -663,3 +663,10 @@ input:focus,textarea:focus{border-color:#5b4e85;}
 .ms-toast-x:hover{color:#ece8f8;}
 @keyframes msToastIn{from{opacity:0;transform:translateY(14px) scale(.96);}to{opacity:1;transform:none;}}
 @media(max-width:560px){.ms-toast-wrap{right:12px;left:12px;bottom:12px;max-width:none;}}
+
+/* แก้ล้นแนวนอนบนมือถือ: .topbar-right กว้างเกิน viewport 3px ที่จอ 390px (ช่องค้นหาไม่ยอมหด) */
+@media(max-width:900px){
+  .topbar-right{width:100%;min-width:0;}
+  .search-wrap{flex:1;min-width:0;}
+  .search-wrap input{width:100%;min-width:0;}
+}
