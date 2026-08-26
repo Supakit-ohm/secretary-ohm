@@ -468,6 +468,7 @@ const Flag = makeIcon("fa-flag");
 const Lightbulb = makeIcon("fa-lightbulb");
 const SplitIcon = makeIcon("fa-code-branch");
 const Flame = makeIcon("fa-fire");
+const SortDesc = makeIcon("fa-arrow-down-wide-short"); // ข้อ 24/3: ปุ่มเรียงตามมูลค่าในการ์ดเหรียญ
 
 // ---- จำลอง window.storage ด้วย localStorage (พรีวิวเท่านั้น ยังไม่ต่อ Google Drive) ----
 window.storage = {
@@ -1509,6 +1510,81 @@ function renderPieLabel({cx,cy,midAngle,outerRadius,percent,name,fill}){
     </text>
   );
 }
+/* ═══ ข้อ 24/4: การ์ดโดนัทหมวดหมู่แบบ bento (ใช้ในหน้า Finance Overview) ═══
+   *** อย่าเอาไปแทน CategoryPieCard ด้านล่าง *** — ตัวนั้นยังถูกใช้ในแท็บ Income/Expenses
+   ที่ยังไม่ถึงคิว (ข้อ 24/8) และแท็บนั้นห้ามรื้อเป็น bento ตามข้อ 24
+   กดที่ legend เพื่อกางรายการของหมวดนั้น (แทนการคลิกชิ้นพายแบบเดิม — โดนัท SVG ไม่มี hit area รายชิ้น) */
+function FinDonutCard({title,note,data,getItems,accent,sign,emptyText,span}){
+  const [active,setActive]=useState(null);
+  const total=data.reduce((a,c)=>a+c.value,0);
+  const segs=data.map((d,i)=>({key:d.name,label:d.name,value:d.value,color:DB_CAT_COLORS[i%DB_CAT_COLORS.length]}));
+  /* หมวดที่ยอดสุทธิ "ติดลบ" มีจริง — รายจ่ายหมวดนั้นถูกคืนเงินมากกว่าที่จ่าย (source:"csv-refund", amount บวก)
+     โดนัทวาดชิ้นติดลบไม่ได้ ต้องตัดออกจากวง แต่ยังโชว์ใน legend เป็นจำนวนเงิน ไม่ใช่ % (ไม่งั้นจะเห็น "-8%") */
+  const donutSegs=segs.filter(s=>s.value>0);
+  const donutTotal=donutSegs.reduce((a,s)=>a+s.value,0);
+  const activeIdx=segs.findIndex(s=>s.key===active);
+  const activeSeg=activeIdx>=0?segs[activeIdx]:null;
+  const activePct=activeSeg&&donutTotal>0?(activeSeg.value/donutTotal)*100:0;
+  const items=activeSeg?getItems(activeSeg.key).slice().sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount)):[];
+  return (
+    <div className={`db-card ${span||"db-span2"}`}>
+      <div className="db-head">
+        <div><div className="db-title">{title}</div><div className="db-note">{note}{data.length>0&&" · กดที่หมวดเพื่อดูรายการ"}</div></div>
+        <div className="db-bignum-inline db-mono" style={{color:accent}}>{total>0?`${sign}฿${dbShort(total)}`:"—"}</div>
+      </div>
+      {data.length===0||donutTotal<=0
+        ? <div className="db-empty">{emptyText}</div>
+        : (
+          <>
+            <div className="db-donut-wrap">
+              <DashDonut segs={donutSegs} total={donutTotal}/>
+              <div className="db-legend fin-legend-click">
+                {segs.slice(0,6).map(s=>(
+                  <span className={`db-lg fin-lg-btn ${active===s.key?"on":""}`} key={s.key}
+                    onClick={()=>setActive(p=>p===s.key?null:s.key)} role="button">
+                    <i style={{background:s.value>0?s.color:"var(--ink-6)"}}/> {s.label}
+                    <b className="db-mono">{s.value>0?`${Math.round((s.value/donutTotal)*100)}%`:`${sign==="-"?"+":""}฿${dbShort(Math.abs(s.value))}`}</b>
+                  </span>
+                ))}
+                {segs.length>6&&<span className="db-lg"><i style={{background:"var(--ink-6)"}}/> อื่นๆ อีก {segs.length-6} หมวด</span>}
+              </div>
+            </div>
+            {donutTotal!==total&&(
+              <div className="db-note" style={{marginTop:12}}>
+                วงกลมคิดจากยอดที่{sign==="-"?"จ่าย":"รับ"}จริง ฿{dbNum(donutTotal)} · เลขหัวการ์ดเป็นยอดสุทธิหลังหักคืนเงิน ฿{dbNum(total)}
+              </div>
+            )}
+            {activeSeg&&(
+              <div className="fin-detail">
+                <div className="db-row" style={{borderBottom:"none",paddingBottom:4}}>
+                  <span className="lab"><i className="db-dot" style={{background:activeSeg.color}}/> {activeSeg.label}</span>
+                  <span className="val db-mono" style={{color:accent}}>{sign}฿{dbNum(activeSeg.value)}</span>
+                </div>
+                <div className="db-note">
+                  {activePct>=0?`${activePct.toFixed(1)}% ของทั้งหมด`:"ยอดสุทธิติดลบ — คืนเงินมากกว่าที่จ่าย"} · {items.length} รายการ
+                </div>
+                <div className="db-track" style={{margin:"8px 0 12px",height:8}}>
+                  <div className="db-fill" style={{width:`${Math.max(0,Math.min(100,activePct))}%`,background:activeSeg.color}}/>
+                </div>
+                <div className="fin-detail-list">
+                  {items.length===0&&<div className="db-empty">ไม่มีรายการ</div>}
+                  {items.map(it=>(
+                    <div key={it.id} className="fin-detail-item">
+                      <span className="db-note db-mono fin-inline-note">{it.date}</span>
+                      <span className="fin-detail-amt db-mono" style={{color:(sign==="-"&&it.amount>0)?"var(--accent-soft)":accent}}>
+                        {(sign==="-"&&it.amount>0)?"+":sign}฿{Math.abs(it.amount).toLocaleString()}
+                      </span>
+                      <span className="fin-detail-memo">{it.memo||"—"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+    </div>
+  );
+}
 function CategoryPieCard({title,subtitle,data,getItems,accent,sign,emptyText}){
   const [active,setActive]=useState(null);
   const total=data.reduce((a,c)=>a+c.value,0);
@@ -1592,8 +1668,9 @@ function CategoryPieCard({title,subtitle,data,getItems,accent,sign,emptyText}){
     </div>
   );
 }
-function FinanceOverviewTab({finance,persist}) {
+function FinanceOverviewTab({finance,persist,setTab}) {
   const [viewMode,setViewMode]=useState("month");
+  const [showAddAcc,setShowAddAcc]=useState(false);
   const income=finance.finance.income||[];
   const expenses=finance.finance.expenses||[];
   const incomeByMonth={};
@@ -1623,60 +1700,67 @@ function FinanceOverviewTab({finance,persist}) {
   expensesInRange.forEach(e=>{ byCategory[e.category]=(byCategory[e.category]||0)+expOut(e); });
   const expensePie=Object.entries(byCategory).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
   const rangeLabel=viewMode==="month"
-    ? (monthOptions.includes(selectedMonth)?new Date(`${selectedMonth}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Select month")
-    : `Year ${selectedYear}`;
+    ? (monthOptions.includes(selectedMonth)?new Date(`${selectedMonth}-01`).toLocaleDateString("th-TH",{month:"long",year:"numeric"}):"เลือกเดือน")
+    : `ปี ${selectedYear}`;
+  const savingRate=totalIncome>0?(netIncome/totalIncome)*100:null;
+  const addAccount=(row)=>{
+    persist({...finance,finance:{...finance.finance,cashAccounts:[...(finance.finance.cashAccounts||[]),
+      {id:uid(),name:row.name,balance:row.balance,updatedAt:todayISO()}]}});
+    setShowAddAcc(false);
+  };
   return (
-    <div className="fin-section">
-      <NetWorthCard finance={finance} persist={persist}/>
-      <div style={{display:"flex",gap:10,marginBottom:20,padding:"0 20px",flexWrap:"wrap"}}>
-        <div className="fin-filter-group">
-          <label style={{fontSize:17,color:"#a29bc4",marginBottom:4,display:"block"}}>View</label>
-          <div style={{display:"flex",gap:6}}>
-            <button className={`fin-filter-btn ${viewMode==="month"?"active":""}`} onClick={()=>setViewMode("month")}>Month</button>
-            <button className={`fin-filter-btn ${viewMode==="year"?"active":""}`} onClick={()=>setViewMode("year")}>Year</button>
+    <div className="fin-section fin-page">
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Overview <span>· ภาพรวมการเงิน</span></h1>
+          <div className="db-hero-line">
+            {rangeLabel} · รับ {incomeInRange.length} รายการ · จ่าย {expensesInRange.length} รายการ
+            {savingRate!=null&&<> · เก็บได้ {savingRate.toFixed(0)}% ของรายรับ</>}
           </div>
-        </div>
-        {viewMode==="month"&&(
-          <div className="fin-filter-group">
-            <label style={{fontSize:17,color:"#a29bc4",marginBottom:4,display:"block"}}>Month</label>
-            <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"#191330",border:"1px solid #3a3155",borderRadius:8,color:"#f2eefc",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:20,cursor:"pointer"}}>
-              {monthOptions.map(m=>(<option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>))}
-            </select>
+          {/* ตัวกรองช่วงเวลา — แคปซูลสเกลเดียวกับแถบเมนู */}
+          <div className="fin-range">
+            <button className={`fin-range-btn ${viewMode==="month"?"active":""}`} onClick={()=>setViewMode("month")}>รายเดือน</button>
+            <button className={`fin-range-btn ${viewMode==="year"?"active":""}`} onClick={()=>setViewMode("year")}>รายปี</button>
+            {viewMode==="month"
+              ? <select className="fin-range-select" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>
+                  {monthOptions.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("th-TH",{month:"long",year:"numeric"})}</option>)}
+                </select>
+              : <select className="fin-range-select" value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))}>
+                  {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+                </select>}
           </div>
-        )}
-        {viewMode==="year"&&(
-          <div className="fin-filter-group">
-            <label style={{fontSize:17,color:"#a29bc4",marginBottom:4,display:"block"}}>Year</label>
-            <select value={selectedYear} onChange={(e)=>setSelectedYear(Number(e.target.value))} style={{background:"#191330",border:"1px solid #3a3155",borderRadius:8,color:"#f2eefc",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:20,cursor:"pointer"}}>
-              {yearOptions.map(y=>(<option key={y} value={y}>{y}</option>))}
-            </select>
+          {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว */}
+          <button className="db-btn primary inv-add-btn" onClick={()=>setShowAddAcc(true)}><Plus size={14}/> เพิ่มข้อมูล</button>
+        </div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n acc db-mono">฿{dbShort(totalIncome)}</div>
+            <div className="l"><span className="db-dot a"/> รายรับ</div>
           </div>
-        )}
-      </div>
-      <div className="fin-stat-row">
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon income"><TrendingUp size={24}/></div>
-          <div><div className="fin-stat-label">Income</div><div className="fin-stat-value income">฿{totalIncome.toLocaleString()}</div></div>
-        </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon expense"><TrendingDown size={24}/></div>
-          <div><div className="fin-stat-label">Expenses</div><div className="fin-stat-value expense">฿{totalExpense.toLocaleString()}</div></div>
-        </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon net"><PiggyBank size={24}/></div>
-          <div><div className="fin-stat-label">Balance</div><div className={`fin-stat-value ${netIncome>=0?"income":"expense"}`}>฿{netIncome.toLocaleString()}</div></div>
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(totalExpense)}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> รายจ่าย</div>
+          </div>
+          <div className="db-bignum">
+            <div className={`n db-mono ${netIncome>=0?"gld":"neg"}`}>{netIncome<0?"-":""}฿{dbShort(Math.abs(netIncome))}</div>
+            <div className="l"><span className={`db-dot ${netIncome>=0?"g":"d"}`}/> คงเหลือ</div>
+          </div>
         </div>
       </div>
-      <div className="fin-pie-split">
-        <CategoryPieCard
-          title="Income by Source" subtitle={rangeLabel} data={incomePie} accent="#34d399" sign="+"
-          emptyText="No income recorded for this period"
+      <div className="db-bento">
+        <NetWorthCard finance={finance} setTab={setTab}/>
+        <CashAccountsCard finance={finance} persist={persist}/>
+        <FinDonutCard
+          title="รายรับตามแหล่งที่มา" note={rangeLabel} data={incomePie} accent="var(--accent-soft)" sign="+"
+          emptyText="ยังไม่มีรายรับในช่วงนี้"
           getItems={(name)=>incomeInRange.filter(i=>i.source===name).map(i=>({id:i.id,date:i.date,memo:i.note,amount:i.amount}))}/>
-        <CategoryPieCard
-          title="Expenses by Category" subtitle={rangeLabel} data={expensePie} accent="#fb923c" sign="-"
-          emptyText="No expenses recorded for this period"
+        <FinDonutCard
+          title="รายจ่ายตามหมวด" note={rangeLabel} data={expensePie} accent="var(--orange-soft)" sign="-"
+          emptyText="ยังไม่มีรายจ่ายในช่วงนี้"
           getItems={(name)=>expensesInRange.filter(e=>e.category===name).map(e=>({id:e.id,date:e.date,memo:e.memo,amount:e.amount}))}/>
       </div>
+      {showAddAcc&&<AddCashAccountModal onClose={()=>setShowAddAcc(false)} onSave={addAccount}/>}
     </div>
   );
 }
@@ -1998,8 +2082,14 @@ const INVEST_TYPES=[
   {key:"other",label:"อื่นๆ"},
 ];
 const INVEST_TYPE_LABELS=INVEST_TYPES.reduce((m,t)=>{m[t.key]=t.label;return m;},{});
-// เฟส 4: สีประจำประเภทสินทรัพย์ ใช้ในแถบสัดส่วน/ตารางภาพรวม
-const INVEST_TYPE_COLORS={retirement:"#8b5cf6",insurance:"#60a5fa",gold:"#fbbf24",crypto:"#f472b6",stock:"#34d399",fund:"#38bdf8",other:"#8a82a8"};
+/* เฟส 4: สีประจำประเภทสินทรัพย์ ใช้ในแถบสัดส่วน/โดนัทภาพรวม
+   ข้อ 24/3 (2026-08-26): เปลี่ยนจากชุดม่วง/ชมพูเดิมเป็น Dark Emerald ตามข้อ 23
+   ชุดนี้เป็นแหล่งเดียวของทั้งแอปแล้ว — DB_ALLOC_COLORS (การ์ด Portfolio ในหน้า Home) อ้างอิงตัวนี้ อย่านิยามซ้ำที่อื่น */
+const INVEST_TYPE_COLORS={retirement:"#10b981",insurance:"#6f9e8d",gold:"#d9b26a",crypto:"#eccf94",stock:"#34d399",fund:"#4d7f6c",other:"#365749"};
+/* ชุดสีหมวดหมู่ทั่วไปของธีม (สลับเขียว-ทอง เข้ม/อ่อน ให้ชิ้นที่ติดกันแยกออกจากกัน)
+   ใช้กับโดนัทที่หมวดไม่ตายตัว: รายเหรียญคริปโต (ข้อ 24/3) · Income by Source / Expenses by Category (ข้อ 24/4)
+   หมวดที่ตายตัวใช้ INVEST_TYPE_COLORS แทน · `COLORS` ชุดม่วงเดิมยังใช้อยู่ในหน้าที่ยังไม่ถึงคิว อย่าเพิ่งลบ */
+const DB_CAT_COLORS=["#10b981","#d9b26a","#6ee7b7","#6f9e8d","#eccf94","#34d399","#4d7f6c","#b99a52"];
 const INVEST_CSV_CATEGORY="ออม ลงทุน"; // category ใน CSV ของ Make by KBank ที่หมายถึงการโอนไปลงทุน (สะกดแบบนี้เป๊ะ)
 const INVEST_MAP_KEY="secretary-invest-type-map";
 function loadInvestMap(){ try{ return JSON.parse(localStorage.getItem(INVEST_MAP_KEY)||"{}"); }catch(err){ return {}; } }
@@ -2765,6 +2855,9 @@ function FinanceInvestmentsTab({finance,persist}) {
   const addCoin=(row)=>{ setHoldings([...holdings,{id:uid(),...row,updatedAt:todayISO(),priceUpdatedAt:todayISO()}]); setShowAddCoin(false); };
   const [editCoinId,setEditCoinId]=useState(null);
   const [showAddInv,setShowAddInv]=useState(false);
+  /* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของหน้านี้เหลือปุ่มเดียว — กดแล้วเลือกชนิดในโมดัล
+     (ปุ่ม + DCA บนการ์ดเหรียญไม่นับ เป็นการกระทำเฉพาะเหรียญนั้น ไม่ใช่ปุ่มเพิ่มระดับหน้า — ohm ยืนยัน 2026-08-26) */
+  const [showAddPicker,setShowAddPicker]=useState(false);
   /* แยกคอลัมน์ตามพอร์ต (Binance Global ถือยาว vs Binance TH ที่ DCA — กลยุทธ์คนละแบบ ควรวัดผลแยกกัน)
      ใช้ h.platform ตรงตัว (free text) — ค่า "Binance Global"/"Binance TH" ขึ้นก่อนเสมอ ที่เหลือเรียงตามมูลค่า */
   const byPlatform={};
@@ -2799,15 +2892,21 @@ function FinanceInvestmentsTab({finance,persist}) {
     return {...t,contrib,value,pnl:value-contrib,share:totalValue>0?(value/totalValue)*100:0,color:INVEST_TYPE_COLORS[t.key]||"#8a82a8"};
   });
   const activeTypes=perType.filter(t=>t.contrib>0||t.value>0).sort((a,b)=>b.value-a.value||b.contrib-a.contrib);
-  const allocPieData=activeTypes.filter(t=>t.value>0).map(t=>({name:t.label,value:t.value,color:t.color}));
-  /* แถบ "ค่าพลัง" กำไร(เขียว)/ขาดทุน(แดง) เริ่มจาก 0 เสมอ ยาวตาม |%| (เพดาน 100% กันแถบทะลุกรอบ) */
+  /* ข้อ 24/3: เลิกใช้ Recharts PieChart ในการ์ด Allocation — ใช้ DashDonut (SVG ล้วน) ชุดเดียวกับการ์ด Portfolio หน้า Home */
+  const allocSegs=activeTypes.filter(t=>t.value>0).map(t=>({key:t.key,label:t.label,color:t.color,value:t.value}));
+  const allocTotal=allocSegs.reduce((a,s)=>a+s.value,0);
+  /* กราฟเงินใส่รายเดือน: ใช้แท่ง CSS .db-bars แบบการ์ด Movement หน้า Home (โชว์ 8 เดือนล่าสุด) */
+  const barMonths=chart.slice(-8);
+  const barMax=barMonths.reduce((m,c)=>Math.max(m,c.value),0);
+  /* แถบ "ค่าพลัง" กำไร(เขียว)/ขาดทุน(ส้ม) เริ่มจาก 0 เสมอ ยาวตาม |%| (เพดาน 100% กันแถบทะลุกรอบ)
+     ข้อ 24/3: ใช้ตัวแปรธีมแทน hex ตรงๆ + ย่อ % เหลือ 11px ตามสเกลป้ายจางของหน้า Home */
   const renderPnlBar=(pnlAmt,pct)=>{
     const w=Math.min(100,Math.abs(pct));
-    const color=pnlAmt>=0?"#34d399":"#fb923c";
+    const color=pnlAmt>=0?"var(--accent-soft)":"var(--orange)";
     return (
-      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
         <div className="pnl-bar-track"><div className="pnl-bar-fill" style={{width:`${w}%`,background:color}}/></div>
-        <span style={{fontSize:14,color,minWidth:70,textAlign:"right",whiteSpace:"nowrap"}}>{pnlAmt>=0?"+":"-"}{Math.abs(pct).toFixed(1)}%</span>
+        <span className="pnl-bar-pct db-mono" style={{color}}>{pnlAmt>=0?"+":"-"}{Math.abs(pct).toFixed(1)}%</span>
       </div>
     );
   };
@@ -2822,214 +2921,249 @@ function FinanceInvestmentsTab({finance,persist}) {
     const dLeft=daysUntil(p.targetDate);
     const cur=p.measureType==="numeric"?projectCurrentValue(p,finance):null;
     return (
-      <div key={p.id} style={{padding:"10px 0",borderBottom:"1px solid #2f2745"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:17,color:"#f2eefc"}}>{p.title}</span>
-          <span className="exp-csv-badge" style={{color:health.color,borderColor:"#3a3155",background:"#221b38"}}>{health.label}</span>
+      <div key={p.id} className="inv-goal">
+        <div className="db-row" style={{borderBottom:"none",padding:"0 0 2px"}}>
+          <span className="lab" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</span>
+          <span className="val inv-goal-health" style={{color:health.color}}>{health.label}</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:6}}>
-          <div style={{flex:1,height:8,borderRadius:8,background:"#2f2745",overflow:"hidden"}}>
-            <div style={{width:`${prog}%`,height:"100%",background:p.color||"#8b5cf6"}}/>
-          </div>
-          <span style={{fontSize:15,color:"#a29bc4",minWidth:44,textAlign:"right"}}>{prog}%</span>
+        <div className="db-track" style={{margin:"8px 0 6px",height:8}}>
+          <div className="db-fill" style={{width:`${prog}%`,background:p.color||"var(--accent)"}}/>
         </div>
-        <div style={{fontSize:15,color:"#a29bc4",marginTop:4}}>
-          {cur!=null&&<>{cur.toLocaleString()} / {(p.targetValue||0).toLocaleString()} {p.unit} · </>}
-          {p.targetDate?(dLeft<0?`เลยกำหนดมา ${Math.abs(dLeft)} วัน`:`เหลือ ${dLeft} วัน (${p.targetDate})`):"ไม่ได้กำหนดวันครบกำหนด"}
+        <div className="db-note" style={{marginTop:0}}>
+          <span className="db-mono">{prog}%</span>
+          {cur!=null&&<> · <span className="db-mono">{cur.toLocaleString()}/{(p.targetValue||0).toLocaleString()}</span> {p.unit}</>}
+          {" · "}{p.targetDate?(dLeft<0?`เลยกำหนดมา ${Math.abs(dLeft)} วัน`:`เหลือ ${dLeft} วัน`):"ไม่กำหนดวันครบ"}
         </div>
       </div>
     );
   };
   return (
-    <div className="fin-section">
-      <div className="fin-stat-row">
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon net"><PiggyBank size={24}/></div>
-          <div><div className="fin-stat-label">เงินที่ใส่ไปสะสม</div><div className="fin-stat-value">฿{Math.round(total).toLocaleString()}</div></div>
+    <div className="fin-section fin-page">
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home (db-hero-title 38px + db-bignum .n 40px) ตามธรรมนูญข้อ 32 ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Investments <span>· พอร์ตสะสม</span></h1>
+          <div className="db-hero-line">
+            {list.length} รายการสะสม · {holdings.length} เหรียญคริปโต · เฉลี่ย ฿{chart.length?dbNum(total/chart.length):0}/เดือน
+          </div>
+          {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว */}
+          <button className="db-btn primary inv-add-btn" onClick={()=>setShowAddPicker(true)}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon income"><Wallet size={24}/></div>
-          <div><div className="fin-stat-label">มูลค่าปัจจุบัน</div><div className="fin-stat-value" style={{color:"#a78bfa"}}>฿{Math.round(totalValue).toLocaleString()}</div></div>
-        </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon active"><TrendingUp size={24}/></div>
-          <div>
-            <div className="fin-stat-label">กำไร/ขาดทุน</div>
-            <div className="fin-stat-value" style={{color:pnl>=0?"#34d399":"#fb923c"}}>{pnl>=0?"+":"-"}฿{Math.abs(Math.round(pnl)).toLocaleString()}</div>
-            <div style={{fontSize:14,color:"#a29bc4"}}>{pnl>=0?"+":"-"}{Math.abs(pnlPct).toFixed(1)}%</div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n db-mono">฿{dbShort(total)}</div>
+            <div className="l"><span className="db-dot"/> เงินที่ใส่ไป</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n acc db-mono">฿{dbShort(totalValue)}</div>
+            <div className="l"><span className="db-dot a"/> มูลค่าปัจจุบัน</div>
+          </div>
+          <div className="db-bignum">
+            <div className={`n db-mono ${pnl>=0?"gld":"neg"}`}>{pnl>=0?"+":"-"}฿{dbShort(Math.abs(pnl))}</div>
+            <div className="l"><span className={`db-dot ${pnl>=0?"g":"d"}`}/> กำไร/ขาดทุน{total>0?` ${pnl>=0?"+":"-"}${Math.abs(pnlPct).toFixed(1)}%`:""}</div>
           </div>
         </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon net"><CalendarDays size={24}/></div>
-          <div><div className="fin-stat-label">เฉลี่ยต่อเดือน</div><div className="fin-stat-value">฿{chart.length?Math.round(total/chart.length).toLocaleString():0}</div><div style={{fontSize:14,color:"#a29bc4"}}>{list.length} รายการ</div></div>
-        </div>
       </div>
-      <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">Allocation — ภาพรวมพอร์ตตามประเภท</div>
-        {activeTypes.length===0&&<div className="empty">ยังไม่มีข้อมูลการลงทุน — เพิ่มรายการหรือกรอกมูลค่าปัจจุบันด้านล่าง</div>}
-        {activeTypes.length>0&&(
-          <div className="inv-alloc-grid">
-            <div className="inv-alloc-pie-frame">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart margin={{top:10,right:10,bottom:10,left:10}}>
-                  <Pie data={allocPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="52%" outerRadius="82%" paddingAngle={3} isAnimationActive={false}>
-                    {allocPieData.map((d,i)=><Cell key={i} fill={d.color}/>)}
-                  </Pie>
-                  <Tooltip contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pie-center-overlay">
-                <div className="pie-center-total" style={{color:"#a78bfa",fontSize:22}}>฿{Math.round(totalValue).toLocaleString()}</div>
-                <div className="pie-center-label">มูลค่ารวม</div>
-              </div>
+      <div className="db-bento">
+        {/* ── Allocation: โดนัท + legend ชุดเดียวกับการ์ด Portfolio หน้า Home ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div>
+              <div className="db-title">Allocation</div>
+              <div className="db-note">{allocTotal>0?`มูลค่ารวม ฿${dbNum(allocTotal)}`:"ยังไม่ได้กรอกมูลค่า"}</div>
             </div>
-            <div className="inv-alloc-list">
-              {activeTypes.map(t=>(
-                <div key={t.key} className="pnl-row">
-                  <span style={{width:10,height:10,borderRadius:3,background:t.color,flexShrink:0}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
-                      <span style={{fontSize:16,color:"#f2eefc"}}>{t.label}</span>
-                      <span style={{fontSize:16,color:"#a78bfa",fontFamily:"'IBM Plex Mono',monospace"}}>฿{Math.round(t.value).toLocaleString()}</span>
-                    </div>
-                    <div style={{fontSize:14,color:"#a29bc4",marginTop:2}}>ใส่ไป ฿{Math.round(t.contrib).toLocaleString()} · {t.pnl>=0?"+":"-"}฿{Math.abs(Math.round(t.pnl)).toLocaleString()}</div>
-                    {renderPnlBar(t.pnl,t.contrib>0?(t.pnl/t.contrib)*100:0)}
+          </div>
+          {allocTotal===0
+            ? <div className="db-empty">ยังไม่มีมูลค่าพอร์ต — กด “เพิ่มข้อมูล” ด้านบน หรือกรอกมูลค่าปัจจุบันในการ์ด “มูลค่าปัจจุบันรายประเภท”</div>
+            : (
+              <div className="db-donut-wrap">
+                <DashDonut segs={allocSegs} total={allocTotal}/>
+                <div className="db-legend">
+                  {allocSegs.map(s=>(
+                    <span className="db-lg" key={s.key}><i style={{background:s.color}}/> {s.label} <b className="db-mono">{Math.round((s.value/allocTotal)*100)}%</b></span>
+                  ))}
+                </div>
+              </div>
+            )}
+        </div>
+        {/* ── กำไร/ขาดทุนรายประเภท (แยกออกจากการ์ดโดนัทเพื่อไม่ให้การ์ดเดียวยาวเกิน) ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">กำไร/ขาดทุนรายประเภท</div><div className="db-note">เทียบมูลค่าปัจจุบันกับเงินที่ใส่ไป</div></div>
+          </div>
+          {activeTypes.length===0
+            ? <div className="db-empty">ยังไม่มีข้อมูลการลงทุน</div>
+            : activeTypes.map(t=>(
+                <div key={t.key} className="inv-pnl-item">
+                  <div className="db-row" style={{borderBottom:"none",padding:"0 0 2px"}}>
+                    <span className="lab"><i className="db-dot" style={{background:t.color}}/> {t.label}</span>
+                    <span className="val db-mono">฿{dbNum(t.value)}</span>
                   </div>
+                  <div className="db-note">ใส่ไป ฿{dbNum(t.contrib)} · {t.pnl>=0?"+":"-"}฿{dbNum(Math.abs(t.pnl))}</div>
+                  {renderPnlBar(t.pnl,t.contrib>0?(t.pnl/t.contrib)*100:0)}
                 </div>
               ))}
+        </div>
+        {/* ── เงินที่ใส่รายเดือน: แท่ง CSS แบบการ์ด Movement หน้า Home (ไม่ใช้ Recharts แล้ว) ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">เงินที่ใส่รายเดือน</div><div className="db-note">{barMonths.length?`${barMonths.length} เดือนล่าสุด`:"ยังไม่มีรายการ"}</div></div>
+            <div className="db-bignum-inline db-mono">฿{dbShort(chart.length?total/chart.length:0)}<span> /เดือน</span></div>
+          </div>
+          {barMonths.length===0
+            ? <div className="db-empty">ยังไม่มีรายการสะสม — เงิน กบข./กสจ. จากสลิปเงินเดือนจะมาอยู่ตรงนี้</div>
+            : (
+              <div className="db-bars inv-bars">
+                {barMonths.map((c,i)=>(
+                  <div key={c.month+i} className="db-bcol" title={`${c.month} · ฿${dbNum(c.value)}`}>
+                    <span className="db-blab db-mono">{dbShort(c.value)}</span>
+                    <div className={`db-bar ${barMax>0&&c.value===barMax?"gold":"hi"}`} style={{height:`${barMax>0?Math.max(4,(c.value/barMax)*100):4}%`}}/>
+                    <span className="db-blab">{c.month}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+        </div>
+        {/* ── สรุปพอร์ตคริปโต (ตัวเลขรวม + เรต + คำเตือน) ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">พอร์ตคริปโต</div><div className="db-note">{holdings.length} เหรียญ · {platformList.length} ที่เก็บ</div></div>
+            <div className="db-bignum-inline db-mono" style={{color:"var(--accent-soft)"}}>฿{dbShort(cryptoValue)}</div>
+          </div>
+          <div className="db-row"><span className="lab">ต้นทุนรวม</span><span className="val db-mono">฿{dbNum(cryptoCost)}</span></div>
+          <div className="db-row"><span className="lab">มูลค่าปัจจุบัน</span><span className="val db-mono" style={{color:"var(--accent-soft)"}}>฿{dbNum(cryptoValue)}</span></div>
+          <div className="db-row">
+            <span className="lab">กำไร/ขาดทุน</span>
+            <span className={`val db-mono ${cryptoValue-cryptoCost>=0?"up":"down"}`}>
+              {cryptoValue-cryptoCost>=0?"+":"-"}฿{dbNum(Math.abs(cryptoValue-cryptoCost))}
+              {cryptoCost>0&&` (${cryptoValue-cryptoCost>=0?"+":"-"}${Math.abs(((cryptoValue-cryptoCost)/cryptoCost)*100).toFixed(1)}%)`}
+            </span>
+          </div>
+          {best&&num(best.quantity)>0&&(
+            <div className="db-row">
+              <span className="lab">ดี / แย่ที่สุด</span>
+              <span className="val db-mono">
+                <span style={{color:"var(--accent-soft)"}}>{best.coin||"—"} {coinStat(best).pct>=0?"+":""}{coinStat(best).pct.toFixed(1)}%</span>
+                {worst&&worst.id!==best.id&&<span style={{color:"var(--orange)"}}> · {worst.coin||"—"} {coinStat(worst).pct>=0?"+":""}{coinStat(worst).pct.toFixed(1)}%</span>}
+              </span>
             </div>
+          )}
+          <div className="db-row">
+            <span className="lab">เรต USD → THB</span>
+            <span style={{display:"flex",alignItems:"center",gap:8}}>
+              <input className="modal-input inv-val-input db-mono" inputMode="decimal" placeholder="36.50"
+                value={(finance.finance.fxRate&&finance.finance.fxRate.USDTHB&&finance.finance.fxRate.USDTHB.value)||""}
+                onChange={e=>setFx(e.target.value)}/>
+              <span className="db-note" style={{marginTop:0,minWidth:74,textAlign:"right"}}>
+                {(finance.finance.fxRate&&finance.finance.fxRate.USDTHB&&finance.finance.fxRate.USDTHB.updatedAt)||"ยังไม่เคยกรอก"}
+              </span>
+            </span>
           </div>
-        )}
-      </div>
-      {chart.length>0&&(
-        <div className="card" style={{margin:"0 20px 20px"}}>
-          <div className="card-head">Contributions by Month</div>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={chart} margin={{top:5,right:10,left:0,bottom:5}}>
-              <defs><linearGradient id="invGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c4b5fd"/><stop offset="100%" stopColor="#8b5cf6"/></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2f2745" vertical={false}/>
-              <XAxis dataKey="month" tick={{fontSize:15,fill:"#a29bc4"}} axisLine={{stroke:"#3a3155"}} tickLine={false}/>
-              <YAxis tick={{fontSize:14,fill:"#a29bc4"}} axisLine={false} tickLine={false} tickFormatter={v=>v>=1000?`${v/1000}k`:v}/>
-              <Tooltip cursor={{fill:"rgba(139,92,246,.06)"}} contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
-              <Bar dataKey="value" fill="url(#invGrad)" radius={[8,8,0,0]} maxBarSize={54}/>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">กรอกมูลค่าปัจจุบัน (อัปเดตเป็นระยะ)</div>
-        <div style={{padding:"0 16px 8px",fontSize:15,color:"#a29bc4"}}>
-          กรอกมูลค่าล่าสุดของแต่ละประเภท แล้วการ์ด "ภาพรวมพอร์ตตามประเภท" ด้านบนจะอัปเดตตาม
-        </div>
-        {staleTypes.length>0&&(
-          <div style={{margin:"0 16px 10px",padding:"10px 14px",background:"#2a1f3d",border:"1px solid #f59e0b",borderRadius:10,fontSize:15,color:"#fbbf24"}}>
-            มูลค่าของ {staleTypes.map(t=>t.label).join(", ")} ไม่ได้อัปเดตเกิน 30 วันแล้ว — ตัวเลขกำไร/ขาดทุนด้านบนอาจคลาดเคลื่อน
+          {needsFx&&!fx&&(
+            <div className="inv-warn danger">มีเหรียญที่กรอกเป็น USD แต่ยังไม่ได้ใส่เรต USD → THB — มูลค่าและกำไร/ขาดทุนจะยังคำนวณไม่ได้จนกว่าจะกรอกเรต</div>
+          )}
+          {stalePrice.length>0&&(
+            <div className="inv-warn">ราคาของ {stalePrice.map(h=>h.coin||"(ไม่มีชื่อ)").join(", ")} ไม่ได้อัปเดตเกิน 7 วัน — คริปโตผันผวนเร็ว ตัวเลขกำไร/ขาดทุนอาจไม่ตรงความจริง</div>
+          )}
+          <div className="db-note" style={{marginTop:14}}>
+            กรอกต้นทุน/ราคาเป็น THB หรือ USD ก็ได้ เลือกแยกกันได้ต่อช่อง — ทุกยอดสรุปแปลงเป็นบาททั้งหมด · ต้นทุนที่จ่ายเป็น USD ใส่ “เรตตอนซื้อ” ไว้ด้วยจะแม่นที่สุด (เว้นว่าง = ใช้เรตปัจจุบัน)
           </div>
-        )}
-        <div className="inv-card-list">
+        </div>
+        {/* ── มูลค่าปัจจุบันรายประเภท: พับได้ (ข้อ 32/3) เปิดค้างไว้เมื่อมีค่าที่ค้างอัปเดต ── */}
+        <DashCollapse
+          title="มูลค่าปัจจุบันรายประเภท"
+          note={staleTypes.length>0?`${staleTypes.length} ประเภทค้างอัปเดตเกิน 30 วัน`:"กรอกเอง — อัปเดตเป็นระยะ"}
+          defaultOpen={staleTypes.length>0}>
+          {staleTypes.length>0&&(
+            <div className="inv-warn">
+              มูลค่าของ {staleTypes.map(t=>t.label).join(", ")} ไม่ได้อัปเดตเกิน 30 วันแล้ว — ตัวเลขกำไร/ขาดทุนอาจคลาดเคลื่อน
+            </div>
+          )}
           {INVEST_TYPES.map(t=>{
             const u=iv[t.key]&&iv[t.key].updatedAt;
             const age=u?-daysUntil(u):null;
             return (
-              <div key={t.key} className="inv-item-card">
-                <div className="inv-item-head">
-                  <span style={{fontSize:17,color:"#f2eefc"}}>{t.label}</span>
-                  <span style={{fontSize:15,color:"#a29bc4"}}>ใส่ไป ฿{Math.round(contribByType[t.key]||0).toLocaleString()}</span>
-                </div>
+              <div key={t.key} className="db-row inv-val-row">
+                <span className="lab"><i className="db-dot" style={{background:INVEST_TYPE_COLORS[t.key]}}/> {t.label}
+                  <span className="db-note" style={{marginTop:0}}>· ใส่ไป ฿{dbNum(contribByType[t.key]||0)}</span>
+                </span>
                 {t.key==="crypto"
-                  ? <div style={{marginTop:6,fontSize:16,color:"#a78bfa"}}>฿{Math.round(cryptoValue).toLocaleString()} <span style={{fontSize:14,color:"#a29bc4"}}>(คำนวณจากพอร์ตคริปโตด้านล่าง)</span></div>
+                  ? <span className="val db-mono" style={{color:"var(--accent-soft)"}} title="คำนวณจากพอร์ตคริปโตอัตโนมัติ">฿{dbNum(cryptoValue)} ↓</span>
                   : (
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:6,flexWrap:"wrap"}}>
-                      <span style={{fontSize:15,color:"#a29bc4"}}>มูลค่าปัจจุบัน</span>
-                      <input className="modal-input" style={{maxWidth:160,textAlign:"right"}} inputMode="decimal"
+                    <span style={{display:"flex",alignItems:"center",gap:8}}>
+                      <input className="modal-input inv-val-input db-mono" inputMode="decimal"
                         value={(iv[t.key]&&iv[t.key].value)!==undefined?iv[t.key].value:""}
                         onChange={e=>setTypeValue(t.key,e.target.value)} placeholder="0"/>
-                      <span style={{fontSize:14,color:!u?"#fbbf24":age>=60?"#fb923c":age>=30?"#fbbf24":"#a29bc4"}}>
-                        {!u?((contribByType[t.key]||0)>0?"ยังไม่เคยกรอก":"—"):`อัปเดต ${u}${age>=30?` · ${age} วันแล้ว`:""}`}
+                      <span className="db-note" style={{marginTop:0,minWidth:74,textAlign:"right",color:!u?"var(--yellow)":age>=60?"var(--orange)":age>=30?"var(--yellow)":"var(--ink-5)"}}>
+                        {!u?((contribByType[t.key]||0)>0?"ยังไม่เคยกรอก":"—"):(age>=30?`ค้าง ${age} วัน`:u)}
                       </span>
-                    </div>
+                    </span>
                   )}
               </div>
             );
           })}
-        </div>
-      </div>
-      <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">
-          <span>พอร์ตคริปโต</span>
-          <div className="card-head-right" style={{display:"flex",gap:8}}>
-            {holdings.length>1&&<button className="text-btn" onClick={sortHoldings}>เรียงตามมูลค่า</button>}
-            <button className="text-btn" onClick={()=>setShowAddCoin(true)}>+ เพิ่มเหรียญ</button>
-          </div>
-        </div>
-        <div className="recat-hint" style={{margin:"0 16px 10px"}}>
-          กรอกต้นทุน/ราคาเป็น THB หรือ USD ก็ได้ เลือกแยกกันได้ต่อช่อง — ทุกยอดสรุปแปลงเป็นบาททั้งหมด ·
-          ต้นทุนที่จ่ายเป็น USD ใส่ "เรตตอนซื้อ" ไว้ด้วยจะแม่นที่สุด (ถ้าเว้นว่างจะใช้เรตปัจจุบันแทน)
-        </div>
-        <div style={{padding:"0 16px 8px",fontSize:17,color:"#a29bc4"}}>
-          ต้นทุนรวม <b>฿{Math.round(cryptoCost).toLocaleString()}</b> ·
-          มูลค่าปัจจุบัน <b style={{color:"#a78bfa"}}>฿{Math.round(cryptoValue).toLocaleString()}</b> ·
-          กำไร/ขาดทุน <b style={{color:cryptoValue-cryptoCost>=0?"#34d399":"#fb923c"}}>
-            {cryptoValue-cryptoCost>=0?"+":"-"}฿{Math.abs(Math.round(cryptoValue-cryptoCost)).toLocaleString()}
-            {cryptoCost>0&&` (${cryptoValue-cryptoCost>=0?"+":"-"}${Math.abs(((cryptoValue-cryptoCost)/cryptoCost)*100).toFixed(1)}%)`}
-          </b>
-        </div>
-        {best&&num(best.quantity)>0&&(
-          <div style={{padding:"0 16px 8px",fontSize:15,color:"#a29bc4"}}>
-            ดีที่สุด <b style={{color:"#34d399"}}>{best.coin||"—"} {coinStat(best).pct>=0?"+":""}{coinStat(best).pct.toFixed(1)}%</b>
-            {worst&&worst.id!==best.id&&<> · แย่ที่สุด <b style={{color:"#fb923c"}}>{worst.coin||"—"} {coinStat(worst).pct>=0?"+":""}{coinStat(worst).pct.toFixed(1)}%</b></>}
-          </div>
-        )}
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"0 16px 10px"}}>
-          <span style={{fontSize:15,color:"#a29bc4"}}>เรต USD → THB</span>
-          <input className="modal-input" style={{maxWidth:110,textAlign:"right"}} inputMode="decimal" placeholder="36.50"
-            value={(finance.finance.fxRate&&finance.finance.fxRate.USDTHB&&finance.finance.fxRate.USDTHB.value)||""}
-            onChange={e=>setFx(e.target.value)}/>
-          <span style={{fontSize:14,color:"#a29bc4"}}>
-            {(finance.finance.fxRate&&finance.finance.fxRate.USDTHB&&finance.finance.fxRate.USDTHB.updatedAt)?`อัปเดต ${finance.finance.fxRate.USDTHB.updatedAt}`:"ยังไม่เคยกรอก"}
-          </span>
-        </div>
-        {needsFx&&!fx&&(
-          <div style={{margin:"0 16px 10px",padding:"8px 12px",background:"#3a1f1f",border:"1px solid #f87171",borderRadius:10,fontSize:15,color:"#fca5a5"}}>
-            มีเหรียญที่กรอกเป็น USD แต่ยังไม่ได้ใส่เรต USD → THB — มูลค่าและกำไร/ขาดทุนจะยังคำนวณไม่ได้จนกว่าจะกรอกเรต
-          </div>
-        )}
-        {stalePrice.length>0&&(
-          <div style={{margin:"0 16px 10px",padding:"8px 12px",background:"#2a1f3d",border:"1px solid #f59e0b",borderRadius:10,fontSize:15,color:"#fbbf24"}}>
-            ราคาของ {stalePrice.map(h=>h.coin||"(ไม่มีชื่อ)").join(", ")} ไม่ได้อัปเดตเกิน 7 วัน — คริปโตผันผวนเร็ว ตัวเลขกำไร/ขาดทุนอาจไม่ตรงความจริง
-          </div>
-        )}
-        {buyFor&&<AddBuyModal holding={buyFor} fx={fx} onClose={()=>setBuyFor(null)} onSave={saveBuy}/>}
-        {showAddCoin&&<AddCoinModal fx={fx} onClose={()=>setShowAddCoin(false)} onSave={addCoin}/>}
-        {holdings.length===0&&<div className="empty">ยังไม่มีเหรียญ — กด "เพิ่มเหรียญ" เพื่อกรอกพอร์ตที่มีอยู่</div>}
-        {holdings.length>0&&(
+        </DashCollapse>
+        {/* ── เป้าหมายการลงทุน (อ่านอย่างเดียว ดึงจาก Tracker) ── */}
+        <DashCollapse
+          span="db-span2"
+          title="เป้าหมายการลงทุน"
+          note={finGoals.length?`${finGoals.length} เป้าหมาย · แก้ไขที่หน้า Tracker`:"ดึงจากหมวด “การเงิน” ในหน้า Tracker"}
+          defaultOpen={finGoals.length>0}>
+          {finGoals.length===0&&<div className="db-empty">ยังไม่มีเป้าหมายหมวดการเงิน — สร้างที่หน้า Tracker แล้วเลือกหมวด “การเงิน”</div>}
+          {shortGoals.length>0&&(
+            <>
+              <div className="db-note" style={{marginBottom:6}}>ระยะสั้น (ครบกำหนดใน 1 ปี)</div>
+              {shortGoals.map(renderGoal)}
+            </>
+          )}
+          {longGoals.length>0&&(
+            <>
+              <div className="db-note" style={{marginTop:shortGoals.length>0?14:0,marginBottom:6}}>ระยะยาว (1 ปีขึ้นไป / ไม่กำหนดวัน)</div>
+              {longGoals.map(renderGoal)}
+            </>
+          )}
+        </DashCollapse>
+        {/* ── รายเหรียญ แยกตามที่เก็บ (พับได้ ข้อ 32/3) ── */}
+        <DashCollapse
+          span="db-span4"
+          title="เหรียญที่ถืออยู่"
+          note={holdings.length?`${holdings.length} เหรียญ · แยกตามที่เก็บ`:"ยังไม่มีเหรียญ"}
+          defaultOpen={holdings.length>0}
+          actions={holdings.length>1?<button className="db-chip" title="เรียงตามมูลค่า" onClick={sortHoldings}><SortDesc size={13}/></button>:null}>
+          {holdings.length===0&&<div className="db-empty">ยังไม่มีเหรียญ — กด “เพิ่มข้อมูล” ด้านบนแล้วเลือก “เหรียญคริปโต”</div>}
+          {holdings.length>0&&(
           <div className="crypto-platform-grid">
             {platformList.map(pl=>{
               const plPnl=pl.value-pl.cost;
               const plPct=pl.cost>0?(plPnl/pl.cost)*100:0;
-              const plPie=pl.items.filter(h=>coinStat(h).value>0).map(h=>({name:h.coin||"—",value:coinStat(h).value}));
+              /* ข้อ 24/3: รูปแบบ seg ของ DashDonut คือ {key,label,color,value} — เรียงมาก→น้อยเพื่อให้สีเข้มอยู่ส่วนใหญ่ */
+              const plPie=pl.items.filter(h=>coinStat(h).value>0)
+                .map(h=>({id:h.id,label:h.coin||"—",value:coinStat(h).value}))
+                .sort((a,b)=>b.value-a.value)
+                .map((s,i)=>({...s,key:s.id,color:DB_CAT_COLORS[i%DB_CAT_COLORS.length]}));
               return (
                 <div key={pl.name} className="crypto-platform-col">
-                  <div className="crypto-platform-head">
-                    <span>{pl.name}</span>
-                    <span style={{fontSize:14,color:"#a29bc4",fontWeight:400}}>{pl.coins} เหรียญ</span>
-                  </div>
-                  <div style={{fontSize:15,color:"#a29bc4",padding:"6px 0 4px"}}>
-                    ใส่ไป ฿{Math.round(pl.cost).toLocaleString()} · มูลค่า <b style={{color:"#a78bfa"}}>฿{Math.round(pl.value).toLocaleString()}</b>{" "}
-                    <span style={{color:plPnl>=0?"#34d399":"#fb923c"}}>
-                      {plPnl>=0?"+":"-"}฿{Math.abs(Math.round(plPnl)).toLocaleString()} ({plPnl>=0?"+":"-"}{Math.abs(plPct).toFixed(1)}%)
-                    </span>
+                  <div className="db-head" style={{marginBottom:10}}>
+                    <div>
+                      <div className="db-title">{pl.name}</div>
+                      <div className="db-note">{pl.coins} เหรียญ · ใส่ไป ฿{dbNum(pl.cost)}</div>
+                    </div>
+                    <div style={{textAlign:"right",flex:"none"}}>
+                      <div className="db-bignum-inline db-mono" style={{color:"var(--accent-soft)"}}>฿{dbShort(pl.value)}</div>
+                      <div className="db-note db-mono" style={{color:plPnl>=0?"var(--accent-soft)":"var(--orange)"}}>
+                        {plPnl>=0?"+":"-"}฿{dbNum(Math.abs(plPnl))} ({plPnl>=0?"+":"-"}{Math.abs(plPct).toFixed(1)}%)
+                      </div>
+                    </div>
                   </div>
                   {plPie.length>0&&(
-                    <div className="crypto-mini-pie">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart margin={{top:4,right:4,bottom:4,left:4}}>
-                          <Pie data={plPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="50%" outerRadius="85%" paddingAngle={2} isAnimationActive={false}>
-                            {plPie.map((d,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
-                          </Pie>
-                          <Tooltip contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
-                        </PieChart>
-                      </ResponsiveContainer>
+                    <div className="db-donut-wrap" style={{marginBottom:14}}>
+                      <DashDonut segs={plPie} total={plPie.reduce((a,s)=>a+s.value,0)}/>
+                      <div className="db-legend">
+                        {plPie.slice(0,4).map(s=>(
+                          <span className="db-lg" key={s.key}><i style={{background:s.color}}/> {s.label} <b className="db-mono">{Math.round((s.value/pl.value)*100)}%</b></span>
+                        ))}
+                        {plPie.length>4&&<span className="db-lg"><i style={{background:"var(--ink-6)"}}/> อื่นๆ อีก {plPie.length-4} เหรียญ</span>}
+                      </div>
                     </div>
                   )}
                   <div className="inv-card-list" style={{padding:0}}>
@@ -3040,22 +3174,27 @@ function FinanceInvestmentsTab({finance,persist}) {
                       return (
                         <div key={h.id} className="inv-item-card">
                           <div className="inv-item-head">
-                            <span style={{fontSize:16,color:"#f2eefc"}}>{h.coin||"(ไม่มีชื่อ)"} <span style={{fontSize:13,color:"#a29bc4"}}>· {st.share.toFixed(1)}%</span></span>
+                            <span className="db-tname inv-coin-name">{h.coin||"(ไม่มีชื่อ)"} <span className="db-note inv-inline-note">· {st.share.toFixed(1)}% ของพอร์ต</span></span>
                             <div className="inv-item-actions">
-                              <button className="del-btn" title="บันทึกการซื้อเพิ่ม / DCA" onClick={()=>setBuyFor(h)}><Plus size={18}/></button>
-                              <button className="del-btn" onClick={()=>setEditCoinId(editing?null:h.id)}><Edit3 size={16}/></button>
-                              <button className="del-btn" onClick={()=>removeHolding(h.id)}><Trash2 size={18}/></button>
+                              <button className="db-chip" title="บันทึกการซื้อเพิ่ม / DCA" onClick={()=>setBuyFor(h)}><Plus size={12}/></button>
+                              <button className="db-chip" title="แก้ไข" onClick={()=>setEditCoinId(editing?null:h.id)}><Edit3 size={12}/></button>
+                              <button className="db-chip" title="ลบ" onClick={()=>removeHolding(h.id)}><Trash2 size={12}/></button>
                             </div>
                           </div>
                           {!editing&&(
                             <>
-                              <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:4,flexWrap:"wrap"}}>
-                                <span style={{fontSize:14,color:"#a29bc4"}}>{num(h.quantity).toLocaleString()} หน่วย</span>
-                                <span style={{fontSize:16,color:"#a78bfa",fontFamily:"'IBM Plex Mono',monospace"}}>฿{Math.round(st.value).toLocaleString()}</span>
+                              <div className="db-row" style={{borderBottom:"none",padding:"6px 0 0"}}>
+                                <span className="lab db-mono">{num(h.quantity).toLocaleString()} หน่วย</span>
+                                <span className="val db-mono" style={{color:"var(--accent-soft)"}}>฿{dbNum(st.value)}</span>
                               </div>
                               {st.cost>0&&renderPnlBar(st.pnl,st.pct)}
-                              {(h.buys||[]).length>0&&<div style={{fontSize:13,color:"#34d399",marginTop:4}}>บันทึกซื้อ {h.buys.length} งวด</div>}
-                              {priceAge!=null&&priceAge>=7&&<div style={{fontSize:13,color:"#fbbf24",marginTop:4}}>ราคาค้าง {priceAge} วัน</div>}
+                              {((h.buys||[]).length>0||(priceAge!=null&&priceAge>=7))&&(
+                                <div className="db-note" style={{marginTop:6}}>
+                                  {(h.buys||[]).length>0&&<span style={{color:"var(--accent-soft)"}}>บันทึกซื้อ {h.buys.length} งวด</span>}
+                                  {(h.buys||[]).length>0&&priceAge!=null&&priceAge>=7&&" · "}
+                                  {priceAge!=null&&priceAge>=7&&<span style={{color:"var(--yellow)"}}>ราคาค้าง {priceAge} วัน</span>}
+                                </div>
+                              )}
                             </>
                           )}
                           {editing&&(
@@ -3105,53 +3244,17 @@ function FinanceInvestmentsTab({finance,persist}) {
               );
             })}
           </div>
-        )}
-      </div>
-      <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">เป้าหมายการลงทุน</div>
-        <div style={{padding:"0 16px 8px",fontSize:15,color:"#a29bc4"}}>
-          ดึงจากเป้าหมายหมวด "การเงิน" ในหน้า Tracker — เพิ่ม/แก้ไขได้ที่หน้านั้น
-        </div>
-        {finGoals.length===0&&<div className="empty">ยังไม่มีเป้าหมายหมวดการเงิน — สร้างที่หน้า Tracker แล้วเลือกหมวด "การเงิน"</div>}
-        {finGoals.length>0&&(
-          <div style={{padding:"0 16px 12px"}}>
-            {shortGoals.length>0&&(
-              <div style={{marginBottom:12}}>
-                <div style={{fontSize:16,color:"#c4b5fd",margin:"6px 0"}}>ระยะสั้น (ครบกำหนดใน 1 ปี)</div>
-                {shortGoals.map(renderGoal)}
-              </div>
-            )}
-            {longGoals.length>0&&(
-              <div>
-                <div style={{fontSize:16,color:"#c4b5fd",margin:"6px 0"}}>ระยะยาว (1 ปีขึ้นไป / ไม่กำหนดวัน)</div>
-                {longGoals.map(renderGoal)}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">
-          <span>เพิ่มรายการลงทุน</span>
-          <button className="text-btn" onClick={()=>setShowAddInv(true)}>+ เพิ่มรายการ</button>
-        </div>
-        <div style={{padding:"0 16px 14px",fontSize:15,color:"#a29bc4"}}>สำหรับรายการที่ไม่ได้มาจาก CSV/สลิปเงินเดือน — กด "+ เพิ่มรายการ" เพื่อกรอก</div>
-        {showAddInv&&(
-          <AddInvestmentModal
-            onClose={()=>setShowAddInv(false)}
-            onSave={(row)=>{
-              persist({...finance,finance:{...finance.finance,investments:[...(finance.finance.investments||[]),
-                {id:uid(),date:row.date,amount:Math.abs(Number(row.amount)),name:row.name.trim()||INVEST_TYPE_LABELS[row.type],type:row.type,source:"manual"}]}});
-              setShowAddInv(false);
-            }}
-          />
-        )}
-      </div>
-      <div className="card" style={{margin:"0 20px"}}>
-        <div className="card-head">Savings & Investments — รายการทั้งหมด</div>
-        {list.length===0&&<div className="empty">ยังไม่มีรายการ — เงินสะสม กบข./กสจ. จากสลิปเงินเดือนจะมาอยู่ตรงนี้</div>}
-        {list.length>0&&(
-          <div className="inv-card-list">
+          )}
+        </DashCollapse>
+        {/* ── รายการสะสมทั้งหมด (พับได้ ปิดไว้ก่อนเพราะยาวสุดในหน้า — ข้อ 32/3) ── */}
+        <DashCollapse
+          span="db-span4"
+          title="Savings & Investments — รายการทั้งหมด"
+          note={list.length?`${list.length} รายการ · รวม ฿${dbNum(total)}`:"ยังไม่มีรายการ"}
+          defaultOpen={false}>
+          {list.length===0&&<div className="db-empty">ยังไม่มีรายการ — เงินสะสม กบข./กสจ. จากสลิปเงินเดือนจะมาอยู่ตรงนี้</div>}
+          {list.length>0&&(
+          <div className="inv-card-list" style={{padding:0}}>
             {list.map(i=>{
               const editing=editInvId===i.id;
               return (
@@ -3159,16 +3262,16 @@ function FinanceInvestmentsTab({finance,persist}) {
                   {!editing?(
                     <>
                       <div className="inv-item-head">
-                        <span style={{fontSize:16,color:"#f2eefc"}}>{i.name}</span>
-                        <span style={{fontSize:16,color:"#a78bfa",fontFamily:"'IBM Plex Mono',monospace"}}>฿{i.amount.toLocaleString()}</span>
+                        <span className="db-tname inv-list-name">{i.name}</span>
+                        <span className="db-mono inv-list-amt">฿{i.amount.toLocaleString()}</span>
                       </div>
-                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:6}}>
-                        <span style={{fontSize:14,color:"#a29bc4"}}>{i.date}</span>
-                        <span className="exp-csv-badge" style={{color:"#c4b5fd",borderColor:"#3a3155",background:"#221b38"}}>{INVEST_TYPE_LABELS[i.type]||INVEST_TYPE_LABELS.other}</span>
-                        <span className="exp-csv-badge">{ORIGIN_LABELS[originOf(i)]||"กรอกเอง"}</span>
+                      <div className="inv-list-meta">
+                        <span className="db-note db-mono inv-inline-note">{i.date}</span>
+                        <span className="inv-tag"><i className="db-dot" style={{background:INVEST_TYPE_COLORS[i.type]||INVEST_TYPE_COLORS.other}}/>{INVEST_TYPE_LABELS[i.type]||INVEST_TYPE_LABELS.other}</span>
+                        <span className="inv-tag">{ORIGIN_LABELS[originOf(i)]||"กรอกเอง"}</span>
                         <div className="inv-item-actions" style={{marginLeft:"auto"}}>
-                          <button className="del-btn" onClick={()=>startEditInv(i)}><Edit3 size={17}/></button>
-                          <button className="del-btn" onClick={()=>remove(i.id)}><Trash2 size={19}/></button>
+                          <button className="db-chip" title="แก้ไข" onClick={()=>startEditInv(i)}><Edit3 size={12}/></button>
+                          <button className="db-chip" title="ลบ" onClick={()=>remove(i.id)}><Trash2 size={12}/></button>
                         </div>
                       </div>
                     </>
@@ -3188,9 +3291,9 @@ function FinanceInvestmentsTab({finance,persist}) {
                         <div><label className="field-label">Amount</label><input type="number" className="modal-input" inputMode="decimal" value={editInvDraft.amount} onChange={e=>setEditInvDraft({...editInvDraft,amount:e.target.value})}/></div>
                       </div>
                       <div style={{display:"flex",gap:6}}>
-                        <button className="del-btn" style={{color:"#34d399"}} onClick={saveEditInv}><Check size={19}/></button>
-                        <button className="del-btn" onClick={cancelEditInv}><X size={19}/></button>
-                        <button className="del-btn" onClick={()=>{cancelEditInv();remove(i.id);}}><Trash2 size={19}/></button>
+                        <button className="db-chip" title="บันทึก" style={{color:"var(--accent-soft)"}} onClick={saveEditInv}><Check size={12}/></button>
+                        <button className="db-chip" title="ยกเลิก" onClick={cancelEditInv}><X size={12}/></button>
+                        <button className="db-chip" title="ลบ" onClick={()=>{cancelEditInv();remove(i.id);}}><Trash2 size={12}/></button>
                       </div>
                     </div>
                   )}
@@ -3198,8 +3301,44 @@ function FinanceInvestmentsTab({finance,persist}) {
               );
             })}
           </div>
-        )}
+          )}
+        </DashCollapse>
       </div>
+      {/* ── โมดัลทั้งหมดของหน้านี้ อยู่นอกกริดเพื่อไม่ให้ไปกินช่องใน bento ── */}
+      {showAddPicker&&(
+        <div className="modal-backdrop" onClick={()=>setShowAddPicker(false)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-head"><span>➕ เพิ่มข้อมูลการลงทุน</span><button className="modal-close" onClick={()=>setShowAddPicker(false)}><X size={27}/></button></div>
+            <div className="modal-body">
+              <div className="quick-type-row inv-pick">
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setShowAddInv(true);}}>
+                  <PiggyBank size={20}/><span>รายการสะสม</span>
+                </button>
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setShowAddCoin(true);}}>
+                  <TrendingUp size={20}/><span>เหรียญคริปโต</span>
+                </button>
+              </div>
+              <div className="db-note" style={{marginTop:12}}>
+                “รายการสะสม” = เงินที่ใส่เข้าไปครั้งหนึ่ง (กบข./กสจ./ทอง/กองทุน) ที่ไม่ได้มาจาก CSV หรือสลิปเงินเดือน ·
+                “เหรียญคริปโต” = เพิ่มเหรียญใหม่เข้าพอร์ต (ซื้อเพิ่ม/DCA ของเหรียญเดิม กดปุ่ม + บนการ์ดเหรียญนั้นแทน)
+              </div>
+            </div>
+            <div className="modal-foot"><button className="modal-btn-cancel" onClick={()=>setShowAddPicker(false)}>ยกเลิก</button></div>
+          </div>
+        </div>
+      )}
+      {buyFor&&<AddBuyModal holding={buyFor} fx={fx} onClose={()=>setBuyFor(null)} onSave={saveBuy}/>}
+      {showAddCoin&&<AddCoinModal fx={fx} onClose={()=>setShowAddCoin(false)} onSave={addCoin}/>}
+      {showAddInv&&(
+        <AddInvestmentModal
+          onClose={()=>setShowAddInv(false)}
+          onSave={(row)=>{
+            persist({...finance,finance:{...finance.finance,investments:[...(finance.finance.investments||[]),
+              {id:uid(),date:row.date,amount:Math.abs(Number(row.amount)),name:row.name.trim()||INVEST_TYPE_LABELS[row.type],type:row.type,source:"manual"}]}});
+            setShowAddInv(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -3249,84 +3388,94 @@ function totalDebtBalance(f){ return (f.finance.debts||[]).reduce((a,d)=>a+nv(d.
 function totalCash(f){ return (f.finance.cashAccounts||[]).reduce((a,c)=>a+nv(c.balance),0); }
 /* เงินสดกรอกยอดคงเหลือเองเป็นระยะ (โครงเดียวกับ investmentValues / debts.currentBalance)
    ไม่คำนวณสะสมจาก income−expenses เพราะข้อมูลไม่ได้ครอบคลุมทุกบัญชี จะเพี้ยนแบบเงียบๆ */
-function NetWorthCard({finance,persist}) {
-  const [open,setOpen]=useState(false);
-  const accounts=finance.finance.cashAccounts||[];
+/* ═══ ข้อ 24/4: Net Worth เป็นการ์ด bento — สรุปอย่างเดียว
+   บัญชีเงินสดแยกไปอยู่ CashAccountsCard ด้านล่าง (ข้อ 32/1: การ์ดละเรื่อง ไม่ยัดตารางเข้าการ์ดสรุป) ═══ */
+const NW_COLORS={cash:"var(--accent)",invest:"var(--gold)",debt:"var(--orange)"};
+function NetWorthCard({finance,setTab}) {
   const cash=totalCash(finance);
   const invest=portfolioValue(finance);
   const debt=totalDebtBalance(finance);
   const net=cash+invest-debt;
+  const accounts=finance.finance.cashAccounts||[];
+  const staleAcc=accounts.filter(a=>a.updatedAt&&(-daysUntil(a.updatedAt))>=30);
+  /* แถบบน = สินทรัพย์ (เงินสด+ลงทุน) · แถบล่าง = หนี้ · สเกลเดียวกันทั้งคู่ถึงเทียบกันด้วยตาได้ */
+  const barMax=Math.max(cash+invest,debt,1);
+  const rows=[
+    {key:"cash",label:"เงินสด",v:cash,color:NW_COLORS.cash,to:null},
+    {key:"invest",label:"ลงทุน",v:invest,color:NW_COLORS.invest,to:"investments"},
+    {key:"debt",label:"หนี้",v:debt,color:NW_COLORS.debt,to:"debts",neg:true},
+  ];
+  return (
+    <div className="db-card db-span2">
+      <div className="db-head">
+        <div><div className="db-title">Net Worth</div><div className="db-note">เงินสด + พอร์ตลงทุน − หนี้คงเหลือ</div></div>
+        <div className={`db-bignum-inline db-mono ${net>=0?"":"neg"}`} style={{color:net>=0?"var(--accent-soft)":"var(--orange)"}}>
+          {net<0?"-":""}฿{dbShort(Math.abs(net))}
+        </div>
+      </div>
+      <div className="nw-bar"><i style={{width:`${(cash/barMax)*100}%`,background:NW_COLORS.cash}} title={`เงินสด ฿${dbNum(cash)}`}/><i style={{width:`${(invest/barMax)*100}%`,background:NW_COLORS.invest}} title={`ลงทุน ฿${dbNum(invest)}`}/></div>
+      <div className="nw-bar"><i style={{width:`${(debt/barMax)*100}%`,background:NW_COLORS.debt}} title={`หนี้ ฿${dbNum(debt)}`}/></div>
+      {rows.map(r=>(
+        <div key={r.key} className={`db-row ${r.to?"nw-row-link":""}`} onClick={r.to?()=>setTab(r.to):undefined}>
+          <span className="lab"><i className="db-dot" style={{background:r.color}}/> {r.label}</span>
+          <span className="val db-mono" style={{color:r.color}}>{r.neg&&r.v>0?"-":""}฿{dbNum(r.v)}</span>
+        </div>
+      ))}
+      {cash===0&&invest===0&&debt===0&&(
+        <div className="db-empty">ยังไม่มีข้อมูล — กรอกบัญชีเงินสดในการ์ดถัดไป, มูลค่าพอร์ตที่แท็บ Investments, หนี้ที่แท็บ Debts</div>
+      )}
+      {staleAcc.length>0&&(
+        <div className="inv-warn">ยอดบัญชี {staleAcc.map(a=>a.name||"(ไม่มีชื่อ)").join(", ")} ไม่ได้อัปเดตเกิน 30 วันแล้ว</div>
+      )}
+    </div>
+  );
+}
+/* บัญชีเงินสด/เงินฝาก — แก้ไข/ลบในการ์ด, เพิ่มใหม่ผ่านปุ่มเดียวของหน้า (ข้อ 32/2) */
+function CashAccountsCard({finance,persist}) {
+  const accounts=finance.finance.cashAccounts||[];
   const setAccounts=(next)=>persist({...finance,finance:{...finance.finance,cashAccounts:next}});
-  const addAccount=()=>setAccounts([...accounts,{id:uid(),name:"",balance:"",updatedAt:todayISO()}]);
   const editAccount=(id,field,v)=>setAccounts(accounts.map(a=>a.id===id?{...a,[field]:v,updatedAt:todayISO()}:a));
   const removeAccount=(id)=>setAccounts(accounts.filter(a=>a.id!==id));
-  const staleAcc=accounts.filter(a=>a.updatedAt&&(-daysUntil(a.updatedAt))>=30);
-  const bar=[
-    {label:"เงินสด",v:cash,color:"#34d399"},
-    {label:"ลงทุน",v:invest,color:"#a78bfa"},
-    {label:"หนี้",v:debt,color:"#fb923c"},
-  ];
-  const barMax=Math.max(cash+invest,debt,1);
   return (
-    <div className="card" style={{margin:"0 20px 20px"}}>
-      <div className="card-head" style={{cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
-        <Wallet size={24}/> Net Worth
-        <div className="card-head-right">
-          <span className="fin-stat-value" style={{fontSize:22,color:net>=0?"#34d399":"#fb923c"}}>
-            {net<0?"-":""}฿{Math.abs(Math.round(net)).toLocaleString()}
+    <DashCollapse
+      title="บัญชีเงินสด / เงินฝาก"
+      note={accounts.length?`${accounts.length} บัญชี · รวม ฿${dbNum(totalCash(finance))}`:"ยังไม่มีบัญชี"}
+      defaultOpen={accounts.length>0&&accounts.length<=4}>
+      <div className="db-note" style={{marginTop:0,marginBottom:10}}>
+        กรอกยอดคงเหลือเองเป็นระยะ — ไม่ได้คำนวณจากรายรับ-รายจ่ายอัตโนมัติ เพราะข้อมูลไม่ครอบคลุมทุกบัญชี
+      </div>
+      {accounts.length===0&&<div className="db-empty">ยังไม่มีบัญชี — กด “เพิ่มข้อมูล” ด้านบนแล้วเลือก “บัญชีเงินสด”</div>}
+      {accounts.map(a=>(
+        <div key={a.id} className="db-row fin-acc-row">
+          <span className="lab">
+            <input className="modal-input fin-acc-name" placeholder="เช่น KBank ออมทรัพย์" value={a.name} onChange={e=>editAccount(a.id,"name",e.target.value)}/>
           </span>
-          {open?<ChevronUp size={20}/>:<ChevronDown size={20}/>}
+          <span style={{display:"flex",alignItems:"center",gap:8}}>
+            <input className="modal-input inv-val-input db-mono" inputMode="decimal" placeholder="0" value={a.balance} onChange={e=>editAccount(a.id,"balance",e.target.value)}/>
+            <span className="db-note inv-inline-note fin-acc-when">{a.updatedAt||"—"}</span>
+            <button className="db-chip" title="ลบบัญชี" onClick={()=>removeAccount(a.id)}><Trash2 size={12}/></button>
+          </span>
         </div>
+      ))}
+    </DashCollapse>
+  );
+}
+/* โมดัลเพิ่มบัญชีเงินสด — ปุ่มเดียวของหน้า Overview เรียกตัวนี้ */
+function AddCashAccountModal({onClose,onSave}) {
+  const [name,setName]=useState("");
+  const [balance,setBalance]=useState("");
+  const ready=name.trim().length>0;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>➕ เพิ่มบัญชีเงินสด</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-body">
+          <div><label className="field-label">ชื่อบัญชี</label><input className="modal-input" placeholder="เช่น KBank ออมทรัพย์" value={name} onChange={e=>setName(e.target.value)}/></div>
+          <div style={{marginTop:10}}><label className="field-label">ยอดคงเหลือ</label><input className="modal-input" inputMode="decimal" placeholder="0" value={balance} onChange={e=>setBalance(e.target.value)}/></div>
+          <button className="modal-btn-save" style={{marginTop:12,width:"100%"}} disabled={!ready} onClick={()=>ready&&onSave({name:name.trim(),balance})}>บันทึกบัญชี</button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
       </div>
-      <div style={{padding:"10px 16px 0"}}>
-        <div style={{display:"flex",height:12,borderRadius:8,overflow:"hidden",background:"#2f2745",marginBottom:10}}>
-          <div style={{width:`${(cash/barMax)*100}%`,background:"#34d399"}} title={`เงินสด ฿${Math.round(cash).toLocaleString()}`}/>
-          <div style={{width:`${(invest/barMax)*100}%`,background:"#a78bfa"}} title={`ลงทุน ฿${Math.round(invest).toLocaleString()}`}/>
-        </div>
-        <div style={{display:"flex",height:12,borderRadius:8,overflow:"hidden",background:"#2f2745",marginBottom:12}}>
-          <div style={{width:`${(debt/barMax)*100}%`,background:"#fb923c"}} title={`หนี้ ฿${Math.round(debt).toLocaleString()}`}/>
-        </div>
-        <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:16}}>
-          {bar.map(b=>(
-            <span key={b.label} style={{display:"flex",alignItems:"center",gap:6,color:"#a29bc4"}}>
-              <span style={{width:10,height:10,borderRadius:3,background:b.color}}/>
-              {b.label} <b style={{color:b.color}}>{b.label==="หนี้"&&b.v>0?"-":""}฿{Math.round(b.v).toLocaleString()}</b>
-            </span>
-          ))}
-        </div>
-        {invest===0&&debt===0&&cash===0&&(
-          <div style={{fontSize:15,color:"#a29bc4",marginTop:10}}>ยังไม่มีข้อมูล — กรอกบัญชีเงินสดด้านล่าง, มูลค่าพอร์ตที่แท็บ Investments, หนี้ที่แท็บ Debts</div>
-        )}
-        {staleAcc.length>0&&(
-          <div style={{marginTop:10,padding:"8px 12px",background:"#2a1f3d",border:"1px solid #f59e0b",borderRadius:10,fontSize:15,color:"#fbbf24"}}>
-            ยอดบัญชี {staleAcc.map(a=>a.name||"(ไม่มีชื่อ)").join(", ")} ไม่ได้อัปเดตเกิน 30 วันแล้ว
-          </div>
-        )}
-      </div>
-      {open&&(
-        <>
-          <div className="recat-hint" style={{margin:"12px 16px 0"}}>
-            บัญชีเงินสด/เงินฝาก — กรอกยอดคงเหลือเองเป็นระยะ (ไม่ได้คำนวณจากรายรับ-รายจ่ายอัตโนมัติ เพราะข้อมูลไม่ครอบคลุมทุกบัญชี)
-          </div>
-          <div className="exp-table-wrap">
-            <table className="exp-table">
-              <thead><tr><th>บัญชี</th><th className="exp-col-amount">ยอดคงเหลือ</th><th>อัปเดตล่าสุด</th><th className="exp-col-action"></th></tr></thead>
-              <tbody>
-                {accounts.length===0&&<tr><td colSpan={4}><div className="empty">ยังไม่มีบัญชี — กดปุ่ม + ด้านล่าง</div></td></tr>}
-                {accounts.map(a=>(
-                  <tr key={a.id}>
-                    <td><input className="modal-input" style={{maxWidth:220}} placeholder="เช่น KBank ออมทรัพย์" value={a.name} onChange={e=>editAccount(a.id,"name",e.target.value)}/></td>
-                    <td className="exp-col-amount"><input className="modal-input" style={{maxWidth:150,textAlign:"right"}} inputMode="decimal" placeholder="0" value={a.balance} onChange={e=>editAccount(a.id,"balance",e.target.value)}/></td>
-                    <td style={{fontSize:15,color:"#a29bc4"}}>{a.updatedAt||"—"}</td>
-                    <td className="exp-col-action"><button className="del-btn" onClick={()=>removeAccount(a.id)}><Trash2 size={19}/></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button className="icon-btn" onClick={addAccount} style={{alignSelf:"flex-end",margin:"0 16px 12px"}}><Plus size={24}/></button>
-        </>
-      )}
     </div>
   );
 }
@@ -4247,12 +4396,12 @@ function FinancePage({data,persist}) {
           const Icon=t.icon;
           return (
             <button key={t.key} className={`fin-tab-btn ${tab===t.key?"active":""}`} onClick={()=>setTab(t.key)}>
-              <Icon size={24}/> {t.label}
+              <Icon size={13}/> {t.label}
             </button>
           );
         })}
       </div>
-      {tab==="overview"&&<FinanceOverviewTab finance={data} persist={persist}/>}
+      {tab==="overview"&&<FinanceOverviewTab finance={data} persist={persist} setTab={setTab}/>}
       {tab==="review"&&<FinanceReviewTab finance={data} persist={persist}/>}
       {tab==="income"&&<FinanceIncomeTab finance={data} persist={persist}/>}
       {tab==="expenses"&&<FinanceExpensesTab finance={data} persist={persist}/>}
@@ -5385,7 +5534,8 @@ function MilestoneToast({toast,onClose}) {
    Dashboard bento (ข้อ 24/2) — ต้นแบบ mockups/mockup-dark-emerald.html
    คลาส CSS ใช้ prefix db- ทั้งหมด (ดูท้าย styles.css)
    ═══════════════════════════════════════════════════════════════════ */
-const DB_ALLOC_COLORS={retirement:"#10b981",insurance:"#6f9e8d",gold:"#d9b26a",crypto:"#eccf94",stock:"#34d399",fund:"#4d7f6c",other:"#365749"};
+/* ข้อ 24/3: ยุบชุดสีซ้ำ — ใช้ INVEST_TYPE_COLORS ตัวเดียวทั้งแอป (นิยามไว้ที่บล็อก INVEST_TYPES ด้านบน) */
+const DB_ALLOC_COLORS=INVEST_TYPE_COLORS;
 const DB_DAY_TH=["อา","จ","อ","พ","พฤ","ศ","ส"];
 function dbNum(n){ return Math.round(n).toLocaleString("en-US"); }
 function dbShort(n){
@@ -5398,13 +5548,19 @@ function dbThaiMonth(d){ return d.toLocaleDateString("th-TH",{month:"long",year:
 function dbNetWorth(data){ return totalCash(data)+portfolioValue(data)-totalDebtBalance(data); }
 function dbBudgetPct(review){ return review.hasBudget&&review.totalBudget>0?Math.round((review.totalVsBudget/review.totalBudget)*100):null; }
 
-function DashCollapse({title,note,defaultOpen,children}){
+/* การ์ดพับได้ของ design system db-
+   span  = คลาสความกว้างในกริด (ปริยาย db-span2 — หน้า Home ใช้ค่านี้ทั้งหมด อย่าเปลี่ยนค่าปริยาย)
+   actions = ปุ่มเสริมบนหัวการ์ด (ต้อง stopPropagation เองแล้วในตัวห่อ ไม่งั้นกดแล้วการ์ดจะพับ) */
+function DashCollapse({title,note,defaultOpen,children,span,actions}){
   const [open,setOpen]=useState(!!defaultOpen);
   return (
-    <div className="db-card db-span2">
+    <div className={`db-card ${span||"db-span2"}`}>
       <div className="db-head" onClick={()=>setOpen(v=>!v)} role="button" style={{marginBottom:open?16:0,cursor:"pointer"}}>
         <div><div className="db-title">{title}</div>{note&&<div className="db-note">{note}</div>}</div>
-        <button className="db-chip">{open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
+        <div className="db-head-actions">
+          {actions&&<span onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>{actions}</span>}
+          <button className="db-chip">{open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
+        </div>
       </div>
       {open&&children}
     </div>

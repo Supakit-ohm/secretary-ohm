@@ -138,32 +138,121 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check(`แท็บ ${t}`,len>50,`${len} ตัวอักษร`);
   }
 
-  console.log('\n[ข้อ 18] หน้า Investments ที่รื้อใหม่');
+  console.log('\n[ข้อ 24/4] หน้า Finance Overview รีดีไซน์ตามธรรมนูญข้อ 32');
+  await p.locator('button:has-text("Overview")').first().click(); await p.waitForTimeout(2000);
+  const ovw=await p.evaluate(()=>{
+    const sec=document.querySelector('.fin-section');
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className)))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const h=document.querySelector('.fin-page .db-hero-title');
+    return {
+      page:!!document.querySelector('.fin-section.fin-page'),
+      heroFs:h?getComputedStyle(h).fontSize:'',
+      heroMargin:h?getComputedStyle(h).marginTop:'',
+      cards:document.querySelectorAll('.fin-page .db-bento > .db-card').length,
+      bignums:document.querySelectorAll('.fin-page .db-bignum .n').length,
+      nwBars:document.querySelectorAll('.fin-page .nw-bar i').length,
+      nwRows:document.querySelectorAll('.fin-page .nw-row-link').length,
+      donuts:document.querySelectorAll('.fin-page .db-donut').length,
+      legendBtns:document.querySelectorAll('.fin-page .fin-lg-btn').length,
+      rangeBtns:document.querySelectorAll('.fin-page .fin-range-btn').length,
+      rangeSelect:!!document.querySelector('.fin-page .fin-range-select'),
+      addBtns:[...document.querySelectorAll('.fin-page button')].filter(b=>/เพิ่มข้อมูล|เพิ่มบัญชี/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      legacy:document.querySelectorAll('.fin-page .card, .fin-page .empty, .fin-page .fin-stat-card, .fin-page .fin-pie-split, .fin-page table').length,
+      recharts:document.querySelectorAll('.fin-page .recharts-wrapper').length,
+      inlineFs,
+    };
+  });
+  check('หน้าใช้โครง .fin-page + db-bento',ovw.page&&ovw.cards>=4,`การ์ด ${ovw.cards} ใบ`);
+  check('ฮีโร่ 38px และมี margin:0 (ข้อ 31)',ovw.heroFs==='38px'&&ovw.heroMargin==='0px',`${ovw.heroFs} / margin-top ${ovw.heroMargin}`);
+  check('ตัวเลขใหญ่สรุป 3 ตัว (รับ/จ่าย/คงเหลือ)',ovw.bignums===3,`${ovw.bignums} ตัว`);
+  check('แถบสัดส่วน Net Worth + แถวกดไปหน้าอื่น',ovw.nwBars>=2&&ovw.nwRows===2,`${ovw.nwBars} แถบ · ${ovw.nwRows} แถวลิงก์`);
+  check('โดนัทรายรับ/รายจ่าย (DashDonut ไม่ใช่ Recharts)',ovw.donuts>=1&&ovw.recharts===0,`${ovw.donuts} วง · recharts ${ovw.recharts}`);
+  check('ตัวกรองช่วงเวลาเป็นแคปซูล',ovw.rangeBtns===2&&ovw.rangeSelect,`${ovw.rangeBtns} ปุ่ม · select=${ovw.rangeSelect}`);
+  check('ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',ovw.addBtns.length===1,ovw.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('ไม่เหลือคลาสธีมเก่า/ตารางในหน้านี้',ovw.legacy===0,`เจอ ${ovw.legacy}`);
+  check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',ovw.inlineFs.length===0,ovw.inlineFs.slice(0,5).join(' | '));
+  // กด legend หมวดหนึ่ง แล้วต้องกางรายการออกมา
+  const lg=p.locator('.fin-lg-btn').first();
+  if(await lg.count()){
+    await lg.click(); await p.waitForTimeout(700);
+    const det=await p.evaluate(()=>document.querySelectorAll('.fin-detail-item').length);
+    check('กดหมวดใน legend แล้วกางรายการ',det>0,`${det} รายการ`);
+    await lg.click(); await p.waitForTimeout(400);
+  } else check('กดหมวดใน legend แล้วกางรายการ',false,'ไม่เจอ legend');
+  // ปุ่มเดียว → โมดัลเพิ่มบัญชีเงินสด
+  const ovAdd=p.locator('.fin-page .inv-add-btn').first();
+  if(await ovAdd.count()){
+    await ovAdd.click(); await p.waitForTimeout(800);
+    const m=await p.evaluate(()=>{const x=document.querySelector('.modal-backdrop .modal');return x?{head:x.querySelector('.modal-head')?.innerText.trim(),inputs:x.querySelectorAll('input').length}:null;});
+    check('โมดัลเพิ่มบัญชีเงินสดเปิดได้',!!m&&m.inputs===2,m?`${m.head} · ${m.inputs} ช่อง`:'');
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
+  } else check('โมดัลเพิ่มบัญชีเงินสดเปิดได้',false,'ไม่เจอปุ่ม');
+
+  console.log('\n[ข้อ 24/3] หน้า Investments รีดีไซน์ตามธรรมนูญข้อ 32');
   await p.locator('button:has-text("Investments")').first().click(); await p.waitForTimeout(2000);
-  const inv=await p.evaluate(()=>({
-    alloc:!!document.querySelector('.inv-alloc-grid'),
-    allocPie:document.querySelectorAll('.inv-alloc-grid .recharts-pie-sector, .inv-alloc-grid path.recharts-sector').length,
-    pnlRows:document.querySelectorAll('.pnl-row').length,
-    pnlBars:document.querySelectorAll('.pnl-bar-fill').length,
-    platGrid:!!document.querySelector('.crypto-platform-grid'),
-    platCols:document.querySelectorAll('.crypto-platform-col').length,
-    miniPie:document.querySelectorAll('.crypto-mini-pie').length,
-    cards:document.querySelectorAll('.inv-item-card').length,
-    tables:document.querySelectorAll('.fin-section table').length,
-  }));
-  check('การ์ด Allocation มีอยู่',inv.alloc);
-  check('กราฟวงกลม Allocation วาดจริง',inv.allocPie>0,`${inv.allocPie} ชิ้น`);
-  check('แถบพลังกำไร/ขาดทุน',inv.pnlBars>0,`${inv.pnlRows} แถว / ${inv.pnlBars} แถบ`);
+  const inv=await p.evaluate(()=>{
+    const sec=document.querySelector('.fin-section');
+    /* ไอคอน makeIcon() ตั้ง fontSize inline เป็นดีไซน์ของมันเอง (ทั้งแอปรวมหน้า Home) — ไม่นับ */
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className)))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const heroTitle=document.querySelector('.fin-page .db-hero-title');
+    return {
+      page:!!document.querySelector('.fin-section.fin-page'),
+      hero:!!heroTitle,
+      heroFs:heroTitle?getComputedStyle(heroTitle).fontSize:'',
+      heroMargin:heroTitle?getComputedStyle(heroTitle).marginTop:'',
+      bento:!!document.querySelector('.fin-page .db-bento'),
+      cards:document.querySelectorAll('.fin-page .db-bento > .db-card').length,
+      bignums:document.querySelectorAll('.fin-page .db-bignum .n').length,
+      donutSegs:document.querySelectorAll('.fin-page .db-donut svg circle').length,
+      legend:document.querySelectorAll('.fin-page .db-lg').length,
+      bars:document.querySelectorAll('.inv-bars .db-bar').length,
+      pnlBars:document.querySelectorAll('.pnl-bar-fill').length,
+      platGrid:!!document.querySelector('.crypto-platform-grid'),
+      platCols:document.querySelectorAll('.crypto-platform-col').length,
+      itemCards:document.querySelectorAll('.inv-item-card').length,
+      tables:document.querySelectorAll('.fin-section table').length,
+      // ธรรมนูญ 32/2: ปุ่มเพิ่มข้อมูลระดับหน้าต้องเหลือปุ่มเดียว (ปุ่ม + DCA บนการ์ดเหรียญไม่นับ)
+      addBtns:[...document.querySelectorAll('.fin-page button')].filter(b=>/เพิ่มข้อมูล|เพิ่มเหรียญ|เพิ่มรายการ/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      // ธีมเก่า: ต้องไม่เหลือ .card / .empty / .fin-stat-card ของธีมม่วงในหน้านี้
+      legacy:document.querySelectorAll('.fin-page .card, .fin-page .empty, .fin-page .fin-stat-card, .fin-page .inv-alloc-grid').length,
+      recharts:document.querySelectorAll('.fin-page .recharts-wrapper').length,
+      inlineFs,
+    };
+  });
+  check('หน้าใช้โครง .fin-page + .db-bento',inv.page&&inv.bento,`การ์ด ${inv.cards} ใบ`);
+  check('ฮีโร่ 38px และมี margin:0 (ข้อ 31)',inv.hero&&inv.heroFs==='38px'&&inv.heroMargin==='0px',`${inv.heroFs} / margin-top ${inv.heroMargin}`);
+  check('ตัวเลขใหญ่สรุป 3 ตัวในฮีโร่',inv.bignums===3,`${inv.bignums} ตัว`);
+  check('โดนัท Allocation วาดจริง (DashDonut ไม่ใช่ Recharts)',inv.donutSegs>1&&inv.recharts===0,`${inv.donutSegs} วง · legend ${inv.legend} · recharts ${inv.recharts}`);
+  check('กราฟแท่งเงินใส่รายเดือน',inv.bars>0,`${inv.bars} แท่ง`);
+  check('แถบพลังกำไร/ขาดทุน',inv.pnlBars>0,`${inv.pnlBars} แถบ`);
   check('กริดพอร์ตคริปโตแยกคอลัมน์',inv.platGrid&&inv.platCols>=2,`${inv.platCols} คอลัมน์`);
-  check('มินิกราฟวงกลมต่อพอร์ต',inv.miniPie>0,`${inv.miniPie} วง`);
-  check('รายการเป็นการ์ด ไม่ใช่ตาราง',inv.cards>0&&inv.tables===0,`การ์ด ${inv.cards} · ตารางเหลือ ${inv.tables}`);
-  const addCoin=p.locator('button:has-text("เพิ่มเหรียญ")').first();
-  if(await addCoin.count()){
-    await addCoin.click(); await p.waitForTimeout(900);
+  check('รายการเป็นการ์ด ไม่ใช่ตาราง',inv.itemCards>0&&inv.tables===0,`การ์ด ${inv.itemCards} · ตารางเหลือ ${inv.tables}`);
+  check('ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',inv.addBtns.length===1,inv.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('ไม่เหลือคลาสธีมเก่าในหน้านี้',inv.legacy===0,`เจอ ${inv.legacy}`);
+  check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',inv.inlineFs.length===0,inv.inlineFs.slice(0,5).join(' | '));
+  // ปุ่มเดียว → โมดัลเลือกชนิด → เลือก "เหรียญคริปโต" → AddCoinModal
+  const addBtn=p.locator('.inv-add-btn').first();
+  if(await addBtn.count()){
+    await addBtn.click(); await p.waitForTimeout(800);
+    const picker=await p.evaluate(()=>document.querySelectorAll('.modal-backdrop .quick-type-row.inv-pick .quick-type-btn').length);
+    check('โมดัลเลือกชนิดข้อมูลเปิดได้',picker===2,`${picker} ตัวเลือก`);
+    await p.locator('.quick-type-btn:has-text("เหรียญคริปโต")').first().click().catch(()=>{}); await p.waitForTimeout(900);
     const modal=await p.evaluate(()=>{const m=document.querySelector('.modal-backdrop .modal');return m?{inputs:m.querySelectorAll('input').length,datalist:!!document.querySelector('datalist')}:null;});
-    check('modal เพิ่มเหรียญเปิดได้',!!modal,modal?`${modal.inputs} ช่องกรอก · datalist=${modal.datalist}`:"");
+    check('modal เพิ่มเหรียญเปิดได้',!!modal&&modal.inputs>3,modal?`${modal.inputs} ช่องกรอก · datalist=${modal.datalist}`:"");
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(600);
-  } else check('modal เพิ่มเหรียญเปิดได้',false,'ไม่เจอปุ่ม "เพิ่มเหรียญ"');
+  } else check('modal เพิ่มเหรียญเปิดได้',false,'ไม่เจอปุ่ม .inv-add-btn');
+  // การ์ดพับได้: กดหัวการ์ด "รายการทั้งหมด" แล้วต้องกางออกมา
+  const collapseHead=p.locator('.db-head:has-text("Savings & Investments")').first();
+  if(await collapseHead.count()){
+    const before=await p.evaluate(()=>document.querySelectorAll('.inv-item-card').length);
+    await collapseHead.click(); await p.waitForTimeout(800);
+    const after=await p.evaluate(()=>document.querySelectorAll('.inv-item-card').length);
+    check('การ์ดพับได้กางรายการยาวออกมา (ข้อ 32/3)',after>before,`${before} → ${after} การ์ด`);
+  } else check('การ์ดพับได้กางรายการยาวออกมา (ข้อ 32/3)',false,'ไม่เจอหัวการ์ด');
 
   /* ───────── รอบ 21: หมุดโปรเจกต์ + toast ───────── */
   console.log('\n[ข้อ 21] หมุดโปรเจกต์ + toast');
