@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>เลขา Ohm — Mockup ธีม Dark Emerald</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   TOKENS — ชุดนี้คือของจริงที่จะยกไปใส่ :root ใน styles.css
+   ═══════════════════════════════════════════════════════════ */
+:root{
+  /* พื้นหลัง */
+  --bg:            #0c1613;
+  --bg-wash-1:     rgba(16,185,129,.13);
+  --bg-wash-2:     rgba(217,178,106,.10);
+  --surface:       #172620;
+  --surface-2:     #1e2f28;
+  --surface-3:     #274038;
+  --line:          #304a3f;
+  --line-soft:     rgba(255,255,255,.075);
+
+  /* ตัวอักษร */
+  --ink:           #e9f3ee;
+  --ink-2:         #a9c1b6;
+  --ink-3:         #83a396;
+
+  /* สีเน้น */
+  --accent:        #10b981;   /* emerald — สีหลัก */
+  --accent-soft:   #34d399;   /* ใช้กับตัวอักษร/เส้นบนพื้นเข้ม */
+  --accent-dim:    rgba(16,185,129,.16);
+  --gold:          #d9b26a;   /* สีรอง ใช้ประหยัดมาก */
+  --gold-soft:     #eccf94;
+  --gold-dim:      rgba(217,178,106,.14);
+
+  /* สถานะ */
+  --up:            #34d399;
+  --down:          #f2777a;
+  --warn:          #e0b872;
+
+  /* รูปทรง */
+  --r-card:        24px;
+  --r-inner:       16px;
+  --r-pill:        999px;
+  --gap:           16px;
+  --shadow:        0 18px 40px -24px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Noto Sans Thai",system-ui,sans-serif;
+  font-size:14px;
+  line-height:1.5;
+  min-height:100vh;
+  padding:20px;
+}
+.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+
+/* แผ่นพื้นไล่สี — เลียนแบบรูปอ้างอิงที่ทั้งหน้าเป็นแผ่นมุมโค้งลอยอยู่ */
+.sheet{
+  max-width:1280px;margin:0 auto;padding:26px;
+  border-radius:34px;
+  border:1px solid rgba(255,255,255,.05);
+  background:
+    radial-gradient(720px 640px at 104% 52%, rgba(217,178,106,.30), transparent 62%),
+    radial-gradient(680px 440px at 88% -4%,  rgba(217,178,106,.22), transparent 62%),
+    radial-gradient(880px 700px at -6% 2%,   rgba(16,185,129,.24),  transparent 58%),
+    linear-gradient(150deg, #16261f 0%, #111d18 48%, #0d1714 100%);
+  background-attachment:fixed,fixed,fixed,fixed;
+  box-shadow:0 40px 90px -50px rgba(0,0,0,1);
+}
+.shell{max-width:1240px;margin:0 auto}
+
+/* ── Top bar ─────────────────────────────────────────────── */
+.topbar{display:flex;align-items:center;gap:18px;margin-bottom:34px;flex-wrap:wrap}
+.brand{
+  display:flex;align-items:center;gap:9px;
+  border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:9px 18px 9px 12px;background:var(--surface);
+  font-weight:600;letter-spacing:.2px;white-space:nowrap;
+}
+.brand-dot{width:20px;height:20px;border-radius:7px;background:linear-gradient(140deg,var(--accent),var(--gold));flex:none}
+.nav{
+  display:flex;align-items:center;gap:2px;margin:0 auto;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-pill);padding:5px;overflow-x:auto;max-width:100%;
+}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  color:var(--ink-2);text-decoration:none;font-size:13px;font-weight:500;
+  padding:8px 15px;border-radius:var(--r-pill);white-space:nowrap;transition:.15s;
+}
+.nav a:hover{color:var(--ink);background:var(--surface-3)}
+.nav a.on{background:var(--accent);color:#04140e;font-weight:600}
+.top-actions{display:flex;gap:8px}
+.icon-btn{
+  width:38px;height:38px;border-radius:var(--r-pill);
+  background:var(--surface);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--ink-2);cursor:pointer;
+}
+.icon-btn.avatar{background:linear-gradient(140deg,var(--accent),var(--gold));color:#04140e;font-weight:700;border:none}
+
+/* ── Hero ────────────────────────────────────────────────── */
+.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:32px;flex-wrap:wrap;margin-bottom:26px}
+h1{font-size:38px;font-weight:600;letter-spacing:-.4px;line-height:1.15}
+h1 span{color:var(--ink-3)}
+.hero-sub{color:var(--ink-3);font-size:13px;margin-top:6px}
+
+.meters{display:flex;gap:26px;margin-top:22px;flex-wrap:wrap}
+.meter-label{font-size:11px;color:var(--ink-3);margin-bottom:7px;letter-spacing:.3px}
+.meter{display:flex;align-items:center;gap:7px}
+.meter-pill{
+  border-radius:var(--r-pill);padding:6px 15px;font-size:12px;font-weight:600;
+  background:var(--surface-3);color:var(--ink-2);
+}
+.meter-pill.a{background:var(--accent);color:#04140e}
+.meter-pill.g{background:var(--gold);color:#1b1405}
+.meter-track{
+  width:132px;height:26px;border-radius:var(--r-pill);
+  background:repeating-linear-gradient(115deg,var(--line-soft) 0 1px,transparent 1px 7px);
+  border:1px solid var(--line);
+}
+
+.bignums{display:flex;gap:34px}
+.bignum .n{font-size:40px;font-weight:600;letter-spacing:-1.2px;line-height:1}
+.bignum .n.acc{color:var(--accent-soft)}
+.bignum .n.gld{color:var(--gold-soft)}
+.bignum .l{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:12px;margin-top:8px}
+.dotmark{width:7px;height:7px;border-radius:2px;background:var(--ink-3)}
+.dotmark.a{background:var(--accent)} .dotmark.g{background:var(--gold)}
+
+/* ── Bento grid ──────────────────────────────────────────── */
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap)}
+.card{
+  background:rgba(23,38,32,.84);backdrop-filter:blur(6px);
+  border:1px solid var(--line-soft);
+  border-radius:var(--r-card);padding:20px;box-shadow:var(--shadow);
+  min-width:0;
+}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600}
+.card-note{font-size:11px;color:var(--ink-3);margin-top:3px}
+.chip{
+  border:1px solid var(--line);border-radius:var(--r-pill);
+  width:30px;height:30px;display:grid;place-items:center;
+  color:var(--ink-3);flex:none;font-size:13px;
+}
+
+/* การ์ดเด่น (แทน "การ์ดดำ" ในรูปอ้างอิง) */
+.card.feature{
+  grid-column:4;grid-row:span 2;
+  background:linear-gradient(168deg,#1b2f26 0%,#122019 58%,#172620 100%);
+  border:1px solid rgba(16,185,129,.22);
+  display:flex;flex-direction:column;
+}
+.feature-count{font-size:26px;font-weight:600;letter-spacing:-.6px}
+.feature-count b{color:var(--accent-soft)}
+.tasklist{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.trow{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:var(--r-inner);background:rgba(255,255,255,.032)}
+.trow.done{opacity:.55}
+.ticon{width:30px;height:30px;border-radius:10px;background:var(--surface-3);display:grid;place-items:center;font-size:13px;flex:none}
+.trow.done .ticon{background:var(--accent-dim);color:var(--accent-soft)}
+.tmain{min-width:0;flex:1}
+.tname{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow.done .tname{text-decoration:line-through;text-decoration-color:var(--ink-3)}
+.ttime{font-size:10.5px;color:var(--ink-3);margin-top:2px}
+.tcheck{width:19px;height:19px;border-radius:50%;border:1.5px solid var(--line);flex:none}
+.tcheck.on{background:var(--accent);border-color:var(--accent);position:relative}
+.tcheck.on::after{content:"";position:absolute;left:6px;top:2.5px;width:4px;height:9px;border:solid #04140e;border-width:0 2px 2px 0;transform:rotate(42deg)}
+.feature-next{margin-top:18px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.feature-next-lab{font-size:11px;color:var(--ink-3);margin-bottom:2px;letter-spacing:.3px}
+.feature-foot{margin-top:auto;padding-top:16px;display:flex;gap:8px}
+.btn{flex:1;border-radius:var(--r-pill);padding:11px;text-align:center;font-size:12.5px;font-weight:600;border:1px solid var(--line);color:var(--ink-2);cursor:pointer}
+.btn.primary{background:var(--accent);color:#04140e;border-color:transparent}
+
+/* ── โมเมนตัม ─────────────────────────────────────────────── */
+.mom{display:flex;align-items:center;gap:16px}
+.ring-wrap{position:relative;width:110px;height:110px;flex:none}
+.ring-mid{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring-mid .v{font-size:24px;font-weight:600;letter-spacing:-.5px}
+.ring-mid .k{font-size:10px;color:var(--ink-3);margin-top:1px}
+.mom-side{min-width:0}
+.delta{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--up);background:var(--accent-dim);border-radius:var(--r-pill);padding:4px 10px}
+.mom-line{font-size:11.5px;color:var(--ink-3);margin-top:9px}
+.mom-line b{color:var(--ink-2);font-weight:600}
+
+/* ── กราฟแท่ง ─────────────────────────────────────────────── */
+.bars{display:flex;align-items:flex-end;gap:9px;height:104px;margin-top:6px}
+.bcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end}
+.bar{width:11px;border-radius:5px 5px 0 0;background:var(--surface-3)}
+.bar.hi{background:var(--accent)}
+.bar.gold{background:var(--gold)}
+.blab{font-size:10px;color:var(--ink-3)}
+.callout{
+  position:absolute;background:var(--gold);color:#1b1405;
+  border-radius:var(--r-pill);padding:4px 10px;font-size:11px;font-weight:600;
+  box-shadow:0 8px 18px -8px rgba(0,0,0,.8);
+}
+
+/* ── การเงิน ──────────────────────────────────────────────── */
+.fin-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px}
+.fin-row:last-child{border-bottom:none}
+.fin-row .lab{display:flex;align-items:center;gap:9px;color:var(--ink-2)}
+.fin-row .val{font-weight:600}
+.val.up{color:var(--up)} .val.down{color:var(--down)}
+.donut-wrap{display:flex;align-items:center;gap:16px}
+.legend{display:flex;flex-direction:column;gap:9px;font-size:11.5px;min-width:0}
+.lg{display:flex;align-items:center;gap:8px;color:var(--ink-2)}
+.lg i{width:9px;height:9px;border-radius:3px;flex:none}
+.lg b{margin-left:auto;color:var(--ink);font-weight:600;padding-left:12px}
+
+/* ── หมุดความคืบหน้า ──────────────────────────────────────── */
+.ms-track{position:relative;height:10px;border-radius:var(--r-pill);background:var(--surface-3);margin:16px 0 18px}
+.ms-fill{height:100%;border-radius:var(--r-pill);background:linear-gradient(90deg,var(--accent),var(--accent-soft))}
+.ms-tick{position:absolute;top:-3px;width:2px;height:16px;border-radius:2px;background:var(--gold);opacity:.85}
+.ms-list{display:flex;flex-direction:column;gap:11px;font-size:12px}
+.ms-item{display:flex;align-items:center;gap:9px;color:var(--ink-3)}
+.ms-item.on{color:var(--ink-2)}
+.ms-item b{font-weight:600;color:var(--ink-2)}
+.ms-dot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--line);flex:none}
+.ms-dot.on{background:var(--gold);border-color:var(--gold)}
+.ms-when{margin-left:auto;font-size:11px;color:var(--ink-3)}
+.ms-item.on .ms-when{color:var(--gold-soft)}
+
+/* ── รายการพับได้ ─────────────────────────────────────────── */
+.acc-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--line-soft);font-size:13px;cursor:pointer}
+.acc-row:last-child{border-bottom:none}
+.acc-row .c{color:var(--ink-3);font-size:11px}
+
+/* ── Timeline ────────────────────────────────────────────── */
+.tl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.tl-nav{display:flex;gap:6px}
+.tl-nav span{font-size:11px;color:var(--ink-3);border:1px solid var(--line);border-radius:var(--r-pill);padding:4px 12px}
+.tl-nav span.on{color:var(--ink);background:var(--surface-3)}
+.tl-grid{display:grid;grid-template-columns:46px repeat(5,1fr);gap:0 6px;font-size:11px}
+.tl-grid .d{color:var(--ink-3);text-align:center;padding-bottom:10px}
+.tl-grid .d b{display:block;color:var(--ink-2);font-size:13px;font-weight:600;margin-top:2px}
+.tl-grid .h{color:var(--ink-3);padding:9px 0;border-top:1px solid var(--line-soft)}
+.tl-cell{border-top:1px solid var(--line-soft);padding:5px 0;position:relative;min-height:40px}
+.ev{
+  border-radius:12px;padding:7px 10px;font-size:11px;font-weight:500;line-height:1.35;
+  background:var(--surface-3);border-left:2.5px solid var(--accent);
+}
+.ev.g{border-left-color:var(--gold)}
+.ev small{display:block;color:var(--ink-3);font-size:10px;font-weight:400;margin-top:2px}
+
+/* ── Palette strip ───────────────────────────────────────── */
+.palette{margin-top:34px;padding-top:24px;border-top:1px solid var(--line)}
+.palette h3{font-size:13px;font-weight:600;margin-bottom:4px}
+.palette p{font-size:11.5px;color:var(--ink-3);margin-bottom:16px}
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.sw{border:1px solid var(--line-soft);border-radius:14px;overflow:hidden;background:var(--surface)}
+.sw .b{height:46px}
+.sw .t{padding:8px 10px;font-size:10.5px;color:var(--ink-3);line-height:1.35}
+.sw .t b{display:block;color:var(--ink-2);font-size:11px}
+
+@media(max-width:1080px){
+  .bento{grid-template-columns:repeat(2,1fr)}
+  .card.feature{grid-column:auto;grid-row:auto}
+  .span2{grid-column:span 2 !important}
+}
+@media(max-width:720px){
+  body{padding:8px}
+  .sheet{padding:14px;border-radius:22px}
+  .bento{grid-template-columns:1fr}
+  .span2{grid-column:auto !important}
+  h1{font-size:28px}
+  .bignums{gap:22px}
+  .bignum .n{font-size:30px}
+  .nav{order:3;width:100%;margin:0}
+  .tl-grid{grid-template-columns:40px repeat(3,1fr)}
+  .tl-grid .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+<div class="shell">
+
+  <!-- ══ TOP BAR ══ -->
+  <div class="topbar">
+    <div class="brand"><span class="brand-dot"></span> เลขา Ohm</div>
+    <nav class="nav">
+      <a href="#" class="on">หน้าแรก</a>
+      <a href="#">การเงิน</a>
+      <a href="#">Tracker</a>
+      <a href="#">สุขภาพ</a>
+      <a href="#">เอกสาร</a>
+      <a href="#">หนังสือ</a>
+      <a href="#">Journal</a>
+    </nav>
+    <div class="top-actions">
+      <div class="icon-btn">⌕</div>
+      <div class="icon-btn">✚</div>
+      <div class="icon-btn avatar">O</div>
+    </div>
+  </div>
+
+  <!-- ══ HERO ══ -->
+  <div class="hero">
+    <div>
+      <h1>สวัสดีตอนบ่าย, <span>Ohm</span></h1>
+      <div class="hero-sub">วันพุธที่ 26 สิงหาคม 2569 · ซิงก์กับ Drive แล้ว 12:04 น.</div>
+      <div class="meters">
+        <div>
+          <div class="meter-label">งานวันนี้</div>
+          <div class="meter"><span class="meter-pill a">3/5</span></div>
+        </div>
+        <div>
+          <div class="meter-label">ความคืบหน้ารวม</div>
+          <div class="meter"><span class="meter-pill g">39%</span></div>
+        </div>
+        <div>
+          <div class="meter-label">งบเดือนนี้ใช้ไป</div>
+          <div class="meter"><span class="meter-pill">62%</span><span class="meter-track"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="bignums">
+      <div class="bignum">
+        <div class="n mono acc">7</div>
+        <div class="l"><span class="dotmark a"></span> วันติดกัน</div>
+      </div>
+      <div class="bignum">
+        <div class="n mono">3</div>
+        <div class="l"><span class="dotmark"></span> โปรเจกต์</div>
+      </div>
+      <div class="bignum">
+        <div class="n mono gld">846k</div>
+        <div class="l"><span class="dotmark g"></span> มูลค่าสุทธิ</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ BENTO ══ -->
+  <div class="bento">
+
+    <!-- โมเมนตัม -->
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">โมเมนตัม</div><div class="card-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div>
+        <div class="chip">↗</div>
+      </div>
+      <div class="mom">
+        <div class="ring-wrap">
+          <svg width="110" height="110" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="46" fill="none" stroke="#274038" stroke-width="9"/>
+            <circle cx="55" cy="55" r="46" fill="none" stroke="#10b981" stroke-width="9"
+                    stroke-linecap="round" stroke-dasharray="113 289" transform="rotate(-90 55 55)"/>
+          </svg>
+          <div class="ring-mid"><div class="v mono">39%</div><div class="k">รวมทั้งหมด</div></div>
+        </div>
+        <div class="mom-side">
+          <span class="delta">▲ 2.3% / 7 วัน</span>
+          <div class="mom-line">เทียบเดือนก่อน <b>36.7%</b></div>
+          <div class="mom-line">ขยับติดกัน <b>7 วัน</b></div>
+          <svg width="120" height="34" viewBox="0 0 120 34" style="margin-top:10px">
+            <polyline fill="none" stroke="#34d399" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+              points="0,27 12,25 24,26 36,21 48,22 60,17 72,15 84,16 96,10 108,8 120,5"/>
+            <circle cx="120" cy="5" r="3" fill="#34d399"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ความคืบหน้าโปรเจกต์ -->
+    <div class="card" style="position:relative">
+      <div class="card-head">
+        <div><div class="card-title">ขยับรายวัน</div><div class="card-note">7 วันล่าสุด</div></div>
+        <div class="chip">↗</div>
+      </div>
+      <div style="font-size:26px;font-weight:600;letter-spacing:-.6px" class="mono">4.8<span style="font-size:13px;color:var(--ink-3);font-weight:400"> จุด/สัปดาห์</span></div>
+      <div class="callout" style="right:20px;top:96px">+1.2 ศุกร์</div>
+      <div class="bars">
+        <div class="bcol"><div class="bar" style="height:22%"></div><div class="blab">อา</div></div>
+        <div class="bcol"><div class="bar" style="height:48%"></div><div class="blab">จ</div></div>
+        <div class="bcol"><div class="bar" style="height:34%"></div><div class="blab">อ</div></div>
+        <div class="bcol"><div class="bar hi" style="height:70%"></div><div class="blab">พ</div></div>
+        <div class="bcol"><div class="bar" style="height:40%"></div><div class="blab">พฤ</div></div>
+        <div class="bcol"><div class="bar gold" style="height:88%"></div><div class="blab">ศ</div></div>
+        <div class="bcol"><div class="bar" style="height:18%"></div><div class="blab">ส</div></div>
+      </div>
+    </div>
+
+    <!-- เงินเดือนนี้ -->
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">เงินเดือนนี้</div><div class="card-note">1–26 ส.ค. 2569</div></div>
+        <div class="chip">↗</div>
+      </div>
+      <div class="fin-row"><span class="lab"><span class="dotmark a"></span> รายรับ</span><span class="val up mono">+53,600</span></div>
+      <div class="fin-row"><span class="lab"><span class="dotmark" style="background:var(--down)"></span> รายจ่าย</span><span class="val down mono">−41,280</span></div>
+      <div class="fin-row"><span class="lab"><span class="dotmark g"></span> ออม/ลงทุน</span><span class="val mono" style="color:var(--gold-soft)">8,150</span></div>
+      <div class="fin-row" style="padding-top:14px">
+        <span class="lab" style="color:var(--ink)">คงเหลือ</span>
+        <span class="val mono" style="font-size:17px">4,170</span>
+      </div>
+      <div style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-bottom:7px">
+          <span>งบผันแปรเดือนนี้</span><span class="mono">18,600 / 30,000</span>
+        </div>
+        <div class="ms-track" style="margin:0;height:8px">
+          <div class="ms-fill" style="width:62%;background:linear-gradient(90deg,var(--gold),var(--gold-soft))"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- การ์ดเด่น: งานวันนี้ -->
+    <div class="card feature">
+      <div class="card-head">
+        <div>
+          <div class="card-title">งานวันนี้</div>
+          <div class="card-note">พุธ 26 ส.ค.</div>
+        </div>
+        <div class="feature-count mono"><b>3</b>/5</div>
+      </div>
+      <div class="tasklist">
+        <div class="trow done"><div class="ticon">✓</div><div class="tmain"><div class="tname">เช็คยอดบัตรเครดิต</div><div class="ttime">08:30</div></div><div class="tcheck on"></div></div>
+        <div class="trow done"><div class="ticon">✓</div><div class="tmain"><div class="tname">บันทึกรายจ่ายเมื่อวาน</div><div class="ttime">09:15</div></div><div class="tcheck on"></div></div>
+        <div class="trow done"><div class="ticon">✓</div><div class="tmain"><div class="tname">อ่านหนังสือ 20 หน้า</div><div class="ttime">10:40</div></div><div class="tcheck on"></div></div>
+        <div class="trow"><div class="ticon">◷</div><div class="tmain"><div class="tname">สรุปยอดร้านประจำสัปดาห์</div><div class="ttime">15:00</div></div><div class="tcheck"></div></div>
+        <div class="trow"><div class="ticon">◷</div><div class="tmain"><div class="tname">DCA รอบเดือน · Binance TH</div><div class="ttime">20:00</div></div><div class="tcheck"></div></div>
+      </div>
+      <div class="feature-next">
+        <div class="feature-next-lab">พรุ่งนี้ · 2 งาน</div>
+        <div class="trow" style="background:transparent;padding:8px 0"><div class="ticon" style="background:transparent;border:1px dashed var(--line)">◦</div><div class="tmain"><div class="tname" style="color:var(--ink-2)">ส่งเอกสารต่อทะเบียน</div><div class="ttime">10:00</div></div></div>
+        <div class="trow" style="background:transparent;padding:8px 0"><div class="ticon" style="background:transparent;border:1px dashed var(--line)">◦</div><div class="tmain"><div class="tname" style="color:var(--ink-2)">รีวิวงบสัปดาห์</div><div class="ttime">19:30</div></div></div>
+      </div>
+      <div class="feature-foot">
+        <div class="btn">ดูทั้งหมด</div>
+        <div class="btn primary">+ บันทึกเร็ว</div>
+      </div>
+    </div>
+
+    <!-- พอร์ตลงทุน -->
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">สัดส่วนพอร์ต</div><div class="card-note">มูลค่ารวม 312,400</div></div>
+        <div class="chip">↗</div>
+      </div>
+      <div class="donut-wrap">
+        <svg width="104" height="104" viewBox="0 0 42 42" style="flex:none">
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#274038" stroke-width="6"/>
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#10b981" stroke-width="6" stroke-dasharray="46 54" stroke-dashoffset="25"/>
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#d9b26a" stroke-width="6" stroke-dasharray="27 73" stroke-dashoffset="79"/>
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#6f9e8d" stroke-width="6" stroke-dasharray="17 83" stroke-dashoffset="52"/>
+        </svg>
+        <div class="legend">
+          <span class="lg"><i style="background:#10b981"></i> กบข./กสจ. <b>46%</b></span>
+          <span class="lg"><i style="background:#d9b26a"></i> คริปโต <b>27%</b></span>
+          <span class="lg"><i style="background:#6f9e8d"></i> เงินฝาก <b>17%</b></span>
+          <span class="lg"><i style="background:#365749"></i> อื่นๆ <b>10%</b></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- รายการพับได้ -->
+    <div class="card">
+      <div class="card-head"><div class="card-title">ดูเร็ว</div><div class="chip">⌄</div></div>
+      <div class="acc-row"><span>หนี้คงเหลือ</span><span class="c mono">2 รายการ · 184,000 ⌄</span></div>
+      <div class="acc-row"><span>เอกสารใกล้หมดอายุ</span><span class="c">1 รายการ ⌄</span></div>
+      <div class="acc-row"><span>หมุดถัดไป</span><span class="c">อีก 11% ⌄</span></div>
+      <div class="acc-row"><span>หนังสือกำลังอ่าน</span><span class="c">2 เล่ม ⌄</span></div>
+    </div>
+
+    <!-- หมุดความคืบหน้า -->
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">เงินเก็บก้อนแรก</div><div class="card-note">เป้า 300,000 · numeric</div></div>
+        <div class="chip">↗</div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span class="mono" style="font-size:26px;font-weight:600;letter-spacing:-.6px">38%</span>
+        <span class="mono" style="font-size:12px;color:var(--ink-3)">114,000 / 300,000</span>
+      </div>
+      <div class="ms-track">
+        <div class="ms-fill" style="width:38%"></div>
+        <span class="ms-tick" style="left:25%"></span>
+        <span class="ms-tick" style="left:50%"></span>
+        <span class="ms-tick" style="left:75%"></span>
+      </div>
+      <div class="ms-list">
+        <div class="ms-item on"><span class="ms-dot on"></span> ครบหนึ่งในสี่ <b class="mono">25%</b><span class="ms-when">ถึงแล้ว 14 ก.ค.</span></div>
+        <div class="ms-item"><span class="ms-dot"></span> ครึ่งทาง <b class="mono">50%</b><span class="ms-when">อีก 12%</span></div>
+        <div class="ms-item"><span class="ms-dot"></span> โค้งสุดท้าย <b class="mono">75%</b><span class="ms-when">อีก 37%</span></div>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="card span2" style="grid-column:span 4">
+      <div class="tl-head">
+        <div class="card-title">สัปดาห์นี้</div>
+        <div class="tl-nav"><span>ก.ค.</span><span class="on">ส.ค. 2569</span><span>ก.ย.</span></div>
+      </div>
+      <div class="tl-grid">
+        <div></div>
+        <div class="d">จ<b>24</b></div>
+        <div class="d">อ<b>25</b></div>
+        <div class="d" style="color:var(--accent-soft)">พ<b style="color:var(--accent-soft)">26</b></div>
+        <div class="d hide-sm">พฤ<b>27</b></div>
+        <div class="d hide-sm">ศ<b>28</b></div>
+
+        <div class="h mono">09:00</div>
+        <div class="tl-cell"></div>
+        <div class="tl-cell"><div class="ev">ทบทวนงบเดือน<small>09:30</small></div></div>
+        <div class="tl-cell"></div>
+        <div class="tl-cell hide-sm"></div>
+        <div class="tl-cell hide-sm"></div>
+
+        <div class="h mono">15:00</div>
+        <div class="tl-cell"></div>
+        <div class="tl-cell"></div>
+        <div class="tl-cell"><div class="ev">สรุปยอดร้าน<small>15:00 · ทุกสัปดาห์</small></div></div>
+        <div class="tl-cell hide-sm"></div>
+        <div class="tl-cell hide-sm"><div class="ev g">จ่ายบัตรเครดิต<small>ครบกำหนด</small></div></div>
+
+        <div class="h mono">20:00</div>
+        <div class="tl-cell"></div>
+        <div class="tl-cell"></div>
+        <div class="tl-cell"><div class="ev g">DCA Binance TH<small>20:00 · เดือนละครั้ง</small></div></div>
+        <div class="tl-cell hide-sm"></div>
+        <div class="tl-cell hide-sm"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ PALETTE ══ -->
+  <div class="palette">
+    <h3>ชุดสีที่ใช้ในหน้านี้</h3>
+    <p>ทั้งหน้าใช้แค่ตัวแปรพวกนี้ — ถ้ายกไปใส่ <span class="mono">:root</span> ใน styles.css แล้ว เปลี่ยนธีมทั้งแอปจะเหลือแก้แค่บล็อกเดียว</p>
+    <div class="sw-grid">
+      <div class="sw"><div class="b" style="background:#0c1613"></div><div class="t"><b>--bg</b>#0c1613 · พื้นหลัง</div></div>
+      <div class="sw"><div class="b" style="background:#172620"></div><div class="t"><b>--surface</b>#172620 · การ์ด</div></div>
+      <div class="sw"><div class="b" style="background:#274038"></div><div class="t"><b>--surface-3</b>#274038 · ชิ้นย่อย</div></div>
+      <div class="sw"><div class="b" style="background:#10b981"></div><div class="t"><b>--accent</b>#10b981 · เน้นหลัก</div></div>
+      <div class="sw"><div class="b" style="background:#34d399"></div><div class="t"><b>--accent-soft</b>#34d399 · ตัวอักษร/เส้น</div></div>
+      <div class="sw"><div class="b" style="background:#d9b26a"></div><div class="t"><b>--gold</b>#d9b26a · สีรอง</div></div>
+      <div class="sw"><div class="b" style="background:#e9f3ee"></div><div class="t"><b>--ink</b>#e9f3ee · ตัวอักษรหลัก</div></div>
+      <div class="sw"><div class="b" style="background:#a9c1b6"></div><div class="t"><b>--ink-2</b>#a9c1b6 · รอง</div></div>
+      <div class="sw"><div class="b" style="background:#83a396"></div><div class="t"><b>--ink-3</b>#83a396 · จาง</div></div>
+      <div class="sw"><div class="b" style="background:#f2777a"></div><div class="t"><b>--down</b>#f2777a · รายจ่าย/ขาดทุน</div></div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>
