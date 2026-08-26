@@ -762,4 +762,6 @@ js/app.js           — root + routing
    - **ช่องค้นหาเป็นปุ่มกลม ⌕ ตาม mockup** แล้วกดกางเป็นช่องกรอกแบบป๊อปอัป (`.search-pop`) — เดิมเป็นกล่อง input ยาวคาแถบเมนู · เมนูหน้าแรกเปลี่ยนชื่อ `Dashboard` → `Home` ทั้ง `PAGE_TITLES` และ `PageNav` (ตรง mockup + ป้ายมือถือสั้นลงไม่โดนตัด)
    - เพิ่มการ์ด Daily Movement ป้ายลอย (`.db-callout`) บอกวันที่ขยับมากสุด สีทอง ตาม mockup
 
-   **การตรวจสอบ:** Babel + CSS parse ผ่าน · smoke test เพิ่มเช็ค "แผ่นมุมโค้งมีไล่สี" และแก้ selector ของการ์ดโมเมนตัม/History → **ผ่าน 54/54 · NO RUNTIME ERRORS** · มือถือ 390px ไม่ล้นแนวนอน · **ยังไม่ push**
+   **การตรวจสอบ:** Babel + CSS parse ผ่าน · smoke test เพิ่มเช็ค "แผ่นมุมโค้งมีไล่สี" และแก้ selector ของการ์ดโมเมนตัม/History → **ผ่าน 54/54 · NO RUNTIME ERRORS** · มือถือ 390px ไม่ล้นแนวนอน
+
+   **push ขึ้น GitHub Pages แล้ว 2026-08-26** (`c355fc2..9f365f8`) — ohm push เองจากเครื่อง เพราะ git ใน VM ของ Cowork ไม่มี credential ของ GitHub (fetch ได้เพราะ repo public แต่ push ไม่ได้) · **ครั้งต่อๆ ไปที่จบงานต้องบอก ohm ให้รัน `git push origin main` เอง** · หมายเหตุ: ข้อความ "ยังไม่ push" ในข้อ 26/27/29 ล้าสมัยแล้ว ณ ตอนนี้ทุก commit ขึ้นหมด working tree สะอาด
