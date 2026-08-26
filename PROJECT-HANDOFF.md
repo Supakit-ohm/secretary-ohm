@@ -15,6 +15,7 @@
 > **ทำต่อจากตรงนี้:** ohm มี 2 พอร์ตจริง — `Binance Global` (ถือยาว ไม่ซื้อเพิ่ม) กับ `Binance TH` (ตั้ง DCA ซื้อทุกวัน อัปเดตเดือนละครั้งผ่านปุ่ม "ซื้อเพิ่ม") ยังไม่ได้กรอกข้อมูลจริงลงระบบ
 > งานที่ยังไม่ได้ทำ (เรียงตามที่คุยไว้ท้ายข้อ 16): **XIRR/ผลตอบแทน %ต่อปี** จาก `h.buys[]`+`firstHeldDate` (มีข้อมูลพร้อมแล้ว), **หน้าประวัติ DCA ต่อเหรียญ** (เก็บ `buys[]` ไว้แล้วแต่ยังไม่มี UI แสดงรายการย้อนหลัง), **ตั้งเป้าสัดส่วนพอร์ต** เช่น crypto ไม่เกิน 10%, **กราฟมูลค่าพอร์ตตามเวลา** (งานใหญ่ ต้องเปลี่ยน `investmentValues` เป็น history array — ดูข้อ 4.4)
 > **workflow git ตั้งเสร็จแล้ว** (2026-08-23) — เครื่อง ohm push ได้เองด้วย `git add -A && git commit -m "..." && git push` (พิมพ์ทีละบรรทัด อย่าต่อด้วย `&&` ถ้าไม่แน่ใจว่ามีอะไรเปลี่ยน) อย่าลืมเตือนให้ push + ทดสอบบน GitHub Pages ทุกครั้งที่แก้เสร็จ
+> **AI push เองไม่ได้ (พบ 2026-08-26):** shell ที่ AI ใช้บนเครื่อง ohm ไม่มี GitHub credentials — `git add`/`git commit` ทำได้ แต่ `git push` fail ว่า `could not read Username for 'https://github.com'` ให้ commit ไว้แล้วบอก ohm พิมพ์ `git push` เองในเทอร์มินัล · shell นี้ลบไฟล์ไม่ได้ตามค่าตั้งต้น ทำให้ git ทิ้ง `.git/HEAD.lock`, `.git/index.lock`, `.git/objects/*/tmp_obj_*` ค้างไว้ (ต้องลบก่อนไม่งั้น git ในเครื่องขึ้น "Another git process seems to be running") — ขอสิทธิ์ลบผ่าน `device_request_delete_permission` ครั้งเดียวต่อ session แล้ว `rm -f` ได้เลย
 
 ---
 
