@@ -86,7 +86,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     const g=document.querySelector('.db-bento');
     if(!g) return null;
     const cards=[...g.children];
-    const mom=g.querySelector('.mom-card');
+    const mom=g.querySelector('.db-mom');
     const q=(sel)=>!!g.querySelector(sel);
     return {
       cards:cards.length,
@@ -94,8 +94,8 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
       hero:!!document.querySelector('.db-hero'),
       heroNums:document.querySelectorAll('.db-bignum').length,
       mom:!!mom,
-      ringDash:(g.querySelector('.mom-ring-fg')||{}).getAttribute?.('stroke-dasharray')||"",
-      spark:!!g.querySelector('.mom-spark path'),
+      ringDash:(g.querySelector('.db-ring-wrap circle[stroke-dasharray]')||{}).getAttribute?.('stroke-dasharray')||"",
+      spark:!!g.querySelector('.db-mom-side polyline'),
       bars:g.querySelectorAll('.db-bar').length,
       feature:!!g.querySelector('.db-feature'),
       tasks:g.querySelectorAll('.db-feature .db-trow').length,
@@ -104,8 +104,8 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
       quick:g.querySelectorAll('.db-acc-row').length,
       week:q('.db-tl')||q('.db-empty'),
       notes:g.querySelectorAll('.note-card').length,
-      history:g.innerText.includes('ประวัติการใช้งาน'),
-      historyOpens:(()=>{const h=[...g.querySelectorAll('.db-head')].find(x=>x.innerText.includes('ประวัติการใช้งาน'));if(!h)return false;h.click();return true;})(),
+      history:g.innerText.includes('History'),
+      historyOpens:(()=>{const h=[...g.querySelectorAll('.db-head')].find(x=>x.innerText.includes('History'));if(!h)return false;h.click();return true;})(),
       leftovers:document.querySelectorAll('.hero-panel, .sidebar').length,
     };
   });
@@ -121,8 +121,9 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('การ์ดดูเร็ว 4 แถว',bento&&bento.quick>=4,bento?`${bento.quick} แถว`:"");
   check('ตารางสัปดาห์แสดงผล',bento&&bento.week);
   check('การ์ดโน้ตยังอยู่ในกริด',bento&&bento.notes>0,bento?`${bento.notes} โน้ต`:"");
-  check('การ์ดประวัติ (พับได้) ยังอยู่ในกริด',bento&&bento.history);
-  check('กดหัวการ์ดประวัติแล้วกางออก',await p.evaluate(()=>{const g=document.querySelector('.db-bento');return !!g&&(g.innerText.includes('Event')||g.innerText.includes('ยังไม่มีประวัติ'));}));
+  check('การ์ด History (พับได้) ยังอยู่ในกริด',bento&&bento.history);
+  check('กดหัวการ์ด History แล้วกางออก',await p.evaluate(()=>{const g=document.querySelector('.db-bento');return !!g&&(g.innerText.includes('Event')||g.innerText.includes('ยังไม่มีประวัติ'));}));
+  check('แผ่นมุมโค้ง (.main-wrap) มีไล่สีตาม mockup',await p.evaluate(()=>{const w=document.querySelector('.main-wrap');if(!w)return false;const cs=getComputedStyle(w);return cs.borderRadius.startsWith('34')&&cs.backgroundImage.includes('radial-gradient');}));
   check('ไม่มีซาก .hero-panel/.sidebar หลงเหลือ',bento&&bento.leftovers===0,bento?`เจอ ${bento.leftovers}`:"");
 
   /* ───────── ทุกแท็บ Finance + รอบ 18: Investments ───────── */

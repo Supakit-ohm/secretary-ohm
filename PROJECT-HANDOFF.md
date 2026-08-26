@@ -751,3 +751,15 @@ js/app.js           — root + routing
    - **สิ่งที่ยังไม่ได้ทดสอบ**: Google Drive จริง (ไม่มี token), การกดปุ่มในการ์ด bento ทุกปุ่ม (เทสต์เช็คว่า render + กางการ์ดประวัติได้ ไม่ได้คลิกครบทุกจุด), หน้าจอ tablet 900–1200px ดูจากโค้ดอย่างเดียว
    - **ยังไม่ push** — รวมกับ commit ค้างจากข้อ 24/25/26/27 ก่อนหน้า
    - **ขั้นต่อไปตามคิวข้อ 24 คือลำดับที่ 3: Investments** (reskin สี/ระยะ ไม่เปลี่ยนโครง — ตอนนั้นค่อยเปลี่ยน `INVEST_TYPE_COLORS` ให้เข้าธีม)
+
+30. **ข้อ 24/2 รอบแก้: ทำให้ตรง mockup จริงๆ (2026-08-26)** — ohm เปิด `mockup-dark-emerald_8.html` (ไฟล์เดียวกับ `mockups/mockup-dark-emerald.html` เป๊ะ md5 ตรงกัน) เทียบกับของจริงแล้วบอกว่า "ทำให้เป็นแบบนี้ที" · รอบข้อ 29 ยกแค่ *โครงและข้อมูล* มา แต่ยังไม่เหมือนตรงเปลือกนอก รอบนี้ไล่ให้ตรง
+
+   - **"แผ่น" มุมโค้ง 34px ลอยบนพื้นดำ (`.sheet` ของ mockup)** — ก่อนหน้านี้พลาด: ข้อ 29 เขียน CSS `.app-bg` ไว้แต่**ไม่เคยใส่ `<div className="app-bg"/>` ใน JSX** พื้นหลังเลยเป็นสีเรียบ ไม่มีไล่สีเลยสักครั้ง · รอบนี้ลบ `.app-bg` ทิ้ง แล้วย้ายไล่สี 4 ชั้นไปไว้บน **`.main-wrap`** ซึ่งกลายเป็นตัว "แผ่น" (max-width 1280 · padding 26 · radius 34 · เงา) ส่วน `.app` เป็นพื้นดำ + padding 20px รอบแผ่น · กันไล่สียืดตามหน้ายาวๆ ด้วย `background-size:100% 1000px` (แทน `background-attachment:fixed` ที่ข้อ 23 ห้ามใช้) · `.topbar`/`.content-grid` ตัด padding ด้านข้างออกเพราะแผ่นมี padding แล้ว
+   - **หัวข้อการ์ดเป็นอังกฤษตาม mockup**: Momentum · Daily Movement · This Month · Today's Tasks · Portfolio Allocation · Quick View · Next Goal · This Week · Notes · History (คำอธิบายใต้หัวข้อยังเป็นไทย ตามที่ตกลงไว้ในข้อ 23 ว่า "อังกฤษ/ไทย")
+   - **หัวฮีโร่เป็นอังกฤษ** `Good afternoon, Ohm` 38px (`greetingFor()` เพิ่มฟิลด์ `en` ข้อความไทยเดิมยังอยู่ ไม่ได้ลบ) · บรรทัดรองเป็น `วันที่ · เวลา · ข้อความผู้ช่วย` (ช่องเดียวกับ "ซิงก์กับ Drive แล้ว 12:04 น." ใน mockup)
+   - **การ์ด Momentum เขียนใหม่ตาม mockup** (`DashMomentumCard`): วงแหวน 110px r=46 stroke 9 + ตรงกลาง `39% / N โปรเจกต์` · ขวาเป็นป้าย `▲ x.x% / 7 วัน` + `เทียบเดือนก่อน` + `ขยับติดกัน` + sparkline polyline 120×34 · **ลบ `MomentumCard` + `MomentumSpark` เดิมทิ้งทั้งคู่** (การ์ด 4 ช่อง เมื่อวาน/อาทิตย์ก่อน/เดือนก่อน/ปีก่อน) ไม่มีที่อื่นเรียกแล้ว
+   - **กริดตาม mockup เป๊ะ**: แถว 1 = Momentum · Daily Movement · This Month · Today's Tasks (คอลัมน์ 4 สูง 2 แถว) · แถว 2 = Portfolio · Quick View · Next Goal · แถว 3 = This Week เต็ม 4 คอลัมน์ (`.db-span4`) · แถว 4 = Notes + History (span2) · **ตัด `align-items:start` ออก** ให้การ์ดในแถวเดียวกันสูงเท่ากันแบบ mockup
+   - **ช่องค้นหาเป็นปุ่มกลม ⌕ ตาม mockup** แล้วกดกางเป็นช่องกรอกแบบป๊อปอัป (`.search-pop`) — เดิมเป็นกล่อง input ยาวคาแถบเมนู · เมนูหน้าแรกเปลี่ยนชื่อ `Dashboard` → `Home` ทั้ง `PAGE_TITLES` และ `PageNav` (ตรง mockup + ป้ายมือถือสั้นลงไม่โดนตัด)
+   - เพิ่มการ์ด Daily Movement ป้ายลอย (`.db-callout`) บอกวันที่ขยับมากสุด สีทอง ตาม mockup
+
+   **การตรวจสอบ:** Babel + CSS parse ผ่าน · smoke test เพิ่มเช็ค "แผ่นมุมโค้งมีไล่สี" และแก้ selector ของการ์ดโมเมนตัม/History → **ผ่าน 54/54 · NO RUNTIME ERRORS** · มือถือ 390px ไม่ล้นแนวนอน · **ยังไม่ push**

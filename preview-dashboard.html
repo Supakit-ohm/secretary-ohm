@@ -535,7 +535,7 @@ const DEFAULT_EVENTS = [
   { id:"e2", title:"พบแพทย์", startDate:tomorrowISO(), startTime:"14:00", endDate:tomorrowISO(), endTime:"15:00", note:"โรงพยาบาลใกล้บ้าน" },
 ];
 const NOTE_COLORS = ["amber","teal","rose","violet","slate"];
-const PAGE_TITLES = ["Dashboard","Finance","Tracker","Health","Documents","Books","Journal"];
+const PAGE_TITLES = ["Home","Finance","Tracker","Health","Documents","Books","Journal"];
 const GOAL_COLORS = ["#8b5cf6","#34d399","#fb923c","#60a5fa","#f472b6","#fbbf24","#f87171","#5a7a9e"];
 const GOAL_CATEGORIES = [
   {key:"finance",label:"การเงิน",icon:Wallet},
@@ -1144,11 +1144,11 @@ function useSecretaryData() {
   return {data,loading,persist};
 }
 function greetingFor(h) {
-  if (h<6) return {text:"ดึกแล้ว พักผ่อนบ้างนะ",Icon:Moon};
-  if (h<12) return {text:"สวัสดีตอนเช้า",Icon:Sunrise};
-  if (h<17) return {text:"สวัสดีตอนบ่าย",Icon:Sun};
-  if (h<21) return {text:"สวัสดีตอนเย็น",Icon:Sunset};
-  return {text:"ราตรีสวัสดิ์",Icon:Moon};
+  if (h<6) return {text:"ดึกแล้ว พักผ่อนบ้างนะ",en:"Still up",Icon:Moon};
+  if (h<12) return {text:"สวัสดีตอนเช้า",en:"Good morning",Icon:Sunrise};
+  if (h<17) return {text:"สวัสดีตอนบ่าย",en:"Good afternoon",Icon:Sun};
+  if (h<21) return {text:"สวัสดีตอนเย็น",en:"Good evening",Icon:Sunset};
+  return {text:"ราตรีสวัสดิ์",en:"Good night",Icon:Moon};
 }
 function Ring({value,color,label}) {
   const r=30,c=2*Math.PI*r,cl=Math.max(0,Math.min(100,value)),off=c-(cl/100)*c;
@@ -1348,7 +1348,7 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
   );
 }
 function PageNav({page,setPage}) {
-  const pages=["Dashboard","Finance","Tracker","Health","Docs","Books","Journal"];
+  const pages=["Home","Finance","Tracker","Health","Docs","Books","Journal"];
   return (
     <div className="page-nav">
       {pages.map((label,i)=>(
@@ -1358,6 +1358,7 @@ function PageNav({page,setPage}) {
   );
 }
 function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
+  const [openSearch,setOpenSearch]=useState(false);
   return (
     <div className="topbar">
       <div className="brand"><span className="brand-dot"></span> เลขา Ohm</div>
@@ -1368,20 +1369,25 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
       </div>
       <div className="topbar-right">
         <div className="search-wrap">
-          <div className="search-bar">
-            <Search size={18}/>
-            <input placeholder="ค้นหาโน้ต งาน เป้าหมาย..." value={search} onChange={e=>setSearch(e.target.value)}/>
-            {search&&<button className="search-clear" onClick={()=>setSearch("")}><X size={16}/></button>}
-          </div>
-          {search.trim()&&(
-            <div className="search-results">
-              {searchResults.length===0&&<div className="search-empty">ไม่พบผลลัพธ์</div>}
-              {searchResults.map(r=>(
-                <button key={`${r.kind}-${r.id}`} className="search-result-item" onClick={()=>{setPage(r.page);setSearch("");}}>
-                  <span className="search-result-kind">{r.label}</span>
-                  <span className="search-result-text">{r.text}</span>
-                </button>
-              ))}
+          <button className={`nav-icon-btn${openSearch?" on":""}`} onClick={()=>{ if(openSearch) setSearch(""); setOpenSearch(v=>!v); }} title="ค้นหา"><Search size={18}/></button>
+          {openSearch&&(
+            <div className="search-pop">
+              <div className="search-bar">
+                <Search size={16}/>
+                <input autoFocus placeholder="ค้นหาโน้ต งาน เป้าหมาย..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                <button className="search-clear" onClick={()=>{setSearch("");setOpenSearch(false);}}><X size={16}/></button>
+              </div>
+              {search.trim()&&(
+                <div className="search-results">
+                  {searchResults.length===0&&<div className="search-empty">ไม่พบผลลัพธ์</div>}
+                  {searchResults.map(r=>(
+                    <button key={`${r.kind}-${r.id}`} className="search-result-item" onClick={()=>{setPage(r.page);setSearch("");setOpenSearch(false);}}>
+                      <span className="search-result-kind">{r.label}</span>
+                      <span className="search-result-text">{r.text}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -5362,99 +5368,6 @@ function useCountUp(target,ms=800){
   },[target,ms]);
   return v;
 }
-function MomentumSpark({points}){
-  const vals=points.filter(v=>v!=null);
-  if(vals.length<2) return <div className="mom-spark-empty">ยังไม่มีเส้นทาง 30 วัน</div>;
-  const min=Math.min(...vals), max=Math.max(...vals);
-  const span=(max-min)||1;
-  const W=100,H=28;
-  const step=points.length>1?W/(points.length-1):W;
-  let d="",started=false;
-  points.forEach((v,i)=>{
-    if(v==null) return;
-    const x=(i*step).toFixed(2);
-    const y=(H-((v-min)/span)*(H-4)-2).toFixed(2);
-    d+=(started?" L":"M")+x+" "+y; started=true;
-  });
-  return (
-    <svg className="mom-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-      <path d={d+` L${W} ${H} L0 ${H} Z`} className="mom-spark-fill"/>
-      <path d={d} className="mom-spark-line"/>
-    </svg>
-  );
-}
-function MomentumCard({data,onOpen}){
-  const m=useMemo(()=>{
-    const today=todayISO();
-    const now=overallProgressNow(data);
-    const spans=[
-      {key:"d",label:"เมื่อวาน",date:shiftISO(today,{d:-1})},
-      {key:"w",label:"อาทิตย์ก่อน",date:shiftISO(today,{d:-7})},
-      {key:"m",label:"เดือนก่อน",date:shiftISO(today,{m:-1})},
-      {key:"y",label:"ปีก่อน",date:shiftISO(today,{y:-1})},
-    ].map(s=>{
-      const p=progressOn(data,s.date);
-      return {...s,delta:p?now-p.value:null,exact:p?p.exact:false};
-    });
-    const spark=[];
-    for(let i=29;i>=0;i--){
-      if(i===0){ spark.push(now); continue; }
-      const p=progressOn(data,shiftISO(today,{d:-i}));
-      spark.push(p?p.value:null);
-    }
-    const week=spans.find(s=>s.key==="w");
-    const streak=momentumStreak(data);
-    const state=(week&&week.delta!=null&&week.delta>=1)?"hot":(week&&week.delta!=null&&week.delta>0)?"warm":(streak===0?"cold":"warm");
-    return {now,spans,spark,streak,state,early:earliestTrackerDate(data),count:(data.projects||[]).filter(p=>p.status!=="archived").length};
-  },[data]);
-  const shown=useCountUp(m.now);
-  const C=2*Math.PI*42;
-  const off=C*(1-Math.max(0,Math.min(100,m.now))/100);
-  const stroke=m.state==="hot"?"#34d399":m.state==="warm"?"#d9b26a":"#4a6d5f";
-  if(!m.count) return (
-    <div className="mom-card mom-cold" onClick={onOpen} role="button">
-      <div className="mom-head"><span className="mom-title">โมเมนตัม</span></div>
-      <div className="mom-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก ✨</div>
-    </div>
-  );
-  return (
-    <div className={`mom-card mom-${m.state}`} onClick={onOpen} role="button">
-      <div className="mom-head">
-        <span className="mom-title">โมเมนตัม</span>
-        {m.streak>0&&<span className="mom-streak"><Flame size={14}/> {m.streak} วัน</span>}
-      </div>
-      <div className="mom-body">
-        <div className="mom-ring">
-          <svg viewBox="0 0 100 100">
-            <circle className="mom-ring-bg" cx="50" cy="50" r="42"/>
-            <circle className="mom-ring-fg" cx="50" cy="50" r="42" stroke={stroke}
-              strokeDasharray={C} strokeDashoffset={off}/>
-          </svg>
-          <div className="mom-ring-center">
-            <div className="mom-ring-val">{shown.toFixed(0)}<span>%</span></div>
-            <div className="mom-ring-sub">{m.count} โปรเจกต์</div>
-          </div>
-        </div>
-        <div className="mom-right">
-          <MomentumSpark points={m.spark}/>
-          <div className="mom-spans">
-            {m.spans.map(s=>(
-              <div className="mom-span" key={s.key}>
-                <div className="mom-span-label">{s.label}</div>
-                {s.delta==null
-                  ? <div className="mom-span-none" title={m.early?`เริ่มเก็บข้อมูล ${thaiDate(m.early)}`:""}>—</div>
-                  : <div className={`mom-span-val ${s.delta>0.05?"up":s.delta<-0.05?"down":"flat"}`}>
-                      {s.delta>0.05?"+":""}{Math.abs(s.delta)<0.05?"0":s.delta.toFixed(1)}%
-                      {!s.exact&&<span className="mom-est" title="ประมาณการจากข้อมูลย้อนหลัง">~</span>}
-                    </div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 function MilestoneToast({toast,onClose}) {
   useEffect(()=>{ const t=setTimeout(onClose,7000); return()=>clearTimeout(t); },[]);
   return (
@@ -5489,7 +5402,7 @@ function DashCollapse({title,note,defaultOpen,children}){
   const [open,setOpen]=useState(!!defaultOpen);
   return (
     <div className="db-card db-span2">
-      <div className="db-head" onClick={()=>setOpen(v=>!v)} role="button" style={{marginBottom:open?14:0,cursor:"pointer"}}>
+      <div className="db-head" onClick={()=>setOpen(v=>!v)} role="button" style={{marginBottom:open?16:0,cursor:"pointer"}}>
         <div><div className="db-title">{title}</div>{note&&<div className="db-note">{note}</div>}</div>
         <button className="db-chip">{open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
       </div>
@@ -5497,19 +5410,20 @@ function DashCollapse({title,note,defaultOpen,children}){
     </div>
   );
 }
-function DashHero({data,greetText,GreetIcon,dateStr,timeStr,message,review,setPage}){
+
+function DashHero({data,greetEn,dateStr,timeStr,message,review,setPage}){
   const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
   const done=todayTasks.filter(t=>taskDoneOn(t)).length;
   const projects=(data.projects||[]).filter(p=>p.status!=="archived");
   const progress=Math.round(overallProgressNow(data));
   const streak=momentumStreak(data);
   const budgetPct=dbBudgetPct(review);
+  const nw=dbNetWorth(data);
   return (
     <div className="db-hero">
       <div style={{minWidth:0}}>
-        <div className="db-hero-title"><GreetIcon size={30}/> {greetText} <span>คุณโอห์ม</span></div>
-        <div className="db-hero-line">{dateStr} · {timeStr} น.</div>
-        <div className="db-hero-msg">{message}</div>
+        <h1 className="db-hero-title">{greetEn}, <span>Ohm</span></h1>
+        <div className="db-hero-line">{dateStr} · {timeStr} น.{message?` · ${message}`:""}</div>
         <div className="db-meters">
           <div>
             <div className="db-meter-label">งานวันนี้</div>
@@ -5538,15 +5452,82 @@ function DashHero({data,greetText,GreetIcon,dateStr,timeStr,message,review,setPa
           <div className="l"><span className="db-dot"/> โปรเจกต์</div>
         </div>
         <div className="db-bignum" onClick={()=>setPage(1)} role="button">
-          <div className={`n db-mono ${dbNetWorth(data)<0?"neg":"gld"}`}>{dbShort(dbNetWorth(data))}</div>
-          <div className={`l`}><span className={`db-dot ${dbNetWorth(data)<0?"d":"g"}`}/> มูลค่าสุทธิ</div>
+          <div className={`n db-mono ${nw<0?"neg":"gld"}`}>{dbShort(nw)}</div>
+          <div className="l"><span className={`db-dot ${nw<0?"d":"g"}`}/> มูลค่าสุทธิ</div>
         </div>
       </div>
     </div>
   );
 }
 
-function DashTasksCard({data,persist,setPage,onAddTask,onEditTask,onQuick}){
+function DashMomentumCard({data,setPage}){
+  const m=useMemo(()=>{
+    const today=todayISO();
+    const now=overallProgressNow(data);
+    const w=progressOn(data,shiftISO(today,{d:-7}));
+    const mo=progressOn(data,shiftISO(today,{m:-1}));
+    const pts=[];
+    for(let i=29;i>=0;i--){
+      const p=i===0?{value:now}:progressOn(data,shiftISO(today,{d:-i}));
+      pts.push(p?p.value:null);
+    }
+    return {now,delta7:w?now-w.value:null,prevMonth:mo?mo.value:null,
+      streak:momentumStreak(data),count:(data.projects||[]).filter(p=>p.status!=="archived").length,pts};
+  },[data]);
+  const R=46,C=2*Math.PI*R,len=C*Math.max(0,Math.min(100,m.now))/100;
+  const spark=useMemo(()=>{
+    const vals=m.pts.filter(v=>v!=null);
+    if(vals.length<2) return null;
+    const min=Math.min.apply(null,vals),max=Math.max.apply(null,vals),span=(max-min)||1;
+    const W=120,H=34,step=W/(m.pts.length-1);
+    const out=[];
+    m.pts.forEach((v,i)=>{ if(v==null) return; out.push(`${(i*step).toFixed(1)},${(H-2-((v-min)/span)*(H-6)).toFixed(1)}`); });
+    return {points:out.join(" "),last:out[out.length-1].split(",")};
+  },[m]);
+  if(!m.count) return (
+    <div className="db-card">
+      <div className="db-head"><div><div className="db-title">Momentum</div><div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div></div>
+      <div className="db-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก</div>
+      <button className="db-btn primary" style={{marginTop:12}} onClick={()=>setPage(2)}>สร้างเป้าหมาย</button>
+    </div>
+  );
+  return (
+    <div className="db-card">
+      <div className="db-head">
+        <div><div className="db-title">Momentum</div><div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div>
+        <button className="db-chip" onClick={()=>setPage(2)}><TrendingUp size={13}/></button>
+      </div>
+      <div className="db-mom">
+        <div className="db-ring-wrap">
+          <svg width="110" height="110" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="46" fill="none" stroke="var(--chip-bg)" strokeWidth="9"/>
+            <circle cx="55" cy="55" r="46" fill="none" stroke="var(--accent)" strokeWidth="9" strokeLinecap="round"
+              strokeDasharray={`${len.toFixed(1)} ${(C-len).toFixed(1)}`} transform="rotate(-90 55 55)"/>
+          </svg>
+          <div className="db-ring-mid">
+            <div className="v db-mono">{Math.round(m.now)}%</div>
+            <div className="k">{m.count} โปรเจกต์</div>
+          </div>
+        </div>
+        <div className="db-mom-side">
+          {m.delta7==null
+            ? <span className="db-delta flat">ยังไม่มีข้อมูล 7 วัน</span>
+            : <span className={`db-delta${m.delta7<-0.05?" down":""}`}>{m.delta7<-0.05?"▼":"▲"} {Math.abs(m.delta7).toFixed(1)}% / 7 วัน</span>}
+          {m.prevMonth!=null&&<div className="db-mom-line">เทียบเดือนก่อน <b>{m.prevMonth.toFixed(1)}%</b></div>}
+          <div className="db-mom-line">ขยับติดกัน <b>{m.streak} วัน</b></div>
+          {spark&&(
+            <svg width="120" height="34" viewBox="0 0 120 34" style={{marginTop:10,maxWidth:"100%"}}>
+              <polyline fill="none" stroke="var(--accent-soft)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={spark.points}/>
+              <circle cx={spark.last[0]} cy={spark.last[1]} r="3" fill="var(--accent-soft)"/>
+            </svg>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
   const [showAll,setShowAll]=useState(false);
   const tasks=data.tasks||[];
   const projById={}; (data.projects||[]).forEach(p=>projById[p.id]=p);
@@ -5568,10 +5549,10 @@ function DashTasksCard({data,persist,setPage,onAddTask,onEditTask,onQuick}){
   return (
     <div className="db-card db-feature">
       <div className="db-head">
-        <div><div className="db-title">งานวันนี้</div><div className="db-note">{thaiDate(todayISO())}</div></div>
+        <div><div className="db-title">Today's Tasks</div><div className="db-note">{thaiDate(todayISO())}</div></div>
         <div className="db-count db-mono"><b>{doneCount}</b>/{list.length}</div>
       </div>
-      {list.length===0&&<div className="db-empty">วันนี้ยังไม่มีงาน — กด + เพื่อเพิ่ม</div>}
+      {list.length===0&&<div className="db-empty">วันนี้ยังไม่มีงาน — กด + บันทึกเร็ว เพื่อเพิ่ม</div>}
       <div className="db-tasklist">
         {shown.map(t=>{
           const isDone=taskDoneOn(t), late=!isDone&&taskIsOverdue(t);
@@ -5596,7 +5577,7 @@ function DashTasksCard({data,persist,setPage,onAddTask,onEditTask,onQuick}){
         <div className="db-next">
           <div className="db-next-lab">พรุ่งนี้ · {tmrList.length} งาน</div>
           {tmrList.slice(0,2).map(t=>(
-            <div className="db-trow" key={t.id} style={{background:"transparent",padding:"6px 0"}} onClick={()=>onEditTask(t)} role="button">
+            <div className="db-trow" key={t.id} style={{background:"transparent",padding:"8px 0"}} onClick={()=>onEditTask(t)} role="button">
               <div className="db-ticon" style={{background:"transparent",border:"1px dashed var(--line)"}}/>
               <div className="db-tmain"><div className="db-tname">{t.title}</div></div>
             </div>
@@ -5625,16 +5606,19 @@ function DashMovementCard({data,setPage}){
     return {days,vals,total,max:max>0?max:1,best:max>0?vals.indexOf(max):-1};
   },[data]);
   return (
-    <div className="db-card">
+    <div className="db-card" style={{position:"relative"}}>
       <div className="db-head">
-        <div><div className="db-title">ความเคลื่อนไหว</div><div className="db-note">7 วันล่าสุด</div></div>
+        <div><div className="db-title">Daily Movement</div><div className="db-note">7 วันล่าสุด</div></div>
         <button className="db-chip" onClick={()=>setPage(2)}><TrendingUp size={13}/></button>
       </div>
       <div className="db-bignum-inline db-mono">{m.total.toFixed(1)}<span> จุด/สัปดาห์</span></div>
+      {m.best>=0&&(
+        <div className="db-callout" style={{right:20,top:96}}>+{m.vals[m.best].toFixed(1)} {DB_DAY_TH[new Date(m.days[m.best]+"T00:00:00").getDay()]}</div>
+      )}
       <div className="db-bars">
         {m.days.map((d,i)=>(
           <div className="db-bcol" key={d}>
-            <div className={`db-bar${i===m.best&&m.total>0?" gold":i===6?" hi":""}`} style={{height:`${Math.max(3,(m.vals[i]/m.max)*100)}%`}} title={`${d} +${m.vals[i].toFixed(1)}%`}/>
+            <div className={`db-bar${i===m.best?" gold":i===6?" hi":""}`} style={{height:`${Math.max(3,(m.vals[i]/m.max)*100)}%`}} title={`${d} +${m.vals[i].toFixed(1)}%`}/>
             <div className="db-blab">{DB_DAY_TH[new Date(d+"T00:00:00").getDay()]}</div>
           </div>
         ))}
@@ -5649,24 +5633,24 @@ function DashMonthCard({review,setPage}){
   return (
     <div className="db-card">
       <div className="db-head">
-        <div><div className="db-title">เดือนนี้</div><div className="db-note">{dbThaiMonth(new Date())}</div></div>
+        <div><div className="db-title">This Month</div><div className="db-note">{dbThaiMonth(new Date())}</div></div>
         <button className="db-chip" onClick={()=>setPage(1)}><ArrowRight size={13}/></button>
       </div>
       <div className="db-row"><span className="lab"><span className="db-dot a"/> รายรับ</span><span className="val up db-mono">{review.totalIncome<0?"−":"+"}{dbNum(Math.abs(review.totalIncome))}</span></div>
       <div className="db-row"><span className="lab"><span className="db-dot d"/> รายจ่าย</span><span className="val down db-mono">{review.totalExpense<0?"+":"−"}{dbNum(Math.abs(review.totalExpense))}</span></div>
       <div className="db-row"><span className="lab"><span className="db-dot g"/> ออม/ลงทุน</span><span className="val gld db-mono">{dbNum(review.totalSaved)}</span></div>
-      <div className="db-row" style={{paddingTop:12}}>
+      <div className="db-row" style={{paddingTop:14}}>
         <span className="lab" style={{color:"var(--ink)"}}>คงเหลือ</span>
         <span className={`val db-mono${review.leftover<0?" down":""}`} style={{fontSize:17}}>{dbNum(review.leftover)}</span>
       </div>
       {budgetPct!=null&&(
         <div style={{marginTop:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--ink-4)",marginBottom:6}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--ink-5)",marginBottom:6}}>
             <span>งบที่ตั้งไว้เดือนนี้</span>
             <span className="db-mono">{dbNum(review.totalVsBudget)} / {dbNum(review.totalBudget)}</span>
           </div>
           <div className="db-track" style={{margin:0,height:8}}>
-            <div className="db-fill" style={{width:`${Math.min(100,budgetPct)}%`,background:budgetPct>100?"linear-gradient(90deg,#f2777a,#f2777a)":"linear-gradient(90deg,var(--gold),var(--gold-soft))"}}/>
+            <div className="db-fill" style={{width:`${Math.min(100,budgetPct)}%`,background:budgetPct>100?"#f2777a":"linear-gradient(90deg,var(--gold),var(--gold-soft))"}}/>
           </div>
         </div>
       )}
@@ -5675,16 +5659,16 @@ function DashMonthCard({review,setPage}){
 }
 
 function DashDonut({segs,total}){
-  const R=42,C=2*Math.PI*R;
+  const R=15.9,C=2*Math.PI*R;
   let acc=0;
   return (
     <div className="db-donut">
-      <svg viewBox="0 0 100 100" style={{transform:"rotate(-90deg)"}}>
-        <circle cx="50" cy="50" r={R} fill="none" stroke="var(--chip-bg)" strokeWidth="14"/>
+      <svg viewBox="0 0 42 42" style={{transform:"rotate(-90deg)"}}>
+        <circle cx="21" cy="21" r={R} fill="none" stroke="var(--chip-bg)" strokeWidth="6"/>
         {segs.map(s=>{
           const len=(s.value/total)*C;
-          const el=<circle key={s.key} cx="50" cy="50" r={R} fill="none" stroke={s.color} strokeWidth="14"
-            strokeDasharray={`${len} ${C-len}`} strokeDashoffset={-acc}/>;
+          const el=<circle key={s.key} cx="21" cy="21" r={R} fill="none" stroke={s.color} strokeWidth="6"
+            strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={-acc.toFixed(2)}/>;
           acc+=len; return el;
         })}
       </svg>
@@ -5703,9 +5687,9 @@ function DashPortfolioCard({data,setPage}){
     .filter(s=>s.value>0).sort((a,b)=>b.value-a.value);
   const total=segs.reduce((a,s)=>a+s.value,0);
   return (
-    <div className="db-card db-span2">
+    <div className="db-card">
       <div className="db-head">
-        <div><div className="db-title">สัดส่วนพอร์ต</div><div className="db-note">{total>0?`มูลค่ารวม ${dbNum(total)}`:"ยังไม่มีข้อมูล"}</div></div>
+        <div><div className="db-title">Portfolio Allocation</div><div className="db-note">{total>0?`มูลค่ารวม ${dbNum(total)}`:"ยังไม่มีข้อมูล"}</div></div>
         <button className="db-chip" onClick={()=>setPage(1)}><ArrowRight size={13}/></button>
       </div>
       {total===0
@@ -5717,7 +5701,7 @@ function DashPortfolioCard({data,setPage}){
               {segs.slice(0,4).map(s=>(
                 <span className="db-lg" key={s.key}><i style={{background:s.color}}/> {s.label} <b className="db-mono">{Math.round((s.value/total)*100)}%</b></span>
               ))}
-              {segs.length>4&&<span className="db-lg"><i style={{background:"var(--ink-5)"}}/> อื่นๆ อีก {segs.length-4} ประเภท</span>}
+              {segs.length>4&&<span className="db-lg"><i style={{background:"var(--ink-6)"}}/> อื่นๆ อีก {segs.length-4} ประเภท</span>}
             </div>
           </div>
         )}
@@ -5748,7 +5732,7 @@ function DashQuickView({data,setPage}){
   ];
   return (
     <div className="db-card">
-      <div className="db-head"><div className="db-title">ดูเร็ว</div></div>
+      <div className="db-head"><div className="db-title">Quick View</div></div>
       {rows.map(r=>(
         <div className="db-acc-row" key={r.k} onClick={()=>setPage(r.page)} role="button">
           <span>{r.label}</span><span className="c db-mono">{r.value} ›</span>
@@ -5773,7 +5757,7 @@ function DashGoalCard({data,setPage}){
   },[data]);
   if(!pick) return (
     <div className="db-card">
-      <div className="db-head"><div className="db-title">เป้าหมายถัดไป</div></div>
+      <div className="db-head"><div className="db-title">Next Goal</div></div>
       <div className="db-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก</div>
       <button className="db-btn primary" style={{marginTop:12}} onClick={()=>setPage(2)}>สร้างเป้าหมาย</button>
     </div>
@@ -5783,13 +5767,15 @@ function DashGoalCard({data,setPage}){
   return (
     <div className="db-card">
       <div className="db-head">
-        <div><div className="db-title" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
-          <div className="db-note">{p.measureType==="numeric"?`เป้า ${dbNum(p.targetValue||0)}${p.unit?" "+p.unit:""}`:"เป้าหมายที่ใกล้ถึงหมุดที่สุด"}</div></div>
+        <div style={{minWidth:0}}>
+          <div className="db-title">Next Goal</div>
+          <div className="db-note" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
+        </div>
         <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
       </div>
       <div style={{display:"flex",alignItems:"baseline",gap:10}}>
         <span className="db-mono" style={{fontSize:26,fontWeight:600,letterSpacing:"-.6px"}}>{Math.round(prog)}%</span>
-        {p.measureType==="numeric"&&<span className="db-mono" style={{fontSize:12,color:"var(--ink-4)"}}>{dbNum(projectCurrentValue(p,data))} / {dbNum(p.targetValue||0)}</span>}
+        {p.measureType==="numeric"&&<span className="db-mono" style={{fontSize:12,color:"var(--ink-5)"}}>{dbNum(projectCurrentValue(p,data))} / {dbNum(p.targetValue||0)}</span>}
       </div>
       <div className="db-track">
         <div className="db-fill" style={{width:`${Math.min(100,prog)}%`}}/>
@@ -5835,11 +5821,10 @@ function DashWeekCard({events,onAdd,onEdit,onOpenCal}){
   const mobileStart=off===0?Math.min(4,(new Date(today+"T00:00:00").getDay()+6)%7):0;
   const dayCls=(i)=>(i>=mobileStart&&i<mobileStart+3)?"":" db-hide-sm";
   const inSlot=(e,slot)=>slot==="ทั้งวัน"?!e.startTime:(e.startTime&&e.startTime.slice(0,2)+":00"===slot);
-  const label=off===0?"สัปดาห์นี้":off<0?`ย้อน ${-off} สัปดาห์`:`อีก ${off} สัปดาห์`;
   return (
-    <div className="db-card db-span2">
+    <div className="db-card db-span4">
       <div className="db-head">
-        <div><div className="db-title">{label}</div><div className="db-note">{thaiDate(days[0])} – {thaiDate(days[6])}</div></div>
+        <div><div className="db-title">This Week</div><div className="db-note">{thaiDate(days[0])} – {thaiDate(days[6])}</div></div>
         <div className="db-head-actions">
           <button className="db-chip" onClick={()=>setOff(v=>v-1)}><ChevronLeft size={13}/></button>
           {off!==0&&<button className="db-chip" onClick={()=>setOff(0)} style={{fontSize:11}}>วันนี้</button>}
@@ -5863,7 +5848,7 @@ function DashWeekCard({events,onAdd,onEdit,onOpenCal}){
                 {days.map((d,i)=>(
                   <div className={`db-tl-cell${dayCls(i)}`} key={d+slot}>
                     {onDay(d).filter(e=>inSlot(e,slot)).map(e=>(
-                      <div className={`db-ev${e.startDate!==e.endDate&&e.endDate?" g":""}`} key={e.id} onClick={()=>onEdit(e)} role="button">
+                      <div className={`db-ev${e.endDate&&e.endDate!==e.startDate?" g":""}`} key={e.id} onClick={()=>onEdit(e)} role="button">
                         {e.title}
                         {(e.startTime||e.note)&&<small>{e.startTime||""}{e.startTime&&e.note?" · ":""}{e.note||""}</small>}
                       </div>
@@ -5921,7 +5906,7 @@ function SecretaryDashboard() {
   const monthReview=useMemo(()=>data?buildMonthReview(data,currentMonthKey()):null,[data]);
   const dateStr=now.toLocaleDateString("th-TH",{weekday:"long",day:"numeric",month:"long",year:"numeric",calendar:"buddhist"});
   const timeStr=now.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
-  const {text:greetText,Icon:GreetIcon}=greetingFor(now.getHours());
+  const {text:greetText,en:greetEn,Icon:GreetIcon}=greetingFor(now.getHours());
   const rings=useMemo(()=>{
     if(!data) return {todo:0,budget:0,goals:0};
     const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
@@ -5978,7 +5963,7 @@ function SecretaryDashboard() {
   const doneTodayCount=todayTasks.filter(t=>taskDoneOn(t)).length;
   const pendingCount=totalTodoCount-doneTodayCount;
   const assistantMessage=(()=>{
-    if(todayEvents.length>0) return `วันนี้มี ${todayEvents.length} นัดหมาย อย่าลืมนะ 💜`;
+    if(todayEvents.length>0) return `วันนี้มี ${todayEvents.length} นัดหมาย อย่าลืมนะ ✨`;
     if(pendingCount>0) return `เหลืออีก ${pendingCount} งานที่ยังไม่เสร็จ สู้ๆ!`;
     if(totalTodoCount>0&&pendingCount===0) return "เคลียร์งานหมดแล้ว เก่งมาก! 🎉";
     return "วันนี้ยังว่าง ลองตั้งเป้าหมายใหม่ดูไหม?";
@@ -6018,28 +6003,21 @@ function SecretaryDashboard() {
           <div className="content-main">
             {page===0&&(
               <>
-                <DashHero data={data} greetText={greetText} GreetIcon={GreetIcon} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} review={monthReview} setPage={setPage}/>
+                <DashHero data={data} greetEn={greetEn} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} review={monthReview} setPage={setPage}/>
                 <div className="db-bento">
-                  <div className="db-card db-span2">
-                    <div className="db-head">
-                      <div><div className="db-title">โมเมนตัม</div><div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div>
-                      <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
-                    </div>
-                    <MomentumCard data={data} onOpen={()=>setPage(2)}/>
-                  </div>
+                  <DashMomentumCard data={data} setPage={setPage}/>
                   <DashMovementCard data={data} setPage={setPage}/>
+                  <DashMonthCard review={monthReview} setPage={setPage}/>
                   <DashTasksCard data={data} persist={persist} setPage={setPage}
-                    onAddTask={()=>{setEditDashTask(null);setShowDashTask(true);}}
                     onEditTask={t=>{setEditDashTask(t);setShowDashTask(true);}}
                     onQuick={()=>setShowQuick(true)}/>
-                  <DashMonthCard review={monthReview} setPage={setPage}/>
                   <DashPortfolioCard data={data} setPage={setPage}/>
-                  <DashGoalCard data={data} setPage={setPage}/>
                   <DashQuickView data={data} setPage={setPage}/>
+                  <DashGoalCard data={data} setPage={setPage}/>
                   <DashWeekCard events={events} onAdd={()=>{setEditEvent(null);setShowEventModal(true);}} onEdit={openEditEvent} onOpenCal={()=>setShowCal(true)}/>
                   <div className="db-card db-span2">
                     <div className="db-head">
-                      <div><div className="db-title">โน้ต</div><div className="db-note">{notes.length} รายการ</div></div>
+                      <div><div className="db-title">Notes</div><div className="db-note">{notes.length} รายการ</div></div>
                       <button className="db-chip" onClick={()=>{setEditNote(null);setShowNoteModal(true);}}><Plus size={13}/></button>
                     </div>
                     {notes.length===0&&<div className="db-empty">ยังไม่มีโน้ต กด + เพื่อเพิ่ม</div>}
@@ -6060,7 +6038,7 @@ function SecretaryDashboard() {
                       </button>
                     )}
                   </div>
-                  <DashCollapse title="ประวัติการใช้งาน" note={`${(data.activity||[]).length} รายการ`}>
+                  <DashCollapse title="History" note={`${(data.activity||[]).length} รายการ`}>
                     <HistoryPanel activity={data.activity}/>
                   </DashCollapse>
                 </div>
