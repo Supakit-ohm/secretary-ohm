@@ -26,12 +26,12 @@
 <script src="https://unpkg.com/recharts@2.15.0/umd/Recharts.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 
-<div id="driveBar" style="position:fixed;left:16px;bottom:16px;z-index:45;display:flex;flex-direction:row;align-items:center;gap:8px;font-family:'Noto Sans Thai',sans-serif;background:rgba(23,38,32,.9);backdrop-filter:blur(6px);border:1px solid #304a3f;border-radius:999px;padding:7px 12px;box-shadow:0 18px 40px -24px rgba(0,0,0,.9);">
+<div id="driveBar" style="position:fixed;left:16px;bottom:16px;z-index:45;display:flex;flex-direction:column;align-items:center;gap:8px;font-family:'Noto Sans Thai',sans-serif;background:rgba(23,38,32,.9);backdrop-filter:blur(6px);border:1px solid #304a3f;border-radius:999px;padding:12px 7px;box-shadow:0 18px 40px -24px rgba(0,0,0,.9);">
   <button id="driveConnectBtn" title="เชื่อมต่อ Google Drive" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#34d399;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-cloud"></i></button>
   <button id="exportJsonBtn" title="Export JSON (สำรองข้อมูล)" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#a9c1b6;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-export"></i></button>
   <button id="importJsonBtn" title="Import JSON (กู้คืนข้อมูล)" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#d9b26a;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-import"></i></button>
   <input id="importJsonFile" type="file" accept="application/json" style="display:none;" />
-  <span id="driveStatus" style="font-size:10px;color:#83a396;max-width:150px;line-height:1.3;"></span>
+  <span id="driveStatus" style="font-size:9px;color:#83a396;max-width:52px;line-height:1.25;text-align:center;"></span>
 </div>
 <style>@media(max-width:900px){#driveBar{display:none !important;}}</style>
 
@@ -1369,7 +1369,7 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
       </div>
       <div className="topbar-right">
         <div className="search-wrap">
-          <button className={`nav-icon-btn${openSearch?" on":""}`} onClick={()=>{ if(openSearch) setSearch(""); setOpenSearch(v=>!v); }} title="ค้นหา"><Search size={18}/></button>
+          <button className={`nav-icon-btn${openSearch?" on":""}`} onClick={()=>{ if(openSearch) setSearch(""); setOpenSearch(v=>!v); }} title="ค้นหา"><Search size={16}/></button>
           {openSearch&&(
             <div className="search-pop">
               <div className="search-bar">
@@ -1391,7 +1391,7 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
             </div>
           )}
         </div>
-        <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={18}/></button>
+        <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={16}/></button>
         <div className="nav-icon-btn avatar" title="คุณโอห์ม">O</div>
       </div>
     </div>
@@ -5513,7 +5513,7 @@ function DashMomentumCard({data,setPage}){
           {m.delta7==null
             ? <span className="db-delta flat">ยังไม่มีข้อมูล 7 วัน</span>
             : <span className={`db-delta${m.delta7<-0.05?" down":""}`}>{m.delta7<-0.05?"▼":"▲"} {Math.abs(m.delta7).toFixed(1)}% / 7 วัน</span>}
-          {m.prevMonth!=null&&<div className="db-mom-line">เทียบเดือนก่อน <b>{m.prevMonth.toFixed(1)}%</b></div>}
+          <div className="db-mom-line">เทียบเดือนก่อน <b>{m.prevMonth!=null?`${m.prevMonth.toFixed(1)}%`:"—"}</b></div>
           <div className="db-mom-line">ขยับติดกัน <b>{m.streak} วัน</b></div>
           {spark&&(
             <svg width="120" height="34" viewBox="0 0 120 34" style={{marginTop:10,maxWidth:"100%"}}>
