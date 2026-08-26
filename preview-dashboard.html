@@ -26,14 +26,14 @@
 <script src="https://unpkg.com/recharts@2.15.0/umd/Recharts.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 
-<div id="driveBar" style="position:fixed;left:0;bottom:96px;width:96px;z-index:45;display:flex;flex-direction:column;align-items:center;gap:8px;font-family:'Noto Sans Thai',sans-serif;">
-  <button id="driveConnectBtn" title="เชื่อมต่อ Google Drive" style="width:44px;height:44px;border-radius:12px;background:#221b38;border:1px solid #3a3155;color:#c9b8f0;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-cloud"></i></button>
-  <button id="exportJsonBtn" title="Export JSON (สำรองข้อมูล)" style="width:44px;height:44px;border-radius:12px;background:#221b38;border:1px solid #3a3155;color:#34d399;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-export"></i></button>
-  <button id="importJsonBtn" title="Import JSON (กู้คืนข้อมูล)" style="width:44px;height:44px;border-radius:12px;background:#221b38;border:1px solid #3a3155;color:#fb923c;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-import"></i></button>
+<div id="driveBar" style="position:fixed;left:16px;bottom:16px;z-index:45;display:flex;flex-direction:row;align-items:center;gap:8px;font-family:'Noto Sans Thai',sans-serif;background:rgba(23,38,32,.9);backdrop-filter:blur(6px);border:1px solid #304a3f;border-radius:999px;padding:7px 12px;box-shadow:0 18px 40px -24px rgba(0,0,0,.9);">
+  <button id="driveConnectBtn" title="เชื่อมต่อ Google Drive" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#34d399;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-cloud"></i></button>
+  <button id="exportJsonBtn" title="Export JSON (สำรองข้อมูล)" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#a9c1b6;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-export"></i></button>
+  <button id="importJsonBtn" title="Import JSON (กู้คืนข้อมูล)" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#d9b26a;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-import"></i></button>
   <input id="importJsonFile" type="file" accept="application/json" style="display:none;" />
-  <span id="driveStatus" style="font-size:10px;color:#8a82a8;text-align:center;max-width:90px;line-height:1.3;"></span>
+  <span id="driveStatus" style="font-size:10px;color:#83a396;max-width:150px;line-height:1.3;"></span>
 </div>
-<style>@media(max-width:900px){#driveBar{display:none;}}</style>
+<style>@media(max-width:900px){#driveBar{display:none !important;}}</style>
 
 <script>
 // ================== Export/Import JSON สำรองข้อมูล (plain JS, ทำงานนอก React) ==================
@@ -5410,7 +5410,7 @@ function MomentumCard({data,onOpen}){
   const shown=useCountUp(m.now);
   const C=2*Math.PI*42;
   const off=C*(1-Math.max(0,Math.min(100,m.now))/100);
-  const stroke=m.state==="hot"?"#34d399":m.state==="warm"?"#8b5cf6":"#5a5175";
+  const stroke=m.state==="hot"?"#34d399":m.state==="warm"?"#d9b26a":"#4a6d5f";
   if(!m.count) return (
     <div className="mom-card mom-cold" onClick={onOpen} role="button">
       <div className="mom-head"><span className="mom-title">โมเมนตัม</span></div>
@@ -5468,6 +5468,416 @@ function MilestoneToast({toast,onClose}) {
     </div>
   );
 }
+/* ═══════════════════════════════════════════════════════════════════
+   Dashboard bento (ข้อ 24/2) — ต้นแบบ mockups/mockup-dark-emerald.html
+   คลาส CSS ใช้ prefix db- ทั้งหมด (ดูท้าย styles.css)
+   ═══════════════════════════════════════════════════════════════════ */
+const DB_ALLOC_COLORS={retirement:"#10b981",insurance:"#6f9e8d",gold:"#d9b26a",crypto:"#eccf94",stock:"#34d399",fund:"#4d7f6c",other:"#365749"};
+const DB_DAY_TH=["อา","จ","อ","พ","พฤ","ศ","ส"];
+function dbNum(n){ return Math.round(n).toLocaleString("en-US"); }
+function dbShort(n){
+  const a=Math.abs(n);
+  if(a>=1e6) return (n/1e6).toFixed(1).replace(/\.0$/,"")+"M";
+  if(a>=1e4) return Math.round(n/1e3)+"k";
+  return dbNum(n);
+}
+function dbThaiMonth(d){ return d.toLocaleDateString("th-TH",{month:"long",year:"numeric",calendar:"buddhist"}); }
+function dbNetWorth(data){ return totalCash(data)+portfolioValue(data)-totalDebtBalance(data); }
+function dbBudgetPct(review){ return review.hasBudget&&review.totalBudget>0?Math.round((review.totalVsBudget/review.totalBudget)*100):null; }
+
+function DashCollapse({title,note,defaultOpen,children}){
+  const [open,setOpen]=useState(!!defaultOpen);
+  return (
+    <div className="db-card db-span2">
+      <div className="db-head" onClick={()=>setOpen(v=>!v)} role="button" style={{marginBottom:open?14:0,cursor:"pointer"}}>
+        <div><div className="db-title">{title}</div>{note&&<div className="db-note">{note}</div>}</div>
+        <button className="db-chip">{open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
+      </div>
+      {open&&children}
+    </div>
+  );
+}
+function DashHero({data,greetText,GreetIcon,dateStr,timeStr,message,review,setPage}){
+  const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
+  const done=todayTasks.filter(t=>taskDoneOn(t)).length;
+  const projects=(data.projects||[]).filter(p=>p.status!=="archived");
+  const progress=Math.round(overallProgressNow(data));
+  const streak=momentumStreak(data);
+  const budgetPct=dbBudgetPct(review);
+  return (
+    <div className="db-hero">
+      <div style={{minWidth:0}}>
+        <div className="db-hero-title"><GreetIcon size={30}/> {greetText} <span>คุณโอห์ม</span></div>
+        <div className="db-hero-line">{dateStr} · {timeStr} น.</div>
+        <div className="db-hero-msg">{message}</div>
+        <div className="db-meters">
+          <div>
+            <div className="db-meter-label">งานวันนี้</div>
+            <div className="db-meter"><span className="db-meter-pill a db-mono">{done}/{todayTasks.length}</span></div>
+          </div>
+          <div>
+            <div className="db-meter-label">ความคืบหน้ารวม</div>
+            <div className="db-meter"><span className="db-meter-pill g db-mono">{progress}%</span></div>
+          </div>
+          <div>
+            <div className="db-meter-label">งบเดือนนี้ใช้ไป</div>
+            <div className="db-meter">
+              <span className="db-meter-pill db-mono">{budgetPct==null?"ยังไม่ตั้งงบ":`${budgetPct}%`}</span>
+              {budgetPct!=null&&<span className="db-meter-track"><i style={{width:`${Math.min(100,budgetPct)}%`}}/></span>}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="db-bignums">
+        <div className="db-bignum" onClick={()=>setPage(2)} role="button">
+          <div className="n acc db-mono">{streak}</div>
+          <div className="l"><span className="db-dot a"/> วันติดกัน</div>
+        </div>
+        <div className="db-bignum" onClick={()=>setPage(2)} role="button">
+          <div className="n db-mono">{projects.length}</div>
+          <div className="l"><span className="db-dot"/> โปรเจกต์</div>
+        </div>
+        <div className="db-bignum" onClick={()=>setPage(1)} role="button">
+          <div className={`n db-mono ${dbNetWorth(data)<0?"neg":"gld"}`}>{dbShort(dbNetWorth(data))}</div>
+          <div className={`l`}><span className={`db-dot ${dbNetWorth(data)<0?"d":"g"}`}/> มูลค่าสุทธิ</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashTasksCard({data,persist,setPage,onAddTask,onEditTask,onQuick}){
+  const [showAll,setShowAll]=useState(false);
+  const tasks=data.tasks||[];
+  const projById={}; (data.projects||[]).forEach(p=>projById[p.id]=p);
+  const list=tasks.filter(taskIsDueToday);
+  const doneCount=list.filter(t=>taskDoneOn(t)).length;
+  const shown=showAll?list:list.slice(0,6);
+  const tmr=shiftISO(todayISO(),{d:1});
+  const tmrList=tasks.filter(t=>!isRecurring(t)&&t.status!=="done"&&t.dueDate===tmr);
+  const toggle=(t)=>{
+    const willBeDone=!taskDoneOn(t);
+    persist({...data,tasks:toggleTaskInList(tasks,t.id),activity:willBeDone?logActivity(data,{source:"task",text:`ทำงานสำเร็จ "${t.title}"`,status:"completed"}):data.activity});
+  };
+  const sub=(t)=>{
+    const p=projById[t.projectId];
+    if(p) return p.title;
+    if(isRecurring(t)) return "ทำซ้ำ";
+    return t.dueDate?thaiDate(t.dueDate):"";
+  };
+  return (
+    <div className="db-card db-feature">
+      <div className="db-head">
+        <div><div className="db-title">งานวันนี้</div><div className="db-note">{thaiDate(todayISO())}</div></div>
+        <div className="db-count db-mono"><b>{doneCount}</b>/{list.length}</div>
+      </div>
+      {list.length===0&&<div className="db-empty">วันนี้ยังไม่มีงาน — กด + เพื่อเพิ่ม</div>}
+      <div className="db-tasklist">
+        {shown.map(t=>{
+          const isDone=taskDoneOn(t), late=!isDone&&taskIsOverdue(t);
+          return (
+            <div key={t.id} className={`db-trow${isDone?" done":""}${late?" late":""}`} onClick={()=>onEditTask(t)} role="button">
+              <div className="db-ticon">{isDone?<Check size={13}/>:late?<AlertCircle size={13}/>:<Clock size={13}/>}</div>
+              <div className="db-tmain">
+                <div className="db-tname">{t.title}</div>
+                {sub(t)&&<div className="db-tsub">{sub(t)}</div>}
+              </div>
+              <div className={`db-tcheck${isDone?" on":""}`} onClick={(e)=>{e.stopPropagation();toggle(t);}} role="button"/>
+            </div>
+          );
+        })}
+      </div>
+      {list.length>6&&(
+        <button className="db-chip" style={{width:"100%",marginTop:10,borderRadius:14}} onClick={()=>setShowAll(v=>!v)}>
+          {showAll?<>ย่อ <ChevronUp size={13}/></>:<>อีก {list.length-6} งาน <ChevronDown size={13}/></>}
+        </button>
+      )}
+      {tmrList.length>0&&(
+        <div className="db-next">
+          <div className="db-next-lab">พรุ่งนี้ · {tmrList.length} งาน</div>
+          {tmrList.slice(0,2).map(t=>(
+            <div className="db-trow" key={t.id} style={{background:"transparent",padding:"6px 0"}} onClick={()=>onEditTask(t)} role="button">
+              <div className="db-ticon" style={{background:"transparent",border:"1px dashed var(--line)"}}/>
+              <div className="db-tmain"><div className="db-tname">{t.title}</div></div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="db-foot">
+        <button className="db-btn" onClick={()=>setPage(2)}>ดูทั้งหมด</button>
+        <button className="db-btn primary" onClick={onQuick}>+ บันทึกเร็ว</button>
+      </div>
+    </div>
+  );
+}
+
+function DashMovementCard({data,setPage}){
+  const m=useMemo(()=>{
+    const today=todayISO();
+    const days=[]; for(let i=6;i>=0;i--) days.push(shiftISO(today,{d:-i}));
+    const vals=days.map((d,i)=>{
+      const cur=progressOn(data,d);
+      const before=progressOn(data,i===0?shiftISO(d,{d:-1}):days[i-1]);
+      return (cur&&before)?Math.max(0,cur.value-before.value):0;
+    });
+    const total=vals.reduce((a,b)=>a+b,0);
+    const max=Math.max.apply(null,vals);
+    return {days,vals,total,max:max>0?max:1,best:max>0?vals.indexOf(max):-1};
+  },[data]);
+  return (
+    <div className="db-card">
+      <div className="db-head">
+        <div><div className="db-title">ความเคลื่อนไหว</div><div className="db-note">7 วันล่าสุด</div></div>
+        <button className="db-chip" onClick={()=>setPage(2)}><TrendingUp size={13}/></button>
+      </div>
+      <div className="db-bignum-inline db-mono">{m.total.toFixed(1)}<span> จุด/สัปดาห์</span></div>
+      <div className="db-bars">
+        {m.days.map((d,i)=>(
+          <div className="db-bcol" key={d}>
+            <div className={`db-bar${i===m.best&&m.total>0?" gold":i===6?" hi":""}`} style={{height:`${Math.max(3,(m.vals[i]/m.max)*100)}%`}} title={`${d} +${m.vals[i].toFixed(1)}%`}/>
+            <div className="db-blab">{DB_DAY_TH[new Date(d+"T00:00:00").getDay()]}</div>
+          </div>
+        ))}
+      </div>
+      {m.total===0&&<div className="db-empty">ยังไม่มีความคืบหน้าที่บันทึกไว้ในช่วงนี้</div>}
+    </div>
+  );
+}
+
+function DashMonthCard({review,setPage}){
+  const budgetPct=dbBudgetPct(review);
+  return (
+    <div className="db-card">
+      <div className="db-head">
+        <div><div className="db-title">เดือนนี้</div><div className="db-note">{dbThaiMonth(new Date())}</div></div>
+        <button className="db-chip" onClick={()=>setPage(1)}><ArrowRight size={13}/></button>
+      </div>
+      <div className="db-row"><span className="lab"><span className="db-dot a"/> รายรับ</span><span className="val up db-mono">{review.totalIncome<0?"−":"+"}{dbNum(Math.abs(review.totalIncome))}</span></div>
+      <div className="db-row"><span className="lab"><span className="db-dot d"/> รายจ่าย</span><span className="val down db-mono">{review.totalExpense<0?"+":"−"}{dbNum(Math.abs(review.totalExpense))}</span></div>
+      <div className="db-row"><span className="lab"><span className="db-dot g"/> ออม/ลงทุน</span><span className="val gld db-mono">{dbNum(review.totalSaved)}</span></div>
+      <div className="db-row" style={{paddingTop:12}}>
+        <span className="lab" style={{color:"var(--ink)"}}>คงเหลือ</span>
+        <span className={`val db-mono${review.leftover<0?" down":""}`} style={{fontSize:17}}>{dbNum(review.leftover)}</span>
+      </div>
+      {budgetPct!=null&&(
+        <div style={{marginTop:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--ink-4)",marginBottom:6}}>
+            <span>งบที่ตั้งไว้เดือนนี้</span>
+            <span className="db-mono">{dbNum(review.totalVsBudget)} / {dbNum(review.totalBudget)}</span>
+          </div>
+          <div className="db-track" style={{margin:0,height:8}}>
+            <div className="db-fill" style={{width:`${Math.min(100,budgetPct)}%`,background:budgetPct>100?"linear-gradient(90deg,#f2777a,#f2777a)":"linear-gradient(90deg,var(--gold),var(--gold-soft))"}}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashDonut({segs,total}){
+  const R=42,C=2*Math.PI*R;
+  let acc=0;
+  return (
+    <div className="db-donut">
+      <svg viewBox="0 0 100 100" style={{transform:"rotate(-90deg)"}}>
+        <circle cx="50" cy="50" r={R} fill="none" stroke="var(--chip-bg)" strokeWidth="14"/>
+        {segs.map(s=>{
+          const len=(s.value/total)*C;
+          const el=<circle key={s.key} cx="50" cy="50" r={R} fill="none" stroke={s.color} strokeWidth="14"
+            strokeDasharray={`${len} ${C-len}`} strokeDashoffset={-acc}/>;
+          acc+=len; return el;
+        })}
+      </svg>
+      <div className="db-donut-mid">
+        <div className="v db-mono">{dbShort(total)}</div>
+        <div className="k">รวม</div>
+      </div>
+    </div>
+  );
+}
+
+function DashPortfolioCard({data,setPage}){
+  const iv=data.finance.investmentValues||{};
+  const segs=INVEST_TYPES.map(t=>({key:t.key,label:t.label,color:DB_ALLOC_COLORS[t.key]||"#365749",
+    value:t.key==="crypto"?cryptoPortfolioValue(data):nv(iv[t.key]&&iv[t.key].value)}))
+    .filter(s=>s.value>0).sort((a,b)=>b.value-a.value);
+  const total=segs.reduce((a,s)=>a+s.value,0);
+  return (
+    <div className="db-card db-span2">
+      <div className="db-head">
+        <div><div className="db-title">สัดส่วนพอร์ต</div><div className="db-note">{total>0?`มูลค่ารวม ${dbNum(total)}`:"ยังไม่มีข้อมูล"}</div></div>
+        <button className="db-chip" onClick={()=>setPage(1)}><ArrowRight size={13}/></button>
+      </div>
+      {total===0
+        ? <div className="db-empty">ยังไม่ได้กรอกมูลค่าพอร์ต — เปิดหน้าการเงิน › ลงทุน เพื่อใส่ยอด</div>
+        : (
+          <div className="db-donut-wrap">
+            <DashDonut segs={segs} total={total}/>
+            <div className="db-legend">
+              {segs.slice(0,4).map(s=>(
+                <span className="db-lg" key={s.key}><i style={{background:s.color}}/> {s.label} <b className="db-mono">{Math.round((s.value/total)*100)}%</b></span>
+              ))}
+              {segs.length>4&&<span className="db-lg"><i style={{background:"var(--ink-5)"}}/> อื่นๆ อีก {segs.length-4} ประเภท</span>}
+            </div>
+          </div>
+        )}
+    </div>
+  );
+}
+
+function DashQuickView({data,setPage}){
+  const debts=data.finance.debts||[];
+  const books=data.bookQueue||[];
+  const docs=data.documents||[];
+  const next=useMemo(()=>{
+    let best=null;
+    (data.projects||[]).filter(p=>p.status!=="archived").forEach(p=>{
+      const prog=projectProgress(p,data);
+      const nm=nextMilestone(p,prog);
+      if(!nm) return;
+      const gap=Number(nm.pct)-prog;
+      if(!best||gap<best.gap) best={gap,title:p.title,label:milestoneLabel(nm)};
+    });
+    return best;
+  },[data]);
+  const rows=[
+    {k:"debt",label:"หนี้คงเหลือ",value:debts.length?`${debts.length} รายการ · ${dbNum(totalDebtBalance(data))}`:"ไม่มีหนี้",page:1},
+    {k:"ms",label:"หมุดถัดไป",value:next?`${next.label} · อีก ${Math.max(0,Math.round(next.gap))}%`:"ยังไม่มีหมุด",page:2},
+    {k:"book",label:"หนังสือกำลังอ่าน",value:`${books.filter(b=>b.status==="reading").length} เล่ม · ทั้งหมด ${books.length}`,page:5},
+    {k:"doc",label:"เอกสารที่เก็บไว้",value:`${docs.length} รายการ`,page:4},
+  ];
+  return (
+    <div className="db-card">
+      <div className="db-head"><div className="db-title">ดูเร็ว</div></div>
+      {rows.map(r=>(
+        <div className="db-acc-row" key={r.k} onClick={()=>setPage(r.page)} role="button">
+          <span>{r.label}</span><span className="c db-mono">{r.value} ›</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashGoalCard({data,setPage}){
+  const pick=useMemo(()=>{
+    const act=(data.projects||[]).filter(p=>p.status!=="archived");
+    if(!act.length) return null;
+    let best=null;
+    act.forEach(p=>{
+      const prog=projectProgress(p,data);
+      const nm=nextMilestone(p,prog);
+      const gap=nm?Number(nm.pct)-prog:999;
+      if(!best||gap<best.gap) best={p,prog,gap};
+    });
+    return best;
+  },[data]);
+  if(!pick) return (
+    <div className="db-card">
+      <div className="db-head"><div className="db-title">เป้าหมายถัดไป</div></div>
+      <div className="db-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก</div>
+      <button className="db-btn primary" style={{marginTop:12}} onClick={()=>setPage(2)}>สร้างเป้าหมาย</button>
+    </div>
+  );
+  const {p,prog}=pick;
+  const ms=sortedMilestones(p);
+  return (
+    <div className="db-card">
+      <div className="db-head">
+        <div><div className="db-title" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
+          <div className="db-note">{p.measureType==="numeric"?`เป้า ${dbNum(p.targetValue||0)}${p.unit?" "+p.unit:""}`:"เป้าหมายที่ใกล้ถึงหมุดที่สุด"}</div></div>
+        <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
+      </div>
+      <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+        <span className="db-mono" style={{fontSize:26,fontWeight:600,letterSpacing:"-.6px"}}>{Math.round(prog)}%</span>
+        {p.measureType==="numeric"&&<span className="db-mono" style={{fontSize:12,color:"var(--ink-4)"}}>{dbNum(projectCurrentValue(p,data))} / {dbNum(p.targetValue||0)}</span>}
+      </div>
+      <div className="db-track">
+        <div className="db-fill" style={{width:`${Math.min(100,prog)}%`}}/>
+        {ms.map(m=><span className="db-tick" key={m.pct} style={{left:`${Math.min(100,Number(m.pct))}%`}}/>)}
+      </div>
+      {ms.length===0&&<div className="db-empty">ยังไม่ได้ตั้งหมุดความคืบหน้า</div>}
+      <div className="db-ms-list">
+        {ms.map(m=>{
+          const reached=prog>=Number(m.pct);
+          return (
+            <div className={`db-ms${reached?" on":""}`} key={m.pct}>
+              <span className={`db-ms-dot${reached?" on":""}`}/> {milestoneLabel(m)} <b className="db-mono">{m.pct}%</b>
+              <span className="db-ms-when">{reached?(m.reachedAt?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:"ถึงแล้ว"):`อีก ${Math.max(0,Math.round(Number(m.pct)-prog))}%`}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DashWeekCard({events,onAdd,onEdit,onOpenCal}){
+  const [off,setOff]=useState(0);
+  const today=todayISO();
+  const start=useMemo(()=>{
+    const d=new Date(today+"T00:00:00");
+    d.setDate(d.getDate()-((d.getDay()+6)%7)+off*7);
+    return d;
+  },[today,off]);
+  const days=useMemo(()=>{
+    const out=[];
+    for(let i=0;i<7;i++){ const d=new Date(start); d.setDate(start.getDate()+i); out.push(isoDate(d)); }
+    return out;
+  },[start]);
+  const onDay=(iso)=>(events||[]).filter(e=>e.startDate<=iso&&(e.endDate||e.startDate)>=iso)
+    .sort((a,b)=>(a.startTime||"99").localeCompare(b.startTime||"99"));
+  const slots=useMemo(()=>{
+    const set=new Set(); let allDay=false;
+    days.forEach(d=>onDay(d).forEach(e=>{ if(e.startTime) set.add(e.startTime.slice(0,2)+":00"); else allDay=true; }));
+    const hrs=Array.from(set).sort();
+    return allDay?["ทั้งวัน"].concat(hrs):hrs;
+  },[days,events]);
+  const mobileStart=off===0?Math.min(4,(new Date(today+"T00:00:00").getDay()+6)%7):0;
+  const dayCls=(i)=>(i>=mobileStart&&i<mobileStart+3)?"":" db-hide-sm";
+  const inSlot=(e,slot)=>slot==="ทั้งวัน"?!e.startTime:(e.startTime&&e.startTime.slice(0,2)+":00"===slot);
+  const label=off===0?"สัปดาห์นี้":off<0?`ย้อน ${-off} สัปดาห์`:`อีก ${off} สัปดาห์`;
+  return (
+    <div className="db-card db-span2">
+      <div className="db-head">
+        <div><div className="db-title">{label}</div><div className="db-note">{thaiDate(days[0])} – {thaiDate(days[6])}</div></div>
+        <div className="db-head-actions">
+          <button className="db-chip" onClick={()=>setOff(v=>v-1)}><ChevronLeft size={13}/></button>
+          {off!==0&&<button className="db-chip" onClick={()=>setOff(0)} style={{fontSize:11}}>วันนี้</button>}
+          <button className="db-chip" onClick={()=>setOff(v=>v+1)}><ChevronRightIcon size={13}/></button>
+          <button className="db-chip" onClick={onOpenCal}><CalendarDays size={13}/></button>
+          <button className="db-chip" onClick={onAdd}><Plus size={13}/></button>
+        </div>
+      </div>
+      {slots.length===0
+        ? <div className="db-empty">ไม่มีนัดหมายในสัปดาห์นี้ — กด + เพื่อเพิ่ม</div>
+        : (
+          <div className="db-tl">
+            <div/>
+            {days.map((d,i)=>{
+              const dt=new Date(d+"T00:00:00");
+              return <div className={`d${d===today?" today":""}${dayCls(i)}`} key={d}>{DB_DAY_TH[dt.getDay()]}<b>{dt.getDate()}</b></div>;
+            })}
+            {slots.map(slot=>(
+              <React.Fragment key={slot}>
+                <div className="h db-mono">{slot}</div>
+                {days.map((d,i)=>(
+                  <div className={`db-tl-cell${dayCls(i)}`} key={d+slot}>
+                    {onDay(d).filter(e=>inSlot(e,slot)).map(e=>(
+                      <div className={`db-ev${e.startDate!==e.endDate&&e.endDate?" g":""}`} key={e.id} onClick={()=>onEdit(e)} role="button">
+                        {e.title}
+                        {(e.startTime||e.note)&&<small>{e.startTime||""}{e.startTime&&e.note?" · ":""}{e.note||""}</small>}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
 function SecretaryDashboard() {
   const {data,loading,persist}=useSecretaryData();
   const [now,setNow]=useState(new Date());
@@ -5508,6 +5918,7 @@ function SecretaryDashboard() {
     persist(next);
     if(ms&&ms.reached.length) setToasts(prev=>[...prev,...ms.reached].slice(-3));
   },[data&&data.projects,data&&data.tasks,data&&data.checkins]);
+  const monthReview=useMemo(()=>data?buildMonthReview(data,currentMonthKey()):null,[data]);
   const dateStr=now.toLocaleDateString("th-TH",{weekday:"long",day:"numeric",month:"long",year:"numeric",calendar:"buddhist"});
   const timeStr=now.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
   const {text:greetText,Icon:GreetIcon}=greetingFor(now.getHours());
@@ -5607,71 +6018,52 @@ function SecretaryDashboard() {
           <div className="content-main">
             {page===0&&(
               <>
-                <TodayPanel data={data} persist={persist} onAddTask={()=>{setEditDashTask(null);setShowDashTask(true);}} onEditTask={t=>{setEditDashTask(t);setShowDashTask(true);}}/>
-                <div className="card">
-                  <div className="card-head">
-                    <Clock size={27}/> Schedule
-                    <div className="card-head-right">
-                      <button className="text-btn" onClick={()=>setShowCal(true)}><CalendarDays size={21}/> Calendar</button>
-                      <button className="icon-btn" onClick={()=>setShowEventModal(true)}><Plus size={24}/></button>
+                <DashHero data={data} greetText={greetText} GreetIcon={GreetIcon} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} review={monthReview} setPage={setPage}/>
+                <div className="db-bento">
+                  <div className="db-card db-span2">
+                    <div className="db-head">
+                      <div><div className="db-title">โมเมนตัม</div><div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div>
+                      <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
                     </div>
+                    <MomentumCard data={data} onOpen={()=>setPage(2)}/>
                   </div>
-                  <div className="ev-cols">
-                    <div>
-                      <div className="ev-col-head">Today</div>
-                      {todayEvents.length===0&&<div className="empty">ไม่มีงานวันนี้</div>}
-                      {todayEvents.map(e=>(
-                        <div className="ev-item" key={e.id}>
-                          <span className="ev-time">{e.startTime||""}{e.endTime?`–${e.endTime}`:""}</span>
-                          <div className="ev-body"><div className="ev-title">{e.title}</div>{e.note&&<div className="ev-note">{e.note}</div>}</div>
-                          <button className="del-btn" onClick={()=>deleteEvent(e.id)}><Trash2 size={20}/></button>
-                        </div>
-                      ))}
+                  <DashMovementCard data={data} setPage={setPage}/>
+                  <DashTasksCard data={data} persist={persist} setPage={setPage}
+                    onAddTask={()=>{setEditDashTask(null);setShowDashTask(true);}}
+                    onEditTask={t=>{setEditDashTask(t);setShowDashTask(true);}}
+                    onQuick={()=>setShowQuick(true)}/>
+                  <DashMonthCard review={monthReview} setPage={setPage}/>
+                  <DashPortfolioCard data={data} setPage={setPage}/>
+                  <DashGoalCard data={data} setPage={setPage}/>
+                  <DashQuickView data={data} setPage={setPage}/>
+                  <DashWeekCard events={events} onAdd={()=>{setEditEvent(null);setShowEventModal(true);}} onEdit={openEditEvent} onOpenCal={()=>setShowCal(true)}/>
+                  <div className="db-card db-span2">
+                    <div className="db-head">
+                      <div><div className="db-title">โน้ต</div><div className="db-note">{notes.length} รายการ</div></div>
+                      <button className="db-chip" onClick={()=>{setEditNote(null);setShowNoteModal(true);}}><Plus size={13}/></button>
                     </div>
-                    <div>
-                      <div className="ev-col-head">Upcoming</div>
-                      {upcomingEvents.length===0&&<div className="empty">ไม่มีงานที่จะมาถึง</div>}
-                      {upcomingEvents.slice(0,5).map(e=>(
-                        <div className="ev-item" key={e.id}>
-                          <div className="ev-body">
-                            <div className="ev-title">{e.title}</div>
-                            <div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
-                              <span className="ev-date-badge">{dayLabel(e.startDate)}{e.startTime?` ${e.startTime}`:""}</span>
-                              {e.note&&<span className="ev-note">{e.note}</span>}
-                            </div>
+                    {notes.length===0&&<div className="db-empty">ยังไม่มีโน้ต กด + เพื่อเพิ่ม</div>}
+                    <div className="db-notes-grid">
+                      {visibleNotes.map(n=>(
+                        <div key={n.id} className={`note-card ${n.color}`}>
+                          <div className="note-actions">
+                            <button className="note-action-btn" onClick={()=>openEditNote(n)}><Edit3 size={15}/></button>
+                            <button className="note-action-btn" onClick={()=>removeNote(n.id)}><Trash2 size={15}/></button>
                           </div>
-                          <button className="del-btn" onClick={()=>deleteEvent(e.id)}><Trash2 size={20}/></button>
+                          {n.text}
                         </div>
                       ))}
                     </div>
+                    {hiddenNotes>0&&(
+                      <button className="db-chip" style={{width:"100%",marginTop:10,borderRadius:14}} onClick={()=>setNotesExpanded(e=>!e)}>
+                        {notesExpanded?<>แสดงน้อยลง <ChevronUp size={13}/></>:<>แสดงอีก {hiddenNotes} โน้ต <ChevronDown size={13}/></>}
+                      </button>
+                    )}
                   </div>
+                  <DashCollapse title="ประวัติการใช้งาน" note={`${(data.activity||[]).length} รายการ`}>
+                    <HistoryPanel activity={data.activity}/>
+                  </DashCollapse>
                 </div>
-                <div className="card">
-                  <div className="card-head">
-                    <StickyNote size={27}/> Notes
-                    <div className="card-head-right">
-                      <button className="icon-btn" onClick={()=>{setEditNote(null);setShowNoteModal(true);}}><Plus size={27}/></button>
-                    </div>
-                  </div>
-                  {notes.length===0&&<div className="empty">ยังไม่มีโน้ต กด + เพื่อเพิ่ม</div>}
-                  <div className="notes-grid">
-                    {visibleNotes.map(n=>(
-                      <div key={n.id} className={`note-card ${n.color}`}>
-                        <div className="note-actions">
-                          <button className="note-action-btn" onClick={()=>openEditNote(n)}><Edit3 size={17}/></button>
-                          <button className="note-action-btn" onClick={()=>removeNote(n.id)}><Trash2 size={17}/></button>
-                        </div>
-                        {n.text}
-                      </div>
-                    ))}
-                  </div>
-                  {hiddenNotes>0&&(
-                    <button className="show-more-btn" onClick={()=>setNotesExpanded(e=>!e)}>
-                      {notesExpanded?<>แสดงน้อยลง<ChevronUp size={21}/></>:<>แสดงอีก {hiddenNotes} โน้ต<ChevronDown size={21}/></>}
-                    </button>
-                  )}
-                </div>
-                <HistoryPanel activity={data.activity}/>
               </>
             )}
             {page===1&&<FinancePage data={data} persist={persist}/>}
@@ -5681,58 +6073,6 @@ function SecretaryDashboard() {
             {page===5&&<BookQueuePage data={data} persist={persist}/>}
             {page===6&&<JournalPage data={data} persist={persist}/>}
           </div>
-          {page===0&&(
-            <div className="hero-panel">
-              <div className="hero-top">
-                <div className="hero-avatar">O</div>
-                <div style={{flex:1}}>
-                  <div className="hero-name">{greetText} 👋</div>
-                  <div className="hero-sub">คุณโอห์ม · {dateStr}</div>
-                </div>
-              </div>
-              <div className="hero-stage">
-                <div className="hero-bubble">{assistantMessage}</div>
-                <div className="hero-illustration"><GreetIcon size={72}/></div>
-                <div className="hero-podium"/>
-              </div>
-              <div className="hero-brand">เลขาส่วนตัว ✨</div>
-              <div className="hero-tagline">สมองที่สองของคุณ · จำแทนคุณทุกอย่าง</div>
-              <div className="hero-time-badge">{timeStr}</div>
-              <MomentumCard data={data} onOpen={()=>setPage(2)}/>
-              <div className="hero-tiles">
-                <div className="hero-tile" onClick={()=>setPage(2)} role="button">
-                  <div className="hero-tile-icon"><ListTodo size={18}/></div>
-                  <div className="hero-tile-value">{doneTodayCount}<span className="hero-tile-total">/{totalTodoCount}</span></div>
-                  <div className="hero-tile-label">งานวันนี้</div>
-                  <div className="hero-tile-sub" style={{color:"#34d399"}}>{Math.round(rings.todo)}% แล้ว</div>
-                </div>
-                <div className="hero-tile" onClick={()=>setPage(2)} role="button">
-                  <div className="hero-tile-icon"><Target size={18}/></div>
-                  <div className="hero-tile-value">{(data.projects||[]).length}</div>
-                  <div className="hero-tile-label">โปรเจกต์</div>
-                  <div className="hero-tile-sub" style={{color:"#60a5fa"}}>เฉลี่ย {Math.round(rings.goals)}%</div>
-                </div>
-                <div className="hero-tile" onClick={()=>setPage(5)} role="button">
-                  <div className="hero-tile-icon"><BookOpen size={18}/></div>
-                  <div className="hero-tile-value">{bookStats.reading}<span className="hero-tile-total">/{bookStats.total}</span></div>
-                  <div className="hero-tile-label">หนังสือ</div>
-                  <div className="hero-tile-sub" style={{color:"#fbbf24"}}>อ่านแล้ว {bookStats.done} เล่ม</div>
-                </div>
-              </div>
-              <button className="hero-tile hero-tile-cta hero-cta-full" onClick={()=>setShowQuick(true)}>
-                <div className="hero-cta-title">✨ Quick Capture</div>
-                <div className="hero-cta-sub">จดอะไรก็ได้ ทันที</div>
-                <div className="hero-cta-arrow"><ArrowRight size={18}/></div>
-              </button>
-              {todayEvents[0]&&(
-                <div className="hero-next-event">
-                  <div className="hero-next-label">⏰ งานถัดไปวันนี้</div>
-                  <div className="hero-next-title">{todayEvents[0].title}</div>
-                  {todayEvents[0].startTime&&<div className="hero-next-time">{todayEvents[0].startTime}{todayEvents[0].endTime?`–${todayEvents[0].endTime}`:""}</div>}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
       <PageNav page={page} setPage={setPage}/>

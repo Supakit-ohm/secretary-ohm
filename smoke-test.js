@@ -8,7 +8,7 @@
    *** สำคัญ: @babel/standalone ต้อง pin 7.24.7 รุ่นใหม่กว่านี้ throw "Cannot use import statement outside a module" ***
    หมายเหตุ: แก้ไฟล์ preview-dashboard.html เท่านั้น test-dashboard.html เป็นไฟล์ชั่วคราวที่ generate ใหม่ทุกครั้ง
 
-   ครอบคลุม: ทุกแท็บ Finance · หน้า Investments ที่รื้อใหม่ (ข้อ 18) · การ์ดโมเมนตัม (ข้อ 19)
+   ครอบคลุม: ทุกแท็บ Finance · หน้า Investments ที่รื้อใหม่ (ข้อ 18) · การ์ดโมเมนตัม (ข้อ 19) · Dashboard bento (ข้อ 24/2)
              · หน้ายืนยัน Import JSON (ข้อ 20) · หมุดโปรเจกต์ + toast (ข้อ 21) · จอมือถือไม่ล้นแนวนอน */
 const fs=require('fs'),path=require('path'),{chromium}=require('playwright');
 
@@ -81,22 +81,49 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   await p.waitForTimeout(7000);
 
   /* ───────── รอบ 19: การ์ดโมเมนตัมในแผงม่วง ───────── */
-  console.log('\n[ข้อ 19] การ์ดโมเมนตัม + แผงม่วง');
-  const hero=await p.evaluate(()=>{
-    const h=document.querySelector('.hero-panel');
-    if(!h) return null;
-    const cs=getComputedStyle(h);
-    return {visible:cs.display!=='none',text:h.innerText.length,
-      mom:!!h.querySelector('.mom-ring, [class*="mom-"]'),
-      ringDash:(h.querySelector('.mom-ring-fg, .mom-ring circle[stroke-dasharray]')||{}).getAttribute?.('stroke-dasharray')||"",
-      spark:!!h.querySelector('svg polyline, svg path'),
-      tiles:h.querySelectorAll('.hero-tile, .hero-tiles > *').length};
+  console.log('\n[ข้อ 24/2] Dashboard bento + การ์ดโมเมนตัม');
+  const bento=await p.evaluate(()=>{
+    const g=document.querySelector('.db-bento');
+    if(!g) return null;
+    const cards=[...g.children];
+    const mom=g.querySelector('.mom-card');
+    const q=(sel)=>!!g.querySelector(sel);
+    return {
+      cards:cards.length,
+      cols:getComputedStyle(g).gridTemplateColumns.split(' ').length,
+      hero:!!document.querySelector('.db-hero'),
+      heroNums:document.querySelectorAll('.db-bignum').length,
+      mom:!!mom,
+      ringDash:(g.querySelector('.mom-ring-fg')||{}).getAttribute?.('stroke-dasharray')||"",
+      spark:!!g.querySelector('.mom-spark path'),
+      bars:g.querySelectorAll('.db-bar').length,
+      feature:!!g.querySelector('.db-feature'),
+      tasks:g.querySelectorAll('.db-feature .db-trow').length,
+      monthRows:g.querySelectorAll('.db-row').length,
+      donut:g.querySelectorAll('.db-donut circle').length,
+      quick:g.querySelectorAll('.db-acc-row').length,
+      week:q('.db-tl')||q('.db-empty'),
+      notes:g.querySelectorAll('.note-card').length,
+      history:g.innerText.includes('ประวัติการใช้งาน'),
+      historyOpens:(()=>{const h=[...g.querySelectorAll('.db-head')].find(x=>x.innerText.includes('ประวัติการใช้งาน'));if(!h)return false;h.click();return true;})(),
+      leftovers:document.querySelectorAll('.hero-panel, .sidebar').length,
+    };
   });
-  check('แผงม่วงแสดงผล',hero&&hero.visible,hero?`ข้อความ ${hero.text} ตัวอักษร`:'ไม่พบ .hero-panel');
-  check('การ์ดโมเมนตัมอยู่ในแผงม่วง',hero&&hero.mom);
-  check('วงแหวนโมเมนตัมวาดจริง (มี stroke-dasharray)',hero&&hero.ringDash!=="",hero&&hero.ringDash?`dasharray="${hero.ringDash}"`:"");
-  check('sparkline วาดจริง',hero&&hero.spark);
-  check('การ์ดสถิติ 3 ช่อง',hero&&hero.tiles>=3,hero?`เจอ ${hero.tiles}`:"");
+  check('กริด bento แสดงผล',bento&&bento.cards>=9,bento?`${bento.cards} การ์ด · ${bento.cols} คอลัมน์`:'ไม่พบ .db-bento');
+  check('แถบฮีโร่ + ตัวเลขใหญ่ 3 ช่อง',bento&&bento.hero&&bento.heroNums>=3,bento?`bignum ${bento.heroNums}`:"");
+  check('การ์ดโมเมนตัมอยู่ในกริด',bento&&bento.mom);
+  check('วงแหวนโมเมนตัมวาดจริง (มี stroke-dasharray)',bento&&bento.ringDash!=="",bento&&bento.ringDash?`dasharray="${bento.ringDash}"`:"");
+  check('sparkline วาดจริง',bento&&bento.spark);
+  check('กราฟแท่ง 7 วัน',bento&&bento.bars===7,bento?`${bento.bars} แท่ง`:"");
+  check('การ์ดเด่น "งานวันนี้" มีรายการงาน',bento&&bento.feature&&bento.tasks>0,bento?`${bento.tasks} งาน`:"");
+  check('การ์ดเดือนนี้ครบ 4 แถว',bento&&bento.monthRows>=4,bento?`${bento.monthRows} แถว`:"");
+  check('โดนัทสัดส่วนพอร์ตวาดจริง',bento&&bento.donut>=2,bento?`${bento.donut} วง (0 = ยังไม่กรอกมูลค่า)`:"");
+  check('การ์ดดูเร็ว 4 แถว',bento&&bento.quick>=4,bento?`${bento.quick} แถว`:"");
+  check('ตารางสัปดาห์แสดงผล',bento&&bento.week);
+  check('การ์ดโน้ตยังอยู่ในกริด',bento&&bento.notes>0,bento?`${bento.notes} โน้ต`:"");
+  check('การ์ดประวัติ (พับได้) ยังอยู่ในกริด',bento&&bento.history);
+  check('กดหัวการ์ดประวัติแล้วกางออก',await p.evaluate(()=>{const g=document.querySelector('.db-bento');return !!g&&(g.innerText.includes('Event')||g.innerText.includes('ยังไม่มีประวัติ'));}));
+  check('ไม่มีซาก .hero-panel/.sidebar หลงเหลือ',bento&&bento.leftovers===0,bento?`เจอ ${bento.leftovers}`:"");
 
   /* ───────── ทุกแท็บ Finance + รอบ 18: Investments ───────── */
   console.log('\n[แท็บ Finance ทั้งหมด]');
