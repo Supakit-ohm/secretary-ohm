@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>เลขา Ohm</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#0b0817" />
+<meta name="theme-color" content="var(--bg-1)" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="เลขา Ohm" />
@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="styles.css" />
 <script src="config.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<style>body{margin:0;background:#0b0817;}</style>
+<style>body{margin:0;background:var(--bg-1);}</style>
 </head>
 <body>
 <div id="root"></div>
@@ -131,17 +131,17 @@
   var CMP_ROWS = [
     ["income", "รายรับ", "#34d399"],
     ["expenses", "รายจ่าย", "#fb923c"],
-    ["investments", "เงินออม/ลงทุน", "#8b5cf6"],
-    ["projects", "โปรเจกต์", "#c9b8f0"],
-    ["tasks", "งาน (tasks)", "#c9b8f0"]
+    ["investments", "เงินออม/ลงทุน", "var(--accent)"],
+    ["projects", "โปรเจกต์", "var(--ink-3)"],
+    ["tasks", "งาน (tasks)", "var(--ink-3)"]
   ];
 
   function cellHtml(st, color) {
     var sub = st.range;
     if (st.sum) sub += "<br>" + st.sum;
     return '<div style="font:600 17px/1.2 \'IBM Plex Mono\',monospace;color:' + color + ';">' + st.n +
-      '<span style="font-size:11px;color:#8a82a8;font-weight:400;"> รายการ</span></div>' +
-      '<div style="font-size:11px;color:#8a82a8;margin-top:3px;line-height:1.45;">' + sub + "</div>";
+      '<span style="font-size:11px;color:var(--ink-5);font-weight:400;"> รายการ</span></div>' +
+      '<div style="font-size:11px;color:var(--ink-5);margin-top:3px;line-height:1.45;">' + sub + "</div>";
   }
 
   function showImportConfirm(fileName, fileSum, curSum) {
@@ -151,11 +151,11 @@
         var fSt = fileSum[key], cSt = curSum[key];
         var delta = fSt.n - cSt.n;
         var deltaTxt = delta === 0 ? "เท่าเดิม" : (delta > 0 ? "+" + delta : String(delta));
-        var deltaColor = delta === 0 ? "#8a82a8" : (delta > 0 ? "#34d399" : "#f87171");
-        return '<tr style="border-top:1px solid #2a2342;">' +
-          '<td style="padding:10px 8px;font-size:13px;color:#ece8f8;vertical-align:top;white-space:nowrap;">' + label + "</td>" +
+        var deltaColor = delta === 0 ? "var(--ink-5)" : (delta > 0 ? "#34d399" : "#f87171");
+        return '<tr style="border-top:1px solid var(--surface-2);">' +
+          '<td style="padding:10px 8px;font-size:13px;color:var(--ink-bright-2);vertical-align:top;white-space:nowrap;">' + label + "</td>" +
           '<td style="padding:10px 8px;vertical-align:top;">' + cellHtml(fSt, color) + "</td>" +
-          '<td style="padding:10px 8px;vertical-align:top;">' + cellHtml(cSt, "#8a82a8") + "</td>" +
+          '<td style="padding:10px 8px;vertical-align:top;">' + cellHtml(cSt, "var(--ink-5)") + "</td>" +
           '<td style="padding:10px 8px;vertical-align:top;font:600 13px/1.2 \'IBM Plex Mono\',monospace;color:' + deltaColor + ';white-space:nowrap;">' + deltaTxt + "</td>" +
           "</tr>";
       }).join("");
@@ -164,22 +164,22 @@
       ov.id = "importConfirmOverlay";
       ov.setAttribute("style", "position:fixed;inset:0;z-index:9999;background:rgba(6,4,14,.82);display:flex;align-items:center;justify-content:center;padding:16px;font-family:'Noto Sans Thai',sans-serif;");
       ov.innerHTML =
-        '<div style="background:#140f24;border:1px solid #3a3155;border-radius:16px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:22px;color:#ece8f8;box-shadow:0 24px 70px rgba(0,0,0,.65);">' +
+        '<div style="background:var(--surface-modal);border:1px solid var(--line);border-radius:16px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:22px;color:var(--ink-bright-2);box-shadow:0 24px 70px rgba(0,0,0,.65);">' +
           '<div style="font-size:18px;font-weight:700;margin-bottom:4px;">ยืนยันการนำเข้าข้อมูล</div>' +
-          '<div style="font-size:12px;color:#8a82a8;word-break:break-all;margin-bottom:14px;">ไฟล์: ' + esc(fileName) + "</div>" +
+          '<div style="font-size:12px;color:var(--ink-5);word-break:break-all;margin-bottom:14px;">ไฟล์: ' + esc(fileName) + "</div>" +
           '<div style="background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.4);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:#fca5a5;margin-bottom:14px;">' +
             "การนำเข้าจะ<b>เขียนทับข้อมูลปัจจุบันทั้งหมด</b> และซิงก์ทับ Google Drive ถ้าเชื่อมต่ออยู่ — <b>กู้คืนไม่ได้</b> แนะนำกดปุ่ม &quot;สำรองก่อน&quot; เก็บไฟล์ของข้อมูลปัจจุบันไว้ก่อน" +
           "</div>" +
           '<table style="width:100%;border-collapse:collapse;">' +
-            '<thead><tr style="font-size:11px;color:#8a82a8;text-align:left;">' +
+            '<thead><tr style="font-size:11px;color:var(--ink-5);text-align:left;">' +
               '<th style="padding:0 8px 6px;font-weight:600;"></th>' +
               '<th style="padding:0 8px 6px;font-weight:600;">ไฟล์ที่จะนำเข้า</th>' +
               '<th style="padding:0 8px 6px;font-weight:600;">ข้อมูลปัจจุบัน</th>' +
               '<th style="padding:0 8px 6px;font-weight:600;">ต่าง</th>' +
             "</tr></thead><tbody>" + rowsHtml + "</tbody></table>" +
           '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:20px;">' +
-            '<button id="icBackup" style="padding:10px 16px;border-radius:10px;background:#221b38;border:1px solid #3a3155;color:#34d399;cursor:pointer;font-size:13px;font-family:inherit;">สำรองก่อน</button>' +
-            '<button id="icCancel" style="padding:10px 18px;border-radius:10px;background:#221b38;border:1px solid #3a3155;color:#ece8f8;cursor:pointer;font-size:13px;font-family:inherit;">ยกเลิก</button>' +
+            '<button id="icBackup" style="padding:10px 16px;border-radius:10px;background:var(--surface-modal);border:1px solid var(--line);color:#34d399;cursor:pointer;font-size:13px;font-family:inherit;">สำรองก่อน</button>' +
+            '<button id="icCancel" style="padding:10px 18px;border-radius:10px;background:var(--surface-modal);border:1px solid var(--line);color:var(--ink-bright-2);cursor:pointer;font-size:13px;font-family:inherit;">ยกเลิก</button>' +
             '<button id="icOk" style="padding:10px 18px;border-radius:10px;background:#dc2626;border:1px solid #ef4444;color:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;">เขียนทับข้อมูลเดิม</button>' +
           "</div>" +
         "</div>";
@@ -487,8 +487,35 @@ const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+T
 const STORAGE_KEY = "secretary-dashboard-v1";
 const VISIBLE_LIMIT = 5;
 const NOTE_VISIBLE = 9;
+/* ── ข้อ 32/3: รายการยาวต้องกดซ่อน/กางได้ ──
+   หน้าที่รื้อเป็น bento ได้ ใช้ `DashCollapse`
+   หน้าที่ต้องคงตารางความหนาแน่นสูงไว้ (Income/Expenses/Debts/Review ตามข้อ 24) ใช้คู่นี้แทน:
+   ตัดรายการเหลือ `limit` แถวแล้วต่อท้ายด้วยปุ่ม "อีก X รายการ" / "แสดงทั้งหมด" / "ย่อกลับ" */
+const ROW_STEP = 25;
+function useRowLimit(step=ROW_STEP){
+  const [limit,setLimit]=useState(step);
+  return {limit,step,
+    more:()=>setLimit(l=>l+step),
+    all:()=>setLimit(Number.MAX_SAFE_INTEGER),
+    less:()=>setLimit(step)};
+}
+function ShowMoreRow({rl,total}){
+  const shown=Math.min(rl.limit,total);
+  if(total<=rl.step) return null;                     // สั้นพอแล้ว ไม่ต้องมีปุ่ม
+  return (
+    <div className="show-more-row">
+      <span className="show-more-count db-mono">{shown}/{total}</span>
+      {shown<total&&<button className="show-more-btn" onClick={rl.more}>อีก {Math.min(rl.step,total-shown)} รายการ <ChevronDown size={13}/></button>}
+      {shown<total&&<button className="show-more-btn ghost" onClick={rl.all}>แสดงทั้งหมด ({total})</button>}
+      {shown>rl.step&&<button className="show-more-btn ghost" onClick={rl.less}>ย่อกลับ <ChevronUp size={13}/></button>}
+    </div>
+  );
+}
 const NEXT_STATUS = { pending: "done", done: "failed", failed: "pending" };
-const COLORS = ["#8b5cf6", "#34d399", "#fb923c", "#60a5fa", "#5a7a9e", "#d4956a"];
+/* ชุดสีหมวดหมู่ของกราฟทั้งแอป — ข้อ 24/6: เปลี่ยนจากม่วง/ฟ้าเป็น Dark Emerald ตามข้อ 23
+   ต้องเป็น hex ตรงๆ ห้ามใช้ var() เพราะถูกยัดเป็น SVG presentation attribute ของ Recharts (fill=) ซึ่งไม่รองรับ var()
+   DB_CAT_COLORS (โดนัท DashDonut) เป็น alias ของชุดนี้ — แหล่งเดียวทั้งแอป */
+const COLORS = ["#10b981", "#d9b26a", "#6ee7b7", "#6f9e8d", "#eccf94", "#34d399", "#4d7f6c", "#b99a52"];
 /* ── helpers ── */
 function pad(n) { return String(n).padStart(2, "0"); }
 function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
@@ -537,7 +564,7 @@ const DEFAULT_EVENTS = [
 ];
 const NOTE_COLORS = ["amber","teal","rose","violet","slate"];
 const PAGE_TITLES = ["Home","Finance","Tracker","Health","Documents","Books","Journal"];
-const GOAL_COLORS = ["#8b5cf6","#34d399","#fb923c","#60a5fa","#f472b6","#fbbf24","#f87171","#5a7a9e"];
+const GOAL_COLORS = ["#10b981","#34d399","#d9b26a","#60a5fa","#6ee7b7","#fbbf24","#f87171","#6f9e8d"];
 const GOAL_CATEGORIES = [
   {key:"finance",label:"การเงิน",icon:Wallet},
   {key:"health",label:"สุขภาพ",icon:Heart},
@@ -680,7 +707,7 @@ function expectedProgress(p){
 function projectHealth(p,data){
   const prog=projectProgress(p,data);
   if(prog>=100) return {key:"done",label:"สำเร็จแล้ว",color:"#34d399",prog};
-  if(p.status==="paused") return {key:"paused",label:"พักไว้",color:"#8a82a8",prog};
+  if(p.status==="paused") return {key:"paused",label:"พักไว้",color:"var(--ink-5)",prog};
   const exp=expectedProgress(p);
   const dLeft=daysUntil(p.targetDate);
   if(dLeft!=null&&dLeft<0) return {key:"overdue",label:"เลยกำหนด",color:"#f87171",prog,exp};
@@ -930,7 +957,7 @@ const DEFAULT_DATA = {
   goals:[
     {id:"g1",title:"เก็บเงิน 1,000,000 บาทใน 5 ปี",description:"เก็บเงินเพื่อความมั่นคงในอนาคต แบ่งเก็บจากรายได้ทุกเดือน",category:"finance",priority:"high",measureType:"numeric",targetValue:1000000,currentValue:180000,unit:"บาท",milestones:[],startDate:"2026-01-01",targetDate:"2031-01-01",color:"#34d399"},
     {id:"g2",title:"พูดภาษาอังกฤษคล่อง",description:"ฝึกพูดภาษาอังกฤษให้คล่องระดับสนทนาได้เป็นธรรมชาติ",category:"learning",priority:"medium",measureType:"percent",targetValue:100,currentValue:32,unit:"",milestones:[],startDate:"2026-01-01",targetDate:null,color:"#60a5fa"},
-    {id:"g3",title:"ปรับปรุงเลขาส่วนตัวให้ครบทุกฟีเจอร์",description:"พัฒนาแอปเลขาส่วนตัวให้ใช้งานได้ครบทุกฟีเจอร์ พร้อมเชื่อม Google Drive",category:"career",priority:"medium",measureType:"checklist",targetValue:100,currentValue:0,unit:"",milestones:[{id:"m1",text:"ออกแบบ UI ใหม่",done:true},{id:"m2",text:"เชื่อม Google Drive",done:false},{id:"m3",text:"ทดสอบบนมือถือ",done:false}],startDate:"2026-07-01",targetDate:"2026-09-01",color:"#8b5cf6"},
+    {id:"g3",title:"ปรับปรุงเลขาส่วนตัวให้ครบทุกฟีเจอร์",description:"พัฒนาแอปเลขาส่วนตัวให้ใช้งานได้ครบทุกฟีเจอร์ พร้อมเชื่อม Google Drive",category:"career",priority:"medium",measureType:"checklist",targetValue:100,currentValue:0,unit:"",milestones:[{id:"m1",text:"ออกแบบ UI ใหม่",done:true},{id:"m2",text:"เชื่อม Google Drive",done:false},{id:"m3",text:"ทดสอบบนมือถือ",done:false}],startDate:"2026-07-01",targetDate:"2026-09-01",color:"var(--accent)"},
   ],
   habits:[
     {id:"h1",name:"ออกกำลัง",frequency:"daily",completed:{}},
@@ -1062,9 +1089,9 @@ const ACTIVITY_META={
   event:{label:"ตารางงาน",icon:CalendarDays,color:"#60a5fa"},
   expense:{label:"รายจ่าย",icon:Wallet,color:"#fb923c"},
   income:{label:"รายรับ",icon:TrendingUp,color:"#34d399"},
-  goal:{label:"เป้าหมาย",icon:Target,color:"#8b5cf6"},
-  journal:{label:"Journal",icon:PenTool,color:"#f472b6"},
-  habit:{label:"Habit",icon:Zap,color:"#a78bfa"},
+  goal:{label:"เป้าหมาย",icon:Target,color:"var(--accent)"},
+  journal:{label:"Journal",icon:PenTool,color:"#eccf94"},
+  habit:{label:"Habit",icon:Zap,color:"var(--accent-soft)"},
 };
 function logActivity(data,{source,text,status="saved"}) {
   const entry={id:uid(),source,text,status,at:new Date().toISOString()};
@@ -1129,6 +1156,22 @@ function useSecretaryData() {
           return {...v,type:v.source==="payslip"?"retirement":"other"};
         });
         if(invTyped) withFixedDates.finance={...withFixedDates.finance,investments:typedInvestments};
+        // migration (ข้อ 24/6): สีโปรเจกต์/เป้าหมายที่บันทึกไว้สมัยธีมม่วง → ชุด Dark Emerald
+        // สีพวกนี้อยู่ใน "ข้อมูล" ไม่ใช่ CSS (การ์ด/ป้ายหมวด/แถบความคืบหน้าใช้ project.color ตรงๆ)
+        // ถ้าไม่ย้าย จะเหลือการ์ดม่วงคาหน้า Tracker ทั้งที่ทั้งแอปเป็นเขียวแล้ว
+        const LEGACY_COLOR={"#8b5cf6":"#10b981","#a78bfa":"#34d399","#c4b5fd":"#6ee7b7","#f472b6":"#d9b26a","#5a7a9e":"#6f9e8d"};
+        const reColor=(arr)=>{
+          let hit=false;
+          const out=(arr||[]).map(o=>{
+            const c=LEGACY_COLOR[String(o&&o.color||"").toLowerCase()];
+            if(!c) return o;
+            hit=true; return {...o,color:c};
+          });
+          return hit?out:null;
+        };
+        const pRe=reColor(withFixedDates.projects), gRe=reColor(withFixedDates.goals);
+        if(pRe) withFixedDates.projects=pRe;
+        if(gRe) withFixedDates.goals=gRe;
         // migration: รวม Goals + To-do + Habits เข้าเป็นระบบ Project Tracker เดียว
         const migrated=migrateToTracker(withFixedDates);
         const withTracker=migrated
@@ -1169,11 +1212,11 @@ function TodoRow({item,onCycle,onRemove,showDate}) {
   return (
     <div className="todo-item">
       <button className={`status-btn ${s}`} onClick={()=>onCycle(item.id)}>
-        {s==="done"&&<Check size={20}/>}{s==="failed"&&<X size={20}/>}
+        {s==="done"&&<Check size={13}/>}{s==="failed"&&<X size={13}/>}
       </button>
       <span className={`todo-text ${s}`}>{item.text}</span>
       {showDate&&item.date&&<span className="date-badge">{dayLabel(item.date)}</span>}
-      <button className="del-btn" onClick={()=>onRemove(item.id)}><Trash2 size={20}/></button>
+      <button className="del-btn" onClick={()=>onRemove(item.id)}><Trash2 size={13}/></button>
     </div>
   );
 }
@@ -1186,7 +1229,7 @@ function TodoSection({title,items,showDate,onCycle,onRemove,expanded,onToggleExp
       <div className="todo-sub-head">{title}</div>
       {sorted.length===0&&<div className="empty">ยังไม่มีงาน</div>}
       {visible.map(t=><TodoRow key={t.id} item={t} showDate={showDate} onCycle={onCycle} onRemove={onRemove}/>)}
-      {hidden>0&&<button className="show-more-btn" onClick={onToggleExpand}>{expanded?<>น้อยลง<ChevronUp size={21}/></>:<>อีก {hidden} รายการ<ChevronDown size={21}/></>}</button>}
+      {hidden>0&&<button className="show-more-btn" onClick={onToggleExpand}>{expanded?<>น้อยลง<ChevronUp size={13}/></>:<>อีก {hidden} รายการ<ChevronDown size={13}/></>}</button>}
     </div>
   );
 }
@@ -1199,7 +1242,7 @@ function TodoModal({onClose,onSave}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>เพิ่ม Task ใหม่</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>เพิ่ม Task ใหม่</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <label className="field-label">ประเภท</label>
           <div className="type-tabs">
@@ -1224,7 +1267,7 @@ function NoteModal({onClose,onSave,initial}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{initial?"แก้ไขโน้ต":"เพิ่มโน้ตใหม่"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>{initial?"แก้ไขโน้ต":"เพิ่มโน้ตใหม่"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <label className="field-label">สี</label>
           <div className="color-row">
@@ -1249,7 +1292,7 @@ function EventModal({onClose,onSave,initial}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{initial?"แก้ไขงาน":"เพิ่มงานใหม่"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>{initial?"แก้ไขงาน":"เพิ่มงานใหม่"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <label className="field-label">ชื่องาน / นัดหมาย *</label>
           <input className="modal-input" placeholder="เช่น ประชุมทีม, พบแพทย์..." value={form.title} onChange={e=>set("title",e.target.value)}/>
@@ -1295,8 +1338,8 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal cal-modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-head">
-          <div className="cal-nav"><button className="cal-nav-btn" onClick={prevMonth}><ChevronLeft size={27}/></button><span className="cal-month-label">{monthLabel}</span><button className="cal-nav-btn" onClick={nextMonth}><ChevronRightIcon size={27}/></button></div>
-          <button className="modal-close" onClick={onClose}><X size={27}/></button>
+          <div className="cal-nav"><button className="cal-nav-btn" onClick={prevMonth}><ChevronLeft size={15}/></button><span className="cal-month-label">{monthLabel}</span><button className="cal-nav-btn" onClick={nextMonth}><ChevronRightIcon size={15}/></button></div>
+          <button className="modal-close" onClick={onClose}><X size={15}/></button>
         </div>
         {!detail?(
           <>
@@ -1321,7 +1364,7 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
                 <div key={e.id} className="cal-ev-row">
                   <span className="cal-ev-date">{thaiDate(e.startDate)}{e.startTime?` ${e.startTime}`:""}</span>
                   <span className="cal-ev-title">{e.title}</span>
-                  <button className="del-btn" onClick={()=>onDeleteEvent(e.id)}><Trash2 size={20}/></button>
+                  <button className="del-btn" onClick={()=>onDeleteEvent(e.id)}><Trash2 size={13}/></button>
                 </div>
               ))}
               {events.filter(e=>e.startDate>=todayISO()).length===0&&<div className="empty">ไม่มีงานในอนาคต</div>}
@@ -1329,7 +1372,7 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
           </>
         ):(
           <div className="cal-detail">
-            <button className="back-btn" onClick={()=>setDetail(null)}><ChevronLeft size={24}/> กลับ</button>
+            <button className="back-btn" onClick={()=>setDetail(null)}><ChevronLeft size={14}/> กลับ</button>
             <div className="cal-detail-date">{thaiDate(detail.date)}</div>
             {detail.evs.map(e=>(
               <div key={e.id} className="cal-detail-card">
@@ -1370,13 +1413,13 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
       </div>
       <div className="topbar-right">
         <div className="search-wrap">
-          <button className={`nav-icon-btn${openSearch?" on":""}`} onClick={()=>{ if(openSearch) setSearch(""); setOpenSearch(v=>!v); }} title="ค้นหา"><Search size={16}/></button>
+          <button className={`nav-icon-btn${openSearch?" on":""}`} onClick={()=>{ if(openSearch) setSearch(""); setOpenSearch(v=>!v); }} title="ค้นหา"><Search size={12}/></button>
           {openSearch&&(
             <div className="search-pop">
               <div className="search-bar">
-                <Search size={16}/>
+                <Search size={12}/>
                 <input autoFocus placeholder="ค้นหาโน้ต งาน เป้าหมาย..." value={search} onChange={e=>setSearch(e.target.value)}/>
-                <button className="search-clear" onClick={()=>{setSearch("");setOpenSearch(false);}}><X size={16}/></button>
+                <button className="search-clear" onClick={()=>{setSearch("");setOpenSearch(false);}}><X size={12}/></button>
               </div>
               {search.trim()&&(
                 <div className="search-results">
@@ -1392,7 +1435,7 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
             </div>
           )}
         </div>
-        <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={16}/></button>
+        <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={12}/></button>
         <div className="nav-icon-btn avatar" title="คุณโอห์ม">O</div>
       </div>
     </div>
@@ -1425,7 +1468,7 @@ function TxnEditModal({kind,initial,onClose,onSave,options}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{isIncome?"แก้ไขรายรับ":"แก้ไขรายจ่าย"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>{isIncome?"แก้ไขรายรับ":"แก้ไขรายจ่าย"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div className="fin-row-2">
             <div>
@@ -1443,7 +1486,7 @@ function TxnEditModal({kind,initial,onClose,onSave,options}) {
               <div style={{display:"flex",gap:8}}>
                 <input className="modal-input" autoFocus placeholder={isIncome?"ชื่อแหล่งรายรับใหม่":"ชื่อหมวดหมู่ใหม่"} value={form[label]} onChange={e=>set(label,e.target.value)}/>
                 <button className="modal-btn-cancel" style={{flexShrink:0,padding:"8px 14px"}} title="กลับไปเลือกจากรายการเดิม"
-                  onClick={()=>{setCustomMode(false);set(label,catOptions[0]||"");}}><ChevronLeft size={18}/></button>
+                  onClick={()=>{setCustomMode(false);set(label,catOptions[0]||"");}}><ChevronLeft size={13}/></button>
               </div>
             ):(
               <select className="modal-input" style={{cursor:"pointer"}} value={form[label]}
@@ -1492,7 +1535,7 @@ function TxnFilterBar({months,cats,catLabel,fMonth,setFMonth,fCat,setFCat,origin
           {(origins||[]).map(o=><option key={o} value={o}>{ORIGIN_LABELS[o]||o}</option>)}
         </select>
       )}
-      {active&&<button className="txn-filter-reset" onClick={onReset}><X size={15}/> Clear</button>}
+      {active&&<button className="txn-filter-reset" onClick={onReset}><X size={12}/> Clear</button>}
       <span className="txn-filter-count">{shown} / {total}</span>
     </div>
   );
@@ -1505,7 +1548,7 @@ function renderPieLabel({cx,cy,midAngle,outerRadius,percent,name,fill}){
   const y=cy+r*Math.sin(-midAngle*RAD);
   const anchor=x>cx?"start":"end";
   return (
-    <text x={x} y={y} fill={fill} textAnchor={anchor} dominantBaseline="central" style={{fontSize:14,fontFamily:"'Noto Sans Thai',sans-serif",fontWeight:600}}>
+    <text x={x} y={y} fill={fill} textAnchor={anchor} dominantBaseline="central" style={{fontSize:11,fontFamily:"'Noto Sans Thai',sans-serif",fontWeight:600}}>
       {name} {(percent*100).toFixed(1)}%
     </text>
   );
@@ -1604,7 +1647,7 @@ function CategoryPieCard({title,subtitle,data,getItems,accent,sign,emptyText}){
     return (
       <text x={x} y={y} fill={isOn?"#ffffff":fill} textAnchor={x>cx?"start":"end"} dominantBaseline="central"
         onClick={()=>toggle(name)}
-        style={{fontSize:14,fontFamily:"'Noto Sans Thai',sans-serif",fontWeight:isOn?700:600,cursor:"pointer"}}>
+        style={{fontSize:11,fontFamily:"'Noto Sans Thai',sans-serif",fontWeight:isOn?700:600,cursor:"pointer"}}>
         {name} {(percent*100).toFixed(1)}%
       </text>
     );
@@ -1622,17 +1665,17 @@ function CategoryPieCard({title,subtitle,data,getItems,accent,sign,emptyText}){
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart margin={{top:22,right:52,bottom:22,left:52}}>
                   <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="46%" outerRadius="70%" paddingAngle={3}
-                    label={renderLabel} labelLine={{stroke:"#5b4e85",strokeWidth:1}} isAnimationActive={false}
+                    label={renderLabel} labelLine={{stroke:"#46685a",strokeWidth:1}} isAnimationActive={false}
                     onClick={(e)=>toggle(e.name)} style={{cursor:"pointer",outline:"none"}}>
                     {data.map((entry,i)=>(
-                      <Cell key={i} fill={COLORS[i%COLORS.length]} stroke={active===entry.name?"#f2eefc":"none"} strokeWidth={active===entry.name?3:0} opacity={active&&active!==entry.name?0.28:1}/>
+                      <Cell key={i} fill={COLORS[i%COLORS.length]} stroke={active===entry.name?"var(--ink)":"none"} strokeWidth={active===entry.name?3:0} opacity={active&&active!==entry.name?0.28:1}/>
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
+                  <Tooltip contentStyle={{background:"var(--surface-modal)",border:"1px solid var(--line)",borderRadius:10,color:"var(--ink)",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
                 </PieChart>
               </ResponsiveContainer>
               <div className="pie-center-overlay">
-                <div className="pie-center-total" style={{color:accent,fontSize:23}}>฿{total.toLocaleString()}</div>
+                <div className="pie-center-total" style={{color:accent,fontSize:15}}>฿{total.toLocaleString()}</div>
                 <div className="pie-center-label">Total</div>
               </div>
             </div>
@@ -1646,12 +1689,12 @@ function CategoryPieCard({title,subtitle,data,getItems,accent,sign,emptyText}){
                     <div className="fin-pie-detail-title">{activeEntry.name}</div>
                     <div className="pie-detail-percent">{activePct}% · {items.length} items</div>
                   </div>
-                  <button className="del-btn" onClick={()=>setActive(null)}><X size={18}/></button>
+                  <button className="del-btn" onClick={()=>setActive(null)}><X size={13}/></button>
                 </div>
                 <div className="fin-pie-detail-amount" style={{color:accent}}>{sign}฿{activeEntry.value.toLocaleString()}</div>
                 <div className="pie-detail-bar" style={{marginTop:10}}><div className="pie-detail-bar-fill" style={{width:`${activePct}%`,background:COLORS[activeIdx%COLORS.length]}}/></div>
                 <div className="fin-pie-detail-list">
-                  {items.length===0&&<div className="empty" style={{fontSize:17}}>No transactions</div>}
+                  {items.length===0&&<div className="empty" style={{fontSize:12.5}}>No transactions</div>}
                   {items.map(it=>(
                     <div key={it.id} className="fin-pie-item">
                       <span className="fin-pie-item-date">{it.date}</span>
@@ -1833,6 +1876,9 @@ function FinanceIncomeTab({finance,persist}) {
   const listOrigins=[...new Set(allIncome.map(originOf))].sort();
   const sortedIncome=allIncome.filter(i=>
     (fMonth==="all"||(i.month||monthYearKey(i.date))===fMonth)&&(fCat==="all"||i.source===fCat)&&(fSrc==="all"||originOf(i)===fSrc));
+  /* ข้อ 32/3: ตัดแถวที่แสดงจริง แต่ "เลือกทั้งหมด"/ยอดรวมยังคิดจาก sortedIncome เต็มตามตัวกรองเหมือนเดิม */
+  const rl=useRowLimit();
+  const visibleIncome=sortedIncome.slice(0,rl.limit);
   const allSelected=sortedIncome.length>0&&sortedIncome.every(i=>selectedIds.has(i.id));
   const someSelected=sortedIncome.some(i=>selectedIds.has(i.id))&&!allSelected;
   const toggleSelectAll=()=>{
@@ -1848,8 +1894,8 @@ function FinanceIncomeTab({finance,persist}) {
   return (
     <div className="fin-section">
       <div style={{padding:"0 20px",marginBottom:16}}>
-        <label style={{fontSize:17,color:"#a29bc4",marginBottom:4,display:"block"}}>Month</label>
-        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"#191330",border:"1px solid #3a3155",borderRadius:8,color:"#f2eefc",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:20,cursor:"pointer"}}>
+        <label style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4,display:"block"}}>Month</label>
+        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"var(--surface-sunken)",border:"1px solid var(--line)",borderRadius:8,color:"var(--ink)",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:13,cursor:"pointer"}}>
           {monthOptions.map(m=>(
             <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
           ))}
@@ -1865,7 +1911,7 @@ function FinanceIncomeTab({finance,persist}) {
       <div className="card">
         <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <span>Add Income</span>
-          <button className="quick-capture-btn slip-btn" onClick={()=>setShowSlip(true)}><Upload size={17}/> Import Payslip</button>
+          <button className="quick-capture-btn slip-btn" onClick={()=>setShowSlip(true)}><Upload size={12}/> Import Payslip</button>
         </div>
         <div className="fin-add-income">
           <div className="fin-row-2">
@@ -1886,19 +1932,19 @@ function FinanceIncomeTab({finance,persist}) {
             <label className="field-label">Note</label>
             <input placeholder="เพิ่มเติม..." value={incNote} onChange={e=>setIncNote(e.target.value)} className="modal-input"/>
           </div>
-          <button className="icon-btn" onClick={addIncome} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={24}/></button>
+          <button className="icon-btn" onClick={addIncome} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
         </div>
       </div>
       <div className="card">
         <div className="card-head">Income by Source (all time)</div>
         {sortedSourcesAll.length===0&&<div className="empty">ยังไม่มีรายรับ</div>}
         {sortedSourcesAll.map(([src,total],i)=>(
-          <div key={src} style={{paddingBottom:10,borderBottom:"1px solid #2f2745"}}>
+          <div key={src} style={{paddingBottom:10,borderBottom:"1px solid var(--chip-bg)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:20}}>{src}</span>
-              <span style={{color:"#34d399",fontFamily:"'IBM Plex Mono',monospace",fontSize:20}}>+฿{total.toLocaleString()}</span>
+              <span style={{fontSize:13}}>{src}</span>
+              <span style={{color:"#34d399",fontFamily:"'IBM Plex Mono',monospace",fontSize:13}}>+฿{total.toLocaleString()}</span>
             </div>
-            <div style={{background:"#191330",height:4,borderRadius:2,overflow:"hidden"}}>
+            <div style={{background:"var(--surface-sunken)",height:4,borderRadius:2,overflow:"hidden"}}>
               <div style={{height:"100%",background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedSourcesAll.map(x=>x[1]))||1))*100}%`}}/>
             </div>
           </div>
@@ -1909,7 +1955,7 @@ function FinanceIncomeTab({finance,persist}) {
           <span>All Income</span>
           {selectedIds.size>0&&(
             <button className="del-selected-btn" onClick={removeSelectedIncome}>
-              <Trash2 size={18}/> ลบที่เลือก ({selectedIds.size})
+              <Trash2 size={13}/> ลบที่เลือก ({selectedIds.size})
             </button>
           )}
         </div>
@@ -1934,7 +1980,7 @@ function FinanceIncomeTab({finance,persist}) {
                 </tr>
               </thead>
               <tbody>
-                {sortedIncome.map(inc=>(
+                {visibleIncome.map(inc=>(
                   <tr key={inc.id} className={selectedIds.has(inc.id)?"row-selected":""}>
                     <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(inc.id)} onChange={()=>toggleSelectId(inc.id)}/></td>
                     <td className="exp-col-date">{inc.date}</td>
@@ -1943,8 +1989,8 @@ function FinanceIncomeTab({finance,persist}) {
                     <td className="exp-col-memo">{inc.note||"—"}</td>
                     <td className="exp-col-actions">
                       <div className="txn-row-actions">
-                        <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(inc)}><Edit3 size={18}/></button>
-                        <button className="del-btn" title="ลบ" onClick={()=>removeIncome(inc.id)}><Trash2 size={19}/></button>
+                        <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(inc)}><Edit3 size={13}/></button>
+                        <button className="del-btn" title="ลบ" onClick={()=>removeIncome(inc.id)}><Trash2 size={13}/></button>
                       </div>
                     </td>
                   </tr>
@@ -1952,6 +1998,7 @@ function FinanceIncomeTab({finance,persist}) {
               </tbody>
             </table>
           </div>
+          <ShowMoreRow rl={rl} total={sortedIncome.length}/>
           </>
         )}
         {editRow&&<TxnEditModal kind="income" initial={editRow} options={listCats} onClose={()=>setEditRow(null)} onSave={saveEdit}/>}
@@ -2008,10 +2055,10 @@ function DepositReviewModal({rows,catOptions,srcOptions,onClose,onApply}){
       <div className="modal" style={{maxWidth:720}} onClick={e=>e.stopPropagation()}>
         <div className="modal-head">
           <span>รีวิวรายการเงินเข้า (Deposit) {rows.length} รายการ</span>
-          <button className="modal-close" onClick={onClose}><X size={27}/></button>
+          <button className="modal-close" onClick={onClose}><X size={15}/></button>
         </div>
         <div className="modal-body">
-          <div style={{fontSize:17,color:"#a29bc4",marginBottom:10}}>
+          <div style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:10}}>
             เลือกแถวที่ต้องการ แล้วเลือกวิธีจัดการด้านล่าง — แถวที่ไม่ทำอะไรจะถูก<b>ข้าม</b>ทั้งหมด (ปลอดภัยสุด)
             {doneCount>0&&<span style={{color:"#34d399"}}> · บันทึกแล้ว {doneCount} รายการ</span>}
           </div>
@@ -2041,8 +2088,8 @@ function DepositReviewModal({rows,catOptions,srcOptions,onClose,onApply}){
             </div>
           )}
           {remaining.length>0&&(
-            <div style={{marginTop:14,padding:12,background:"#191330",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{fontSize:17,color:"#a29bc4"}}>
+            <div style={{marginTop:14,padding:12,background:"var(--surface-sunken)",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:12.5,color:"var(--ink-2)"}}>
                 เลือกอยู่ {pickedRows.length} รายการ · รวม <b style={{color:"#34d399"}}>+฿{pickedTotal.toLocaleString()}</b>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -2089,7 +2136,7 @@ const INVEST_TYPE_COLORS={retirement:"#10b981",insurance:"#6f9e8d",gold:"#d9b26a
 /* ชุดสีหมวดหมู่ทั่วไปของธีม (สลับเขียว-ทอง เข้ม/อ่อน ให้ชิ้นที่ติดกันแยกออกจากกัน)
    ใช้กับโดนัทที่หมวดไม่ตายตัว: รายเหรียญคริปโต (ข้อ 24/3) · Income by Source / Expenses by Category (ข้อ 24/4)
    หมวดที่ตายตัวใช้ INVEST_TYPE_COLORS แทน · `COLORS` ชุดม่วงเดิมยังใช้อยู่ในหน้าที่ยังไม่ถึงคิว อย่าเพิ่งลบ */
-const DB_CAT_COLORS=["#10b981","#d9b26a","#6ee7b7","#6f9e8d","#eccf94","#34d399","#4d7f6c","#b99a52"];
+const DB_CAT_COLORS=COLORS;
 const INVEST_CSV_CATEGORY="ออม ลงทุน"; // category ใน CSV ของ Make by KBank ที่หมายถึงการโอนไปลงทุน (สะกดแบบนี้เป๊ะ)
 const INVEST_MAP_KEY="secretary-invest-type-map";
 function loadInvestMap(){ try{ return JSON.parse(localStorage.getItem(INVEST_MAP_KEY)||"{}"); }catch(err){ return {}; } }
@@ -2137,10 +2184,10 @@ function InvestmentReviewModal({rows,onClose,onApply}){
       <div className="modal" style={{maxWidth:720}} onClick={e=>e.stopPropagation()}>
         <div className="modal-head">
           <span>รีวิวรายการ "{INVEST_CSV_CATEGORY}" {rows.length} รายการ</span>
-          <button className="modal-close" onClick={()=>onClose(remaining)}><X size={27}/></button>
+          <button className="modal-close" onClick={()=>onClose(remaining)}><X size={15}/></button>
         </div>
         <div className="modal-body">
-          <div style={{fontSize:17,color:"#a29bc4",marginBottom:10}}>
+          <div style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:10}}>
             เลือกแถว แล้วเลือกประเภทสินทรัพย์ที่ต้องการบันทึกเป็น<b>เงินลงทุน</b> — แถวที่ไม่จัดการจะถูกบันทึกเป็น<b>รายจ่ายปกติ</b>ตามเดิม
             {doneCount>0&&<span style={{color:"#34d399"}}> · บันทึกแล้ว {doneCount} รายการ</span>}
           </div>
@@ -2161,7 +2208,7 @@ function InvestmentReviewModal({rows,onClose,onApply}){
                     <tr key={r.id} className={picked.has(r.id)?"row-selected":""}>
                       <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={picked.has(r.id)} onChange={()=>toggleId(r.id)}/></td>
                       <td className="exp-col-date">{r.date}</td>
-                      <td className="exp-col-amount exp-amount-value" style={{color:"#a78bfa"}}>฿{Math.abs(r.amount).toLocaleString()}</td>
+                      <td className="exp-col-amount exp-amount-value" style={{color:"var(--accent-soft)"}}>฿{Math.abs(r.amount).toLocaleString()}</td>
                       <td className="exp-col-memo">{r.note||"—"}</td>
                     </tr>
                   ))}
@@ -2170,9 +2217,9 @@ function InvestmentReviewModal({rows,onClose,onApply}){
             </div>
           )}
           {remaining.length>0&&(
-            <div style={{marginTop:14,padding:12,background:"#191330",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{fontSize:17,color:"#a29bc4"}}>
-                เลือกอยู่ {pickedRows.length} รายการ · รวม <b style={{color:"#a78bfa"}}>฿{pickedTotal.toLocaleString()}</b>
+            <div style={{marginTop:14,padding:12,background:"var(--surface-sunken)",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:12.5,color:"var(--ink-2)"}}>
+                เลือกอยู่ {pickedRows.length} รายการ · รวม <b style={{color:"var(--accent-soft)"}}>฿{pickedTotal.toLocaleString()}</b>
               </div>
               <select className="modal-input" value={type} onChange={e=>setType(e.target.value)}>
                 {INVEST_TYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
@@ -2227,7 +2274,7 @@ function SplitExpenseModal({row,catOptions,onClose,onApply}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>✂️ แยกรายการเป็นหลายหมวด</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>✂️ แยกรายการเป็นหลายหมวด</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div className="recat-hint">
             {row.date} · {row.memo||"(ไม่มีโน้ต)"} · ยอดเดิม <b style={{color:"#fb923c"}}>฿{orig.toLocaleString()}</b> (หมวด {row.category||"—"})
@@ -2256,13 +2303,13 @@ function SplitExpenseModal({row,catOptions,onClose,onApply}) {
                 <input type="number" className="modal-input" inputMode="decimal" placeholder="0" style={{textAlign:"right"}}
                   value={p.amount} onChange={e=>setPart(p.k,{amount:e.target.value})}/>
               </div>
-              <button className="del-btn" title="ใส่ยอดที่เหลือทั้งหมด" disabled={Math.abs(left)<0.01} onClick={()=>fillRest(p.k)}><ArrowLeft size={17}/></button>
-              <button className="del-btn" title="ลบแถว" disabled={parts.length<=2} onClick={()=>removePart(p.k)}><Trash2 size={18}/></button>
+              <button className="del-btn" title="ใส่ยอดที่เหลือทั้งหมด" disabled={Math.abs(left)<0.01} onClick={()=>fillRest(p.k)}><ArrowLeft size={12}/></button>
+              <button className="del-btn" title="ลบแถว" disabled={parts.length<=2} onClick={()=>removePart(p.k)}><Trash2 size={13}/></button>
             </div>
           ))}
-          <button className="text-btn" style={{marginTop:10}} onClick={addPart}><Plus size={15}/> เพิ่มหมวด</button>
+          <button className="text-btn" style={{marginTop:10}} onClick={addPart}><Plus size={12}/> เพิ่มหมวด</button>
           <div className="recat-action" style={{marginTop:12}}>
-            <div style={{fontSize:17,color:Math.abs(left)<0.01?"#34d399":"#fbbf24"}}>
+            <div style={{fontSize:12.5,color:Math.abs(left)<0.01?"#34d399":"#fbbf24"}}>
               รวม ฿{Math.round(sum).toLocaleString()} / ฿{orig.toLocaleString()} · {Math.abs(left)<0.01?"ครบพอดี":(left>0?`ยังเหลือ ฿${left.toLocaleString()}`:`เกินมา ฿${Math.abs(left).toLocaleString()}`)}
             </div>
             <button className="modal-btn-save" style={{marginTop:10,width:"100%"}} disabled={!ready} onClick={apply}>
@@ -2444,6 +2491,9 @@ function FinanceExpensesTab({finance,persist}) {
   const listOrigins=[...new Set(allExpenses.map(originOf))].sort();
   const sortedExpenses=allExpenses.filter(e=>
     (fMonth==="all"||monthYearKey(e.date)===fMonth)&&(fCat==="all"||e.category===fCat)&&(fSrc==="all"||originOf(e)===fSrc));
+  /* ข้อ 32/3: ตัดแถวที่แสดงจริง แต่ "เลือกทั้งหมด"/ยอดรวมยังคิดจาก sortedExpenses เต็มตามตัวกรองเหมือนเดิม */
+  const rl=useRowLimit();
+  const visibleExpenses=sortedExpenses.slice(0,rl.limit);
   const allSelected=sortedExpenses.length>0&&sortedExpenses.every(e=>selectedIds.has(e.id));
   const someSelected=sortedExpenses.some(e=>selectedIds.has(e.id))&&!allSelected;
   const toggleSelectAll=()=>{
@@ -2479,23 +2529,23 @@ function FinanceExpensesTab({finance,persist}) {
     <div className="fin-section">
       {showRecatExp&&<RecategorizeModal finance={finance} persist={persist} startCat="อื่นๆ" onClose={()=>setShowRecatExp(false)}/>}
       {showVague&&(
-        <div style={{margin:"0 20px 16px",padding:"12px 16px",background:"#241d3a",border:"1px solid #8b5cf6",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span style={{fontSize:16,color:"#c4b5fd"}}>รายจ่ายหมวด "อื่นๆ" {vagueRows.length} รายการ · ฿{Math.round(vagueTotal).toLocaleString()}{vagueDismissed>0?` (เพิ่มขึ้น ${vagueRows.length-vagueDismissed} รายการจากครั้งก่อน)`:""}</span>
+        <div style={{margin:"0 20px 16px",padding:"12px 16px",background:"var(--accent-dim)",border:"1px solid var(--accent)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <span style={{fontSize:11.5,color:"var(--ink-3)"}}>รายจ่ายหมวด "อื่นๆ" {vagueRows.length} รายการ · ฿{Math.round(vagueTotal).toLocaleString()}{vagueDismissed>0?` (เพิ่มขึ้น ${vagueRows.length-vagueDismissed} รายการจากครั้งก่อน)`:""}</span>
           <div style={{display:"flex",gap:8}}>
             <button className="text-btn" onClick={()=>setShowRecatExp(true)}>จัดหมวด</button>
-            <button className="text-btn" style={{color:"#a29bc4"}} onClick={dismissVague}>ที่เหลือคืออื่นๆ จริง</button>
+            <button className="text-btn" style={{color:"var(--ink-2)"}} onClick={dismissVague}>ที่เหลือคืออื่นๆ จริง</button>
           </div>
         </div>
       )}
       {strayInvestExpenses.length>0&&(
-        <div style={{margin:"0 20px 16px",padding:"12px 16px",background:"#2a1f3d",border:"1px solid #f59e0b",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span style={{fontSize:16,color:"#fbbf24"}}>พบรายการ "ออม ลงทุน" {strayInvestExpenses.length} รายการ ที่หลุดเข้ามาเป็นรายจ่าย (บั๊กเว้นวรรค 2 ช่องที่แก้แล้ว) รวม ฿{strayInvestExpenses.reduce((a,e)=>a+Math.abs(e.amount),0).toLocaleString()}</span>
+        <div style={{margin:"0 20px 16px",padding:"12px 16px",background:"var(--gold-dim)",border:"1px solid var(--gold)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <span style={{fontSize:11.5,color:"#fbbf24"}}>พบรายการ "ออม ลงทุน" {strayInvestExpenses.length} รายการ ที่หลุดเข้ามาเป็นรายจ่าย (บั๊กเว้นวรรค 2 ช่องที่แก้แล้ว) รวม ฿{strayInvestExpenses.reduce((a,e)=>a+Math.abs(e.amount),0).toLocaleString()}</span>
           <button className="text-btn" onClick={fixStrayInvestments}>ย้ายไปเป็นเงินลงทุน</button>
         </div>
       )}
       <div style={{padding:"0 20px",marginBottom:16}}>
-        <label style={{fontSize:17,color:"#a29bc4",marginBottom:4,display:"block"}}>Month</label>
-        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"#191330",border:"1px solid #3a3155",borderRadius:8,color:"#f2eefc",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:20,cursor:"pointer"}}>
+        <label style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4,display:"block"}}>Month</label>
+        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"var(--surface-sunken)",border:"1px solid var(--line)",borderRadius:8,color:"var(--ink)",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:13,cursor:"pointer"}}>
           {monthOptions.map(m=>(
             <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
           ))}
@@ -2510,12 +2560,12 @@ function FinanceExpensesTab({finance,persist}) {
       <div className="card">
         <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           Add Expense
-          <button className="text-btn" onClick={()=>setShowCSVImport(!showCSVImport)}><Upload size={21}/> Import CSV</button>
+          <button className="text-btn" onClick={()=>setShowCSVImport(!showCSVImport)}><Upload size={13}/> Import CSV</button>
         </div>
         {showCSVImport&&(
-          <div style={{padding:"12px",background:"#191330",borderRadius:8,marginBottom:12,border:"1px dashed #3a3155"}}>
-            <label style={{fontSize:18,color:"#a29bc4",display:"block",marginBottom:6}}>Upload CSV exported from your banking app</label>
-            <input type="file" accept=".csv,.xlsx" onChange={handleCSVUpload} style={{fontSize:18}}/>
+          <div style={{padding:"12px",background:"var(--surface-sunken)",borderRadius:8,marginBottom:12,border:"1px dashed var(--line)"}}>
+            <label style={{fontSize:12.5,color:"var(--ink-2)",display:"block",marginBottom:6}}>Upload CSV exported from your banking app</label>
+            <input type="file" accept=".csv,.xlsx" onChange={handleCSVUpload} style={{fontSize:12.5}}/>
           </div>
         )}
         <div className="fin-row-2">
@@ -2536,18 +2586,18 @@ function FinanceExpensesTab({finance,persist}) {
           <label className="field-label">Note</label>
           <input placeholder="เพิ่มเติม..." value={expMemo} onChange={e=>setExpMemo(e.target.value)} className="modal-input"/>
         </div>
-        <button className="icon-btn" onClick={addExpense} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={24}/></button>
+        <button className="icon-btn" onClick={addExpense} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
       </div>
       <div className="card">
         <div className="card-head">Expenses by Category (all time)</div>
         {sortedCategories.length===0&&<div className="empty">ยังไม่มีรายจ่าย</div>}
         {sortedCategories.map(([cat,total],i)=>(
-          <div key={cat} style={{paddingBottom:10,borderBottom:"1px solid #2f2745"}}>
+          <div key={cat} style={{paddingBottom:10,borderBottom:"1px solid var(--chip-bg)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:20}}>{cat}</span>
-              <span style={{color:"#fb923c",fontFamily:"'IBM Plex Mono',monospace",fontSize:20}}>-฿{total.toLocaleString()}</span>
+              <span style={{fontSize:13}}>{cat}</span>
+              <span style={{color:"#fb923c",fontFamily:"'IBM Plex Mono',monospace",fontSize:13}}>-฿{total.toLocaleString()}</span>
             </div>
-            <div style={{background:"#191330",height:4,borderRadius:2,overflow:"hidden"}}>
+            <div style={{background:"var(--surface-sunken)",height:4,borderRadius:2,overflow:"hidden"}}>
               <div style={{height:"100%",background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedCategories.map(x=>x[1]))||1))*100}%`}}/>
             </div>
           </div>
@@ -2558,7 +2608,7 @@ function FinanceExpensesTab({finance,persist}) {
           <span>All Expenses</span>
           {selectedIds.size>0&&(
             <button className="del-selected-btn" onClick={removeSelectedExpenses}>
-              <Trash2 size={18}/> ลบที่เลือก ({selectedIds.size})
+              <Trash2 size={13}/> ลบที่เลือก ({selectedIds.size})
             </button>
           )}
         </div>
@@ -2583,7 +2633,7 @@ function FinanceExpensesTab({finance,persist}) {
                 </tr>
               </thead>
               <tbody>
-                {sortedExpenses.map(exp=>(
+                {visibleExpenses.map(exp=>(
                   <tr key={exp.id} className={selectedIds.has(exp.id)?"row-selected":""}>
                     <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(exp.id)} onChange={()=>toggleSelectId(exp.id)}/></td>
                     <td className="exp-col-date">{exp.date}</td>
@@ -2592,10 +2642,10 @@ function FinanceExpensesTab({finance,persist}) {
                     <td className="exp-col-memo">{exp.memo||"—"}</td>
                     <td className="exp-col-actions">
                       <div className="txn-row-actions">
-                        <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(exp)}><Edit3 size={18}/></button>
+                        <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(exp)}><Edit3 size={13}/></button>
                         {/* รายการคืนเงิน (amount บวก) แยกไม่ได้ — SplitExpenseModal บังคับผลลัพธ์ติดลบ จะพลิกเครื่องหมายทำยอดเพี้ยน */}
-                        {exp.amount<0&&<button className="del-btn" title="แยกเป็นหลายหมวด" onClick={()=>setSplitRow(exp)}><SplitIcon size={17}/></button>}
-                        <button className="del-btn" title="ลบ" onClick={()=>removeExpense(exp.id)}><Trash2 size={19}/></button>
+                        {exp.amount<0&&<button className="del-btn" title="แยกเป็นหลายหมวด" onClick={()=>setSplitRow(exp)}><SplitIcon size={12}/></button>}
+                        <button className="del-btn" title="ลบ" onClick={()=>removeExpense(exp.id)}><Trash2 size={13}/></button>
                       </div>
                     </td>
                   </tr>
@@ -2603,6 +2653,7 @@ function FinanceExpensesTab({finance,persist}) {
               </tbody>
             </table>
           </div>
+          <ShowMoreRow rl={rl} total={sortedExpenses.length}/>
           </>
         )}
         {editRow&&<TxnEditModal kind="expense" initial={editRow} options={listCats} onClose={()=>setEditRow(null)} onSave={saveEdit}/>}
@@ -2648,7 +2699,7 @@ function AddBuyModal({holding,fx,onClose,onSave}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>➕ ซื้อเพิ่ม {holding.coin||"เหรียญ"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>➕ ซื้อเพิ่ม {holding.coin||"เหรียญ"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div className="recat-hint">
             ตั้ง DCA รายวันก็กรอกรวมเป็นเดือนได้ — ใส่ยอดรวมของงวด (เช่น "เดือน ส.ค. ได้ 0.0042 BTC จ่ายไป ฿9,300")
@@ -2683,11 +2734,11 @@ function AddBuyModal({holding,fx,onClose,onSave}) {
             </div>
           )}
           {ready&&(
-            <div className="recat-action" style={{marginTop:12,fontSize:16,color:"#c9b8f0"}}>
+            <div className="recat-action" style={{marginTop:12,fontSize:11.5,color:"var(--ink-3)"}}>
               ราคาเฉลี่ยงวดนี้ <b>฿{unit.toLocaleString(undefined,{maximumFractionDigits:2})}</b> /หน่วย
-              <div style={{marginTop:6,color:"#a29bc4"}}>
-                หลังบันทึก: ถือ <b style={{color:"#f2eefc"}}>{newQty.toLocaleString()}</b> หน่วย ·
-                ต้นทุนเฉลี่ยใหม่ <b style={{color:"#f2eefc"}}>฿{newAvg.toLocaleString(undefined,{maximumFractionDigits:2})}</b> /หน่วย
+              <div style={{marginTop:6,color:"var(--ink-2)"}}>
+                หลังบันทึก: ถือ <b style={{color:"var(--ink)"}}>{newQty.toLocaleString()}</b> หน่วย ·
+                ต้นทุนเฉลี่ยใหม่ <b style={{color:"var(--ink)"}}>฿{newAvg.toLocaleString(undefined,{maximumFractionDigits:2})}</b> /หน่วย
                 {holding.costCurrency==="USD"&&<div style={{color:"#fbbf24",marginTop:4}}>ต้นทุนเดิมที่กรอกเป็น USD จะถูกแปลงเป็นบาทถาวรหลังบันทึก</div>}
               </div>
             </div>
@@ -2717,7 +2768,7 @@ function AddCoinModal({fx,onClose,onSave}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>➕ เพิ่มเหรียญ</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>➕ เพิ่มเหรียญ</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div className="fin-row-2">
             <div><label className="field-label">เหรียญ</label><input className="modal-input" value={coin} onChange={e=>setCoin(e.target.value)} placeholder="BTC"/></div>
@@ -2774,7 +2825,7 @@ function AddInvestmentModal({onClose,onSave}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>➕ เพิ่มรายการลงทุน</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>➕ เพิ่มรายการลงทุน</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div className="fin-row-2">
             <div><label className="field-label">Date</label><input type="date" className="modal-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
@@ -2889,7 +2940,7 @@ function FinanceInvestmentsTab({finance,persist}) {
   const perType=INVEST_TYPES.map(t=>{
     const contrib=contribByType[t.key]||0;
     const value=valueOfType(t.key);
-    return {...t,contrib,value,pnl:value-contrib,share:totalValue>0?(value/totalValue)*100:0,color:INVEST_TYPE_COLORS[t.key]||"#8a82a8"};
+    return {...t,contrib,value,pnl:value-contrib,share:totalValue>0?(value/totalValue)*100:0,color:INVEST_TYPE_COLORS[t.key]||"var(--ink-5)"};
   });
   const activeTypes=perType.filter(t=>t.contrib>0||t.value>0).sort((a,b)=>b.value-a.value||b.contrib-a.contrib);
   /* ข้อ 24/3: เลิกใช้ Recharts PieChart ในการ์ด Allocation — ใช้ DashDonut (SVG ล้วน) ชุดเดียวกับการ์ด Portfolio หน้า Home */
@@ -3308,14 +3359,14 @@ function FinanceInvestmentsTab({finance,persist}) {
       {showAddPicker&&(
         <div className="modal-backdrop" onClick={()=>setShowAddPicker(false)}>
           <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
-            <div className="modal-head"><span>➕ เพิ่มข้อมูลการลงทุน</span><button className="modal-close" onClick={()=>setShowAddPicker(false)}><X size={27}/></button></div>
+            <div className="modal-head"><span>➕ เพิ่มข้อมูลการลงทุน</span><button className="modal-close" onClick={()=>setShowAddPicker(false)}><X size={15}/></button></div>
             <div className="modal-body">
               <div className="quick-type-row inv-pick">
                 <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setShowAddInv(true);}}>
-                  <PiggyBank size={20}/><span>รายการสะสม</span>
+                  <PiggyBank size={13}/><span>รายการสะสม</span>
                 </button>
                 <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setShowAddCoin(true);}}>
-                  <TrendingUp size={20}/><span>เหรียญคริปโต</span>
+                  <TrendingUp size={13}/><span>เหรียญคริปโต</span>
                 </button>
               </div>
               <div className="db-note" style={{marginTop:12}}>
@@ -3468,7 +3519,7 @@ function AddCashAccountModal({onClose,onSave}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>➕ เพิ่มบัญชีเงินสด</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>➕ เพิ่มบัญชีเงินสด</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div><label className="field-label">ชื่อบัญชี</label><input className="modal-input" placeholder="เช่น KBank ออมทรัพย์" value={name} onChange={e=>setName(e.target.value)}/></div>
           <div style={{marginTop:10}}><label className="field-label">ยอดคงเหลือ</label><input className="modal-input" inputMode="decimal" placeholder="0" value={balance} onChange={e=>setBalance(e.target.value)}/></div>
@@ -3578,19 +3629,19 @@ function FinanceDebtsTab({finance,persist}) {
     <div className="fin-section">
       <div className="fin-stat-row">
         <div className="fin-stat-card">
-          <div className="fin-stat-icon expense"><TrendingDown size={24}/></div>
-          <div><div className="fin-stat-label">หนี้คงเหลือรวม</div><div className="fin-stat-value" style={{color:"#fb923c"}}>฿{Math.round(totAll).toLocaleString()}</div><div style={{fontSize:14,color:"#a29bc4"}}>{list.length} รายการ</div></div>
+          <div className="fin-stat-icon expense"><TrendingDown size={14}/></div>
+          <div><div className="fin-stat-label">หนี้คงเหลือรวม</div><div className="fin-stat-value" style={{color:"#fb923c"}}>฿{Math.round(totAll).toLocaleString()}</div><div style={{fontSize:11,color:"var(--ink-2)"}}>{list.length} รายการ</div></div>
         </div>
         <div className="fin-stat-card">
-          <div className="fin-stat-icon expense"><Users size={24}/></div>
+          <div className="fin-stat-icon expense"><Users size={14}/></div>
           <div><div className="fin-stat-label">หนี้ภายนอก</div><div className="fin-stat-value" style={{color:"#fb923c"}}>฿{Math.round(totExternal).toLocaleString()}</div></div>
         </div>
         <div className="fin-stat-card">
-          <div className="fin-stat-icon net"><PiggyBank size={24}/></div>
+          <div className="fin-stat-icon net"><PiggyBank size={14}/></div>
           <div><div className="fin-stat-label">หนี้ตัวเอง</div><div className="fin-stat-value" style={{color:"#38bdf8"}}>฿{Math.round(totSelf).toLocaleString()}</div></div>
         </div>
         <div className="fin-stat-card">
-          <div className="fin-stat-icon active"><CalendarDays size={24}/></div>
+          <div className="fin-stat-icon active"><CalendarDays size={14}/></div>
           <div><div className="fin-stat-label">ผ่อนขั้นต่ำรวม/เดือน</div><div className="fin-stat-value">฿{Math.round(totMin).toLocaleString()}</div></div>
         </div>
       </div>
@@ -3671,7 +3722,7 @@ function FinanceDebtsTab({finance,persist}) {
             <input className="modal-input" value={form.note} onChange={e=>setF("note",e.target.value)}/>
           </div>
         </div>
-        <button className="icon-btn" disabled={!canAdd} onClick={addDebt} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={24}/></button>
+        <button className="icon-btn" disabled={!canAdd} onClick={addDebt} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
       </div>
 
       <div className="card" style={{margin:"0 20px"}}>
@@ -3698,7 +3749,7 @@ function FinanceDebtsTab({finance,persist}) {
                     </td>
                     <td><input className="modal-input" style={{maxWidth:160}} value={draft.name} onChange={e=>setD("name",e.target.value)}/></td>
                     <td>
-                      {draft.kind==="self"?<span style={{color:"#a29bc4"}}>—</span>:(
+                      {draft.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:(
                         <select className="modal-input" style={{maxWidth:140}} value={draft.type} onChange={e=>setD("type",e.target.value)}>
                           {DEBT_TYPES_EXTERNAL.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
                         </select>
@@ -3706,13 +3757,13 @@ function FinanceDebtsTab({finance,persist}) {
                     </td>
                     <td className="exp-col-amount"><input type="number" className="modal-input" style={{maxWidth:120,textAlign:"right"}} inputMode="decimal" value={draft.currentBalance} onChange={e=>setD("currentBalance",e.target.value)}/></td>
                     <td className="exp-col-amount"><input type="number" className="modal-input" style={{maxWidth:110,textAlign:"right"}} inputMode="decimal" value={draft.minPayment} onChange={e=>setD("minPayment",e.target.value)}/></td>
-                    <td>{draft.kind==="self"?<span style={{color:"#a29bc4"}}>—</span>:<input type="number" className="modal-input" style={{maxWidth:80,textAlign:"right"}} inputMode="decimal" value={draft.interestRate} onChange={e=>setD("interestRate",e.target.value)}/>}</td>
-                    <td>{draft.kind==="self"?<span style={{color:"#a29bc4"}}>—</span>:<input type="number" className="modal-input" style={{maxWidth:70,textAlign:"right"}} inputMode="numeric" value={draft.dueDay} onChange={e=>setD("dueDay",e.target.value)}/>}</td>
+                    <td>{draft.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:<input type="number" className="modal-input" style={{maxWidth:80,textAlign:"right"}} inputMode="decimal" value={draft.interestRate} onChange={e=>setD("interestRate",e.target.value)}/>}</td>
+                    <td>{draft.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:<input type="number" className="modal-input" style={{maxWidth:70,textAlign:"right"}} inputMode="numeric" value={draft.dueDay} onChange={e=>setD("dueDay",e.target.value)}/>}</td>
                     <td><input className="modal-input" style={{maxWidth:150}} placeholder="โน้ต" value={draft.note} onChange={e=>setD("note",e.target.value)}/></td>
                     <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" style={{color:"#34d399"}} onClick={saveEdit}><Check size={19}/></button>
-                      <button className="del-btn" onClick={cancelEdit}><X size={19}/></button>
-                      <button className="del-btn" onClick={()=>{cancelEdit();remove(d.id);}}><Trash2 size={19}/></button>
+                      <button className="del-btn" style={{color:"#34d399"}} onClick={saveEdit}><Check size={13}/></button>
+                      <button className="del-btn" onClick={cancelEdit}><X size={13}/></button>
+                      <button className="del-btn" onClick={()=>{cancelEdit();remove(d.id);}}><Trash2 size={13}/></button>
                     </td>
                   </tr>
                   <tr>
@@ -3729,27 +3780,27 @@ function FinanceDebtsTab({finance,persist}) {
                   <React.Fragment key={d.id}>
                   <tr>
                     <td>{kindBadge(d.kind)}</td>
-                    <td>{d.name}{d.note?<div style={{fontSize:14,color:"#a29bc4"}}>{d.note}</div>:null}</td>
-                    <td>{d.kind==="self"?<span style={{color:"#a29bc4"}}>—</span>:<span className="exp-csv-badge" style={{color:"#c4b5fd",borderColor:"#3a3155",background:"#221b38"}}>{DEBT_TYPE_LABELS[d.type]||DEBT_TYPE_LABELS.other}</span>}</td>
+                    <td>{d.name}{d.note?<div style={{fontSize:11,color:"var(--ink-2)"}}>{d.note}</div>:null}</td>
+                    <td>{d.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:<span className="exp-csv-badge" style={{color:"var(--ink-3)",borderColor:"var(--line)",background:"var(--surface-modal)"}}>{DEBT_TYPE_LABELS[d.type]||DEBT_TYPE_LABELS.other}</span>}</td>
                     <td className="exp-col-amount exp-amount-value" style={{color:"#fb923c"}}>฿{Math.round(n(d.currentBalance)).toLocaleString()}</td>
                     <td className="exp-col-amount">{d.minPayment?`฿${Math.round(n(d.minPayment)).toLocaleString()}`:"—"}</td>
                     <td>{d.interestRate?`${d.interestRate}%`:"—"}</td>
                     <td>{d.dueDay?`ทุกวันที่ ${d.dueDay}`:"—"}</td>
-                    <td style={{fontSize:14,color:"#a29bc4"}}>{d.updatedAt||"—"}</td>
+                    <td style={{fontSize:11,color:"var(--ink-2)"}}>{d.updatedAt||"—"}</td>
                     <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" onClick={()=>startEdit(d)}><Edit3 size={17}/></button>
-                      <button className="del-btn" onClick={()=>remove(d.id)}><Trash2 size={19}/></button>
+                      <button className="del-btn" onClick={()=>startEdit(d)}><Edit3 size={12}/></button>
+                      <button className="del-btn" onClick={()=>remove(d.id)}><Trash2 size={13}/></button>
                     </td>
                   </tr>
                   {(()=>{ const p=pendingFor(d); if(!p) return null; return (
                     <tr>
                       <td colSpan={9} style={{paddingTop:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:15,color:"#a29bc4"}}>
-                          <span>ผูกกับหมวด <b style={{color:"#c4b5fd"}}>{d.linkedExpenseCategory}</b></span>
+                        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11,color:"var(--ink-2)"}}>
+                          <span>ผูกกับหมวด <b style={{color:"var(--ink-3)"}}>{d.linkedExpenseCategory}</b></span>
                           {p.rows.length===0?<span>— ไม่พบรายจ่ายใหม่ที่ยังไม่ได้หัก</span>:(
                             <>
                               <span>พบ {p.rows.length} รายการ รวม ฿{Math.round(p.sum).toLocaleString()} ({p.from} → {p.to})</span>
-                              <button className="icon-btn" style={{padding:"4px 12px",fontSize:15}} onClick={()=>confirmMatch(d)}>ยืนยันหักยอดคงเหลือ</button>
+                              <button className="pill-btn primary" onClick={()=>confirmMatch(d)}>ยืนยันหักยอดคงเหลือ</button>
                             </>
                           )}
                         </div>
@@ -3933,13 +3984,13 @@ function SlipImportModal({data,persist,onClose}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal slip-modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>📄 นำเข้าสลิปเงินเดือน</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>📄 นำเข้าสลิปเงินเดือน</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         {step==="pick"&&(
           <div className="modal-body">
             <div>
               <label className="field-label">วันที่เงินเดือนเข้า *</label>
               <input type="date" className="modal-input" value={slipDate} onChange={e=>setSlipDate(e.target.value)}/>
-              <div style={{fontSize:15,color:"#7a7398",marginTop:4}}>ทุกรายการจะถูกบันทึกด้วยวันที่นี้</div>
+              <div style={{fontSize:11,color:"var(--ink-6)",marginTop:4}}>ทุกรายการจะถูกบันทึกด้วยวันที่นี้</div>
             </div>
             {isDuplicate&&<div className="slip-warn">⚠️ เดือนนี้มีสลิปนำเข้าไว้แล้ว ({existing.length} รายการ) — ระบบจะถามอีกครั้งก่อนบันทึก</div>}
             <div className="type-tabs">
@@ -3948,10 +3999,10 @@ function SlipImportModal({data,persist,onClose}) {
             </div>
             {mode==="file"?(
               <div className="slip-drop">
-                <Upload size={34} style={{color:"#8b5cf6"}}/>
-                <div style={{fontSize:19,fontWeight:600,marginTop:8}}>เลือกไฟล์สลิป</div>
-                <div style={{fontSize:16,color:"#8a82a8",margin:"6px 0 12px"}}>รองรับ PDF (แม่นยำที่สุด) และรูปภาพ PNG / JPG</div>
-                <input type="file" accept=".pdf,image/*" onChange={onFile} style={{fontSize:17}}/>
+                <Upload size={20} style={{color:"var(--accent)"}}/>
+                <div style={{fontSize:13,fontWeight:600,marginTop:8}}>เลือกไฟล์สลิป</div>
+                <div style={{fontSize:11.5,color:"var(--ink-5)",margin:"6px 0 12px"}}>รองรับ PDF (แม่นยำที่สุด) และรูปภาพ PNG / JPG</div>
+                <input type="file" accept=".pdf,image/*" onChange={onFile} style={{fontSize:12.5}}/>
               </div>
             ):(
               <div>
@@ -3966,18 +4017,18 @@ function SlipImportModal({data,persist,onClose}) {
         {step==="busy"&&(
           <div className="modal-body" style={{alignItems:"center",textAlign:"center",padding:"40px 20px"}}>
             <div className="slip-spinner"/>
-            <div style={{fontSize:19,marginTop:16}}>{busyMsg}</div>
-            {progress>0&&<div style={{width:"100%",marginTop:14}}><div className="trk-today-bar"><div className="trk-today-bar-fill" style={{width:`${progress}%`}}/></div><div style={{fontSize:16,color:"#a29bc4",marginTop:6}}>{progress}%</div></div>}
+            <div style={{fontSize:13,marginTop:16}}>{busyMsg}</div>
+            {progress>0&&<div style={{width:"100%",marginTop:14}}><div className="trk-today-bar"><div className="trk-today-bar-fill" style={{width:`${progress}%`}}/></div><div style={{fontSize:11.5,color:"var(--ink-2)",marginTop:6}}>{progress}%</div></div>}
           </div>
         )}
         {step==="preview"&&parsed&&(
           <div className="modal-body">
             <div className={`slip-check ${parsed.allOk?"ok":"bad"}`}>
-              <div style={{fontWeight:700,fontSize:18,marginBottom:6}}>{parsed.allOk?"✓ ตรวจสอบตัวเลขผ่านทุกข้อ":"⚠️ ตัวเลขไม่สอดคล้องกัน — โปรดตรวจก่อนบันทึก"}</div>
+              <div style={{fontWeight:700,fontSize:12.5,marginBottom:6}}>{parsed.allOk?"✓ ตรวจสอบตัวเลขผ่านทุกข้อ":"⚠️ ตัวเลขไม่สอดคล้องกัน — โปรดตรวจก่อนบันทึก"}</div>
               {parsed.checks.map((c,i)=>(
                 <div key={i} className="slip-check-row">
                   <span>{c.ok?"✓":"✗"} {c.label}</span>
-                  {!c.ok&&<span style={{color:"#fb923c",fontFamily:"'IBM Plex Mono',monospace",fontSize:15}}>{c.got} ≠ {c.want}</span>}
+                  {!c.ok&&<span style={{color:"#fb923c",fontFamily:"'IBM Plex Mono',monospace",fontSize:11}}>{c.got} ≠ {c.want}</span>}
                 </div>
               ))}
               {parsed.warnings.map((w,i)=>(<div key={i} className="slip-check-row" style={{color:"#fb923c"}}>⚠️ {w}</div>))}
@@ -4006,14 +4057,14 @@ function SlipImportModal({data,persist,onClose}) {
             </div>
             <div className="slip-sec-label">เงินออม / ลงทุน</div>
             <div className="slip-row">
-              <span className="slip-row-cat" style={{color:"#a78bfa"}}>สะสม กบข./กสจ. <span className="slip-row-hint">({parsed.items.filter(i=>i.bucket==="savings").length} รายการ)</span></span>
+              <span className="slip-row-cat" style={{color:"var(--accent-soft)"}}>สะสม กบข./กสจ. <span className="slip-row-hint">({parsed.items.filter(i=>i.bucket==="savings").length} รายการ)</span></span>
               <input type="number" className="modal-input slip-row-input" value={form.savings} onChange={e=>setF("savings",e.target.value)}/>
             </div>
             <div className="slip-summary">
               รับ ฿{Number(form.gross).toLocaleString()} − จ่าย ฿{totalExpense.toLocaleString()} − ออม ฿{Number(form.savings).toLocaleString()} = <b style={{color:"#6ee7b7"}}>฿{(Number(form.gross)-totalExpense-Number(form.savings)).toLocaleString()}</b>
             </div>
             <button className="show-more-btn" onClick={()=>setShowItems(s=>!s)}>
-              {showItems?<>ซ่อนรายการที่อ่านได้<ChevronUp size={19}/></>:<>ดูรายการที่อ่านได้ ({parsed.items.length})<ChevronDown size={19}/></>}
+              {showItems?<>ซ่อนรายการที่อ่านได้<ChevronUp size={13}/></>:<>ดูรายการที่อ่านได้ ({parsed.items.length})<ChevronDown size={13}/></>}
             </button>
             {showItems&&(
               <div className="slip-items">
@@ -4148,9 +4199,9 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
     <>
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal recat-modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>🗂️ จัดหมวดหมู่ใหม่</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>🗂️ จัดหมวดหมู่ใหม่</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
-          <div className="recat-hint">รายการที่โน้ตเหมือนกันถูกจับกลุ่มไว้แล้ว — กดเลือกทีเดียวได้ทั้งกลุ่ม · ป้าย <b style={{color:"#34d399"}}>เขียว</b> = เคยย้ายโน้ตนี้เอง, <b style={{color:"#c4b5fd"}}>ม่วง</b> = เดาจากคำในโน้ต</div>
+          <div className="recat-hint">รายการที่โน้ตเหมือนกันถูกจับกลุ่มไว้แล้ว — กดเลือกทีเดียวได้ทั้งกลุ่ม · ป้าย <b style={{color:"#34d399"}}>เขียว</b> = เคยย้ายโน้ตนี้เอง, <b style={{color:"var(--ink-3)"}}>ม่วง</b> = เดาจากคำในโน้ต</div>
           <div>
             <label className="field-label">จัดหมวดจาก</label>
             <select className="modal-input" style={{cursor:"pointer"}} value={srcCat} onChange={e=>{setSrcCat(e.target.value);setPicked(new Set());}}>
@@ -4159,7 +4210,7 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
           </div>
           {sugList.length>0&&(
             <div className="recat-action" style={{marginTop:12}}>
-              <div style={{fontSize:16,color:"#c9b8f0",marginBottom:8}}>
+              <div style={{fontSize:11.5,color:"var(--ink-3)",marginBottom:8}}>
                 ระบบเดาหมวดให้ได้ {sugList.reduce((a,x)=>a+x.ids.length,0)} รายการ — กดหมวดเพื่อเลือกทั้งชุด แล้วตรวจก่อนย้าย
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -4188,7 +4239,7 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
                   <span className={`status-btn ${on?"done":""}`} style={{width:22,height:22}}>{on&&<Check size={14}/>}</span>
                   <span className="recat-memo">{g.memo}</span>
                   {g.guess&&g.guess.cat!==srcCat&&(
-                    <span className="recat-count" style={{color:g.guess.by==="learned"?"#34d399":"#c4b5fd"}}
+                    <span className="recat-count" style={{color:g.guess.by==="learned"?"#34d399":"var(--ink-3)"}}
                       title={g.guess.by==="learned"?"เคยย้ายโน้ตนี้ไปหมวดนี้มาก่อน":"เดาจากคำในโน้ต"}>
                       → {g.guess.cat}
                     </span>
@@ -4196,14 +4247,14 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
                   {g.count>1&&<span className="recat-count">×{g.count}</span>}
                   <span className="recat-amt">฿{g.total.toLocaleString()}</span>
                 </button>
-                {single&&<button className="del-btn" title="แยกรายการนี้เป็นหลายหมวด" onClick={()=>setSplitRow(single)}><SplitIcon size={16}/></button>}
+                {single&&<button className="del-btn" title="แยกรายการนี้เป็นหลายหมวด" onClick={()=>setSplitRow(single)}><SplitIcon size={12}/></button>}
                 </div>
               );
             })}
           </div>
           {picked.size>0&&(
             <div className="recat-action">
-              <div style={{fontSize:17,color:"#c9b8f0",marginBottom:8}}>เลือกไว้ <b>{picked.size}</b> รายการ · ฿{pickedTotal.toLocaleString()}</div>
+              <div style={{fontSize:12.5,color:"var(--ink-3)",marginBottom:8}}>เลือกไว้ <b>{picked.size}</b> รายการ · ฿{pickedTotal.toLocaleString()}</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <select className="modal-input" style={{flex:1,minWidth:150,cursor:"pointer"}} value={target} onChange={e=>{setTarget(e.target.value);setNewCat("");}}>
                   <option value="">— ย้ายไปหมวด —</option>
@@ -4236,10 +4287,10 @@ function BudgetPanel({data,persist,cats}) {
   return (
     <div className="card">
       <div className="card-head" style={{marginBottom:open?16:0,cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
-        <Wallet size={24}/> Budget Settings
+        <Wallet size={14}/> Budget Settings
         <div className="card-head-right">
-          <span style={{fontSize:16,color:"#a29bc4"}}>คุมได้ ฿{totalVar.toLocaleString()} · คงที่ ฿{totalFix.toLocaleString()}</span>
-          {open?<ChevronUp size={20}/>:<ChevronDown size={20}/>}
+          <span style={{fontSize:11.5,color:"var(--ink-2)"}}>คุมได้ ฿{totalVar.toLocaleString()} · คงที่ ฿{totalFix.toLocaleString()}</span>
+          {open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}
         </div>
       </div>
       {open&&(
@@ -4286,7 +4337,9 @@ function FinanceReviewTab({finance,persist}) {
     setDirty(false);
   };
   const monthLabel=/^\d{4}-\d{2}$/.test(month)?new Date(`${month}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"}):month;
-  const barColor=(r)=>r.budget<=0?"#5a7a9e":r.total>r.budget?"#f87171":r.total>r.budget*0.85?"#fbbf24":"#34d399";
+  /* ข้อ 32/3: 3 ลิสต์ในหน้านี้ยาวได้ไม่จำกัด (หมวดรายจ่าย/รายจ่ายคงที่/รายการผิดปกติ) — ตัดเหลือ 6 แถวแล้วกางเอง */
+  const rlVar=useRowLimit(6), rlFix=useRowLimit(6), rlAnom=useRowLimit(6);
+  const barColor=(r)=>r.budget<=0?"var(--ink-6)":r.total>r.budget?"#f87171":r.total>r.budget*0.85?"#fbbf24":"#34d399";
   return (
     <div className="fin-section" style={{padding:"0 20px"}}>
       {showRecat&&<RecategorizeModal finance={finance} persist={persist} startCat={recatCat} onClose={()=>{setShowRecat(false);setRecatCat(null);}}/>}
@@ -4294,7 +4347,7 @@ function FinanceReviewTab({finance,persist}) {
         <select className="txn-filter-select" value={month} onChange={e=>setMonth(e.target.value)}>
           {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
         </select>
-        <button className="quick-capture-btn" style={{fontSize:16,padding:"9px 15px"}} onClick={()=>{setRecatCat(null);setShowRecat(true);}}><FileText size={16}/> จัดหมวดใหม่</button>
+        <button className="quick-capture-btn" style={{fontSize:11.5,padding:"9px 15px"}} onClick={()=>{setRecatCat(null);setShowRecat(true);}}><FileText size={12}/> จัดหมวดใหม่</button>
       </div>
       <div className="rv-hero">
         <div className="rv-hero-main">
@@ -4305,17 +4358,17 @@ function FinanceReviewTab({finance,persist}) {
         <div className="rv-hero-grid">
           <div className="rv-mini"><span className="rv-mini-label">รายรับ</span><span className="rv-mini-val" style={{color:"#34d399"}}>฿{Math.round(R.totalIncome).toLocaleString()}</span></div>
           <div className="rv-mini"><span className="rv-mini-label">รายจ่าย</span><span className="rv-mini-val" style={{color:"#fb923c"}}>฿{Math.round(R.totalExpense).toLocaleString()}</span></div>
-          <div className="rv-mini"><span className="rv-mini-label">ออม/ลงทุน</span><span className="rv-mini-val" style={{color:"#a78bfa"}}>฿{Math.round(R.totalSaved).toLocaleString()}</span></div>
-          <div className="rv-mini"><span className="rv-mini-label">คุมได้ / คงที่</span><span className="rv-mini-val" style={{fontSize:19}}>฿{Math.round(R.variableTotal).toLocaleString()} / ฿{Math.round(R.fixedTotal).toLocaleString()}</span></div>
+          <div className="rv-mini"><span className="rv-mini-label">ออม/ลงทุน</span><span className="rv-mini-val" style={{color:"var(--accent-soft)"}}>฿{Math.round(R.totalSaved).toLocaleString()}</span></div>
+          <div className="rv-mini"><span className="rv-mini-label">คุมได้ / คงที่</span><span className="rv-mini-val" style={{fontSize:13}}>฿{Math.round(R.variableTotal).toLocaleString()} / ฿{Math.round(R.fixedTotal).toLocaleString()}</span></div>
         </div>
       </div>
       <div className="card">
         <div className="card-head">
-          <Zap size={24}/> รายจ่ายที่คุมได้
-          {R.hasBudget&&<div className="card-head-right"><span style={{fontSize:16,color:R.totalVsBudget>R.totalBudget?"#f87171":"#34d399"}}>฿{Math.round(R.totalVsBudget).toLocaleString()} / ฿{R.totalBudget.toLocaleString()}</span></div>}
+          <Zap size={14}/> รายจ่ายที่คุมได้
+          {R.hasBudget&&<div className="card-head-right"><span style={{fontSize:11.5,color:R.totalVsBudget>R.totalBudget?"#f87171":"#34d399"}}>฿{Math.round(R.totalVsBudget).toLocaleString()} / ฿{R.totalBudget.toLocaleString()}</span></div>}
         </div>
         {R.variable.length===0&&<div className="empty">ไม่มีรายจ่ายหมวดที่คุมได้ในเดือนนี้</div>}
-        {R.variable.map((r,i)=>{
+        {R.variable.slice(0,rlVar.limit).map((r,i)=>{
           const rank=budgetRank(r);
           const showLabel=i===0||budgetRank(R.variable[i-1])!==rank;
           return (
@@ -4335,33 +4388,36 @@ function FinanceReviewTab({finance,persist}) {
             </React.Fragment>
           );
         })}
+        <ShowMoreRow rl={rlVar} total={R.variable.length}/>
       </div>
       {R.fixed.length>0&&(
         <div className="card">
-          <div className="card-head">🔒 รายจ่ายคงที่ <div className="card-head-right"><span style={{fontSize:16,color:"#a29bc4"}}>฿{Math.round(R.fixedTotal).toLocaleString()}</span></div></div>
+          <div className="card-head">🔒 รายจ่ายคงที่ <div className="card-head-right"><span style={{fontSize:11.5,color:"var(--ink-2)"}}>฿{Math.round(R.fixedTotal).toLocaleString()}</span></div></div>
           <div className="rv-fixed-list">
-            {R.fixed.map(r=>(
+            {R.fixed.slice(0,rlFix.limit).map(r=>(
               <div key={r.cat} className="rv-fixed-item"><span>{r.cat}</span><span className="rv-fixed-amt">฿{Math.round(r.total).toLocaleString()}</span></div>
             ))}
           </div>
+          <ShowMoreRow rl={rlFix} total={R.fixed.length}/>
         </div>
       )}
       <div className="card">
-        <div className="card-head"><AlertCircle size={24}/> รายการผิดปกติ {anomalies.length>0&&<span className="rv-anom-count">{anomalies.length}</span>}</div>
+        <div className="card-head"><AlertCircle size={14}/> รายการผิดปกติ {anomalies.length>0&&<span className="rv-anom-count">{anomalies.length}</span>}</div>
         {anomalies.length===0&&<div className="empty">ไม่พบอะไรผิดปกติเดือนนี้ 👍</div>}
-        {anomalies.map(a=>(
+        {anomalies.slice(0,rlAnom.limit).map(a=>(
           <div key={a.key} className={`rv-anom rv-anom-${a.level}`}>
             <span className="rv-anom-icon">{a.icon}</span>
             <div style={{flex:1,minWidth:0}}>
               <div className="rv-anom-title">{a.title}</div>
               <div className="rv-anom-detail">{a.detail}</div>
             </div>
-            <button className="text-btn" style={{flexShrink:0,fontSize:15,padding:"5px 10px"}} onClick={()=>{setRecatCat(a.cat);setShowRecat(true);}}>ดู/จัดหมวด</button>
+            <button className="text-btn" style={{flexShrink:0,fontSize:11,padding:"5px 10px"}} onClick={()=>{setRecatCat(a.cat);setShowRecat(true);}}>ดู/จัดหมวด</button>
           </div>
         ))}
+        <ShowMoreRow rl={rlAnom} total={anomalies.length}/>
       </div>
       <div className="card">
-        <div className="card-head"><PenTool size={24}/> สรุปเดือนนี้ด้วยตัวเอง</div>
+        <div className="card-head"><PenTool size={14}/> สรุปเดือนนี้ด้วยตัวเอง</div>
         <div className="rv-rate-row">
           <span className="rv-rate-label">ให้คะแนนเดือนนี้</span>
           {[1,2,3,4,5].map(n=>(
@@ -4372,7 +4428,7 @@ function FinanceReviewTab({finance,persist}) {
         <textarea className="modal-input" rows={5} placeholder="เดือนนี้เป็นยังไงบ้าง? อะไรทำได้ดี อะไรพลาด เดือนหน้าจะแก้ยังไง..." value={notes} onChange={e=>{setNotes(e.target.value);setDirty(true);}}/>
         <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>
           <button className="modal-btn-save" onClick={saveReview} disabled={!dirty}>{dirty?"บันทึกรีวิว":"บันทึกแล้ว ✓"}</button>
-          {saved.updatedAt&&!dirty&&<span style={{fontSize:15,color:"#7a7398"}}>แก้ไขล่าสุด {relativeTime(saved.updatedAt)}</span>}
+          {saved.updatedAt&&!dirty&&<span style={{fontSize:11,color:"var(--ink-6)"}}>แก้ไขล่าสุด {relativeTime(saved.updatedAt)}</span>}
         </div>
       </div>
       <BudgetPanel data={finance} persist={persist} cats={cats}/>
@@ -4426,7 +4482,7 @@ function GoalModal({onClose,onSave,initial}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal goal-modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{initial?"แก้ไขเป้าหมาย":"เพิ่มเป้าหมาย/โปรเจกต์ใหม่"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>{initial?"แก้ไขเป้าหมาย":"เพิ่มเป้าหมาย/โปรเจกต์ใหม่"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div>
             <label className="field-label">ชื่อเป้าหมาย/โปรเจกต์ *</label>
@@ -4443,7 +4499,7 @@ function GoalModal({onClose,onSave,initial}) {
                 const Icon=c.icon;
                 return (
                   <button key={c.key} type="button" className={`goal-cat-option ${form.category===c.key?"active":""}`} onClick={()=>set("category",c.key)}>
-                    <Icon size={18}/> {c.label}
+                    <Icon size={13}/> {c.label}
                   </button>
                 );
               })}
@@ -4453,7 +4509,7 @@ function GoalModal({onClose,onSave,initial}) {
             <label className="field-label">ความสำคัญ</label>
             <div className="type-tabs">
               {GOAL_PRIORITIES.map(p=>(
-                <button key={p.key} type="button" className={`type-btn ${form.priority===p.key?"active":""}`} style={form.priority===p.key?{background:p.color,borderColor:p.color,color:"#100c1f"}:{}} onClick={()=>set("priority",p.key)}>{p.label}</button>
+                <button key={p.key} type="button" className={`type-btn ${form.priority===p.key?"active":""}`} style={form.priority===p.key?{background:p.color,borderColor:p.color,color:"var(--bg-3)"}:{}} onClick={()=>set("priority",p.key)}>{p.label}</button>
               ))}
             </div>
           </div>
@@ -4464,7 +4520,7 @@ function GoalModal({onClose,onSave,initial}) {
                 const Icon=mt.icon;
                 return (
                   <button key={mt.key} type="button" className={`goal-measure-option ${form.measureType===mt.key?"active":""}`} onClick={()=>set("measureType",mt.key)}>
-                    <div className="goal-measure-option-head"><Icon size={18}/> {mt.label}</div>
+                    <div className="goal-measure-option-head"><Icon size={13}/> {mt.label}</div>
                     <div className="goal-measure-option-hint">{mt.hint}</div>
                   </button>
                 );
@@ -4500,14 +4556,14 @@ function GoalModal({onClose,onSave,initial}) {
               <label className="field-label">ขั้นตอนย่อย</label>
               {form.milestones.map(m=>(
                 <div key={m.id} className="milestone-edit-row">
-                  <button type="button" className={`status-btn ${m.done?"done":""}`} onClick={()=>toggleMilestoneDraft(m.id)}>{m.done&&<Check size={16}/>}</button>
-                  <span style={{flex:1,fontSize:19,textDecoration:m.done?"line-through":"none",color:m.done?"#6f6790":"#f2eefc"}}>{m.text}</span>
-                  <button type="button" className="del-btn" onClick={()=>removeMilestone(m.id)}><Trash2 size={17}/></button>
+                  <button type="button" className={`status-btn ${m.done?"done":""}`} onClick={()=>toggleMilestoneDraft(m.id)}>{m.done&&<Check size={12}/>}</button>
+                  <span style={{flex:1,fontSize:13,textDecoration:m.done?"line-through":"none",color:m.done?"var(--ink-6)":"var(--ink)"}}>{m.text}</span>
+                  <button type="button" className="del-btn" onClick={()=>removeMilestone(m.id)}><Trash2 size={12}/></button>
                 </div>
               ))}
               <div className="row-input" style={{marginTop:8}}>
                 <input placeholder="เพิ่มขั้นตอน..." value={newMilestone} onChange={e=>setNewMilestone(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addMilestone();}}}/>
-                <button type="button" className="icon-btn" onClick={addMilestone}><Plus size={20}/></button>
+                <button type="button" className="icon-btn" onClick={addMilestone}><Plus size={13}/></button>
               </div>
             </div>
           )}
@@ -4555,7 +4611,7 @@ function GoalCard({goal,onEdit,onDelete,onUpdate}) {
   return (
     <div className="goal-card" style={{"--goal-color":goal.color}}>
       <div className="goal-card-top">
-        <div className="goal-cat-badge" style={{background:`${goal.color}22`,color:goal.color}}><CatIcon size={15}/> {cat.label}</div>
+        <div className="goal-cat-badge" style={{background:`${goal.color}22`,color:goal.color}}><CatIcon size={12}/> {cat.label}</div>
         <div className="goal-priority-dot" style={{background:pri.color}} title={`ความสำคัญ: ${pri.label}`}/>
       </div>
       <div className="goal-card-title">{goal.title}</div>
@@ -4573,7 +4629,7 @@ function GoalCard({goal,onEdit,onDelete,onUpdate}) {
             editingValue?(
               <div className="goal-inline-edit">
                 <input type="number" className="modal-input" value={valueDraft} onChange={e=>setValueDraft(e.target.value)} autoFocus onKeyDown={e=>e.key==="Enter"&&saveValue()}/>
-                <button className="icon-btn" style={{width:32,height:32,minWidth:32}} onClick={saveValue}><Check size={16}/></button>
+                <button className="icon-btn" onClick={saveValue}><Check size={12}/></button>
               </div>
             ):(
               <div className="goal-numeric-value" onClick={()=>{setValueDraft(goal.currentValue);setEditingValue(true);}}>
@@ -4585,14 +4641,14 @@ function GoalCard({goal,onEdit,onDelete,onUpdate}) {
           {goal.measureType==="percent"&&(
             <div className="goal-percent-controls">
               <button className="mini-btn" onClick={()=>bumpPercent(-10)}>−</button>
-              <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18}}>{progress}%</span>
+              <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:12.5}}>{progress}%</span>
               <button className="mini-btn" onClick={()=>bumpPercent(10)}>+</button>
             </div>
           )}
           {goal.measureType==="checklist"&&(
             <button className="goal-checklist-toggle" onClick={()=>setExpanded(e=>!e)}>
-              <ListChecks size={16}/> {goal.milestones.filter(m=>m.done).length}/{goal.milestones.length} ขั้นตอน
-              {expanded?<ChevronUp size={16}/>:<ChevronDown size={16}/>}
+              <ListChecks size={12}/> {goal.milestones.filter(m=>m.done).length}/{goal.milestones.length} ขั้นตอน
+              {expanded?<ChevronUp size={12}/>:<ChevronDown size={12}/>}
             </button>
           )}
           {goal.targetDate&&(
@@ -4604,18 +4660,18 @@ function GoalCard({goal,onEdit,onDelete,onUpdate}) {
       </div>
       {goal.measureType==="checklist"&&expanded&&(
         <div className="goal-milestone-list">
-          {goal.milestones.length===0&&<div className="empty" style={{fontSize:17}}>ยังไม่มีขั้นตอนย่อย</div>}
+          {goal.milestones.length===0&&<div className="empty" style={{fontSize:12.5}}>ยังไม่มีขั้นตอนย่อย</div>}
           {goal.milestones.map(m=>(
             <div key={m.id} className="milestone-row">
-              <button className={`status-btn ${m.done?"done":""}`} onClick={()=>toggleMilestone(m.id)}>{m.done&&<Check size={16}/>}</button>
-              <span style={{flex:1,fontSize:18,textDecoration:m.done?"line-through":"none",color:m.done?"#6f6790":"#f2eefc"}}>{m.text}</span>
+              <button className={`status-btn ${m.done?"done":""}`} onClick={()=>toggleMilestone(m.id)}>{m.done&&<Check size={12}/>}</button>
+              <span style={{flex:1,fontSize:12.5,textDecoration:m.done?"line-through":"none",color:m.done?"var(--ink-6)":"var(--ink)"}}>{m.text}</span>
             </div>
           ))}
         </div>
       )}
       <div className="goal-card-actions">
-        <button className="text-btn" onClick={()=>onEdit(goal)}><Edit3 size={16}/> แก้ไข</button>
-        <button className="del-txt-btn" onClick={()=>onDelete(goal.id)}><Trash2 size={16}/> ลบ</button>
+        <button className="text-btn" onClick={()=>onEdit(goal)}><Edit3 size={12}/> แก้ไข</button>
+        <button className="del-txt-btn" onClick={()=>onDelete(goal.id)}><Trash2 size={12}/> ลบ</button>
       </div>
     </div>
   );
@@ -4645,7 +4701,7 @@ function ProjectModal({onClose,onSave,initial}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal goal-modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{initial?"แก้ไขโปรเจกต์":"เพิ่มโปรเจกต์ / เป้าหมายใหม่"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>{initial?"แก้ไขโปรเจกต์":"เพิ่มโปรเจกต์ / เป้าหมายใหม่"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div>
             <label className="field-label">ชื่อโปรเจกต์ / เป้าหมาย *</label>
@@ -4659,7 +4715,7 @@ function ProjectModal({onClose,onSave,initial}) {
             <label className="field-label">Category</label>
             <div className="goal-cat-picker">
               {GOAL_CATEGORIES.map(c=>{ const Icon=c.icon; return (
-                <button key={c.key} type="button" className={`goal-cat-option ${form.category===c.key?"active":""}`} onClick={()=>set("category",c.key)}><Icon size={18}/> {c.label}</button>
+                <button key={c.key} type="button" className={`goal-cat-option ${form.category===c.key?"active":""}`} onClick={()=>set("category",c.key)}><Icon size={13}/> {c.label}</button>
               );})}
             </div>
           </div>
@@ -4667,7 +4723,7 @@ function ProjectModal({onClose,onSave,initial}) {
             <label className="field-label">ความสำคัญ</label>
             <div className="type-tabs">
               {GOAL_PRIORITIES.map(pr=>(
-                <button key={pr.key} type="button" className={`type-btn ${form.priority===pr.key?"active":""}`} style={form.priority===pr.key?{background:pr.color,borderColor:pr.color,color:"#100c1f"}:{}} onClick={()=>set("priority",pr.key)}>{pr.label}</button>
+                <button key={pr.key} type="button" className={`type-btn ${form.priority===pr.key?"active":""}`} style={form.priority===pr.key?{background:pr.color,borderColor:pr.color,color:"var(--bg-3)"}:{}} onClick={()=>set("priority",pr.key)}>{pr.label}</button>
               ))}
             </div>
           </div>
@@ -4676,7 +4732,7 @@ function ProjectModal({onClose,onSave,initial}) {
             <div className="goal-measure-picker">
               {PROJECT_MEASURE_TYPES.map(mt=>{ const Icon=mt.icon; return (
                 <button key={mt.key} type="button" className={`goal-measure-option ${form.measureType===mt.key?"active":""}`} onClick={()=>set("measureType",mt.key)}>
-                  <div className="goal-measure-option-head"><Icon size={18}/> {mt.label}</div>
+                  <div className="goal-measure-option-head"><Icon size={13}/> {mt.label}</div>
                   <div className="goal-measure-option-hint">{mt.hint}</div>
                 </button>
               );})}
@@ -4712,14 +4768,14 @@ function ProjectModal({onClose,onSave,initial}) {
                     <input type="number" min="1" max="100" className="modal-input ms-edit-pct" value={m.pct} onChange={e=>setMilestone(m.id,"pct",e.target.value)}/>
                     <span className="ms-edit-unit">%</span>
                     <input className="modal-input ms-edit-label" placeholder={vt?`ไม่ตั้งชื่อ = ${vt}`:"ชื่อหมุด (ไม่ใส่ก็ได้)"} value={m.label||""} onChange={e=>setMilestone(m.id,"label",e.target.value)}/>
-                    <button type="button" className="del-btn" onClick={()=>delMilestone(m.id)}><Trash2 size={17}/></button>
+                    <button type="button" className="del-btn" onClick={()=>delMilestone(m.id)}><Trash2 size={12}/></button>
                   </div>
                 );
               })}
             </div>
             <div className="ms-edit-actions">
-              <button type="button" className="text-btn" onClick={addMilestone}><Plus size={16}/> เพิ่มหมุด</button>
-              <button type="button" className="text-btn" onClick={addAutoMilestones} disabled={autoMilestones(form.milestones).length===0}><Flag size={16}/> แบ่งอัตโนมัติ 25/50/75/100</button>
+              <button type="button" className="text-btn" onClick={addMilestone}><Plus size={12}/> เพิ่มหมุด</button>
+              <button type="button" className="text-btn" onClick={addAutoMilestones} disabled={autoMilestones(form.milestones).length===0}><Flag size={12}/> แบ่งอัตโนมัติ 25/50/75/100</button>
             </div>
           </div>
           <div>
@@ -4746,7 +4802,7 @@ function TaskModal({onClose,onSave,initial,projects,defaultProjectId}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{initial?"แก้ไขงาน":"เพิ่มงานใหม่"}</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>{initial?"แก้ไขงาน":"เพิ่มงานใหม่"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div>
             <label className="field-label">ชื่องาน *</label>
@@ -4773,7 +4829,7 @@ function TaskModal({onClose,onSave,initial,projects,defaultProjectId}) {
           <div>
             <label className="field-label">น้ำหนักความสำคัญ: {form.weight}x</label>
             <input type="range" min="1" max="5" value={form.weight} onChange={e=>set("weight",Number(e.target.value))} style={{width:"100%"}}/>
-            <div style={{fontSize:15,color:"#7a7398",marginTop:4}}>งานน้ำหนักมากจะมีผลต่อ % ความคืบหน้าของโปรเจกต์มากกว่า</div>
+            <div style={{fontSize:11,color:"var(--ink-6)",marginTop:4}}>งานน้ำหนักมากจะมีผลต่อ % ความคืบหน้าของโปรเจกต์มากกว่า</div>
           </div>
           <div><label className="field-label">โน้ต</label><input className="modal-input" placeholder="เพิ่มเติม..." value={form.note||""} onChange={e=>set("note",e.target.value)}/></div>
         </div>
@@ -4793,13 +4849,13 @@ function CheckinModal({onClose,onSave,project,lastValue}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:400}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>บันทึกความคืบหน้า</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>บันทึกความคืบหน้า</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
-          <div style={{fontSize:18,color:"#c9b8f0"}}>{project.title}</div>
+          <div style={{fontSize:12.5,color:"var(--ink-3)"}}>{project.title}</div>
           <div>
             <label className="field-label">ค่าล่าสุด ({project.unit||"หน่วย"}) *</label>
             <input type="number" className="modal-input" placeholder="0" value={value} onChange={e=>setValue(e.target.value)} autoFocus onKeyDown={e=>e.key==="Enter"&&save()}/>
-            <div style={{fontSize:15,color:"#7a7398",marginTop:4}}>กรอกยอดสะสม ณ ปัจจุบัน (ไม่ใช่ส่วนที่เพิ่ม) เป้าหมาย {(project.targetValue||0).toLocaleString()} {project.unit}</div>
+            <div style={{fontSize:11,color:"var(--ink-6)",marginTop:4}}>กรอกยอดสะสม ณ ปัจจุบัน (ไม่ใช่ส่วนที่เพิ่ม) เป้าหมาย {(project.targetValue||0).toLocaleString()} {project.unit}</div>
           </div>
           <div><label className="field-label">Date</label><input type="date" className="modal-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
           <div><label className="field-label">โน้ต</label><input className="modal-input" placeholder="เกิดอะไรขึ้นช่วงนี้..." value={note} onChange={e=>setNote(e.target.value)}/></div>
@@ -4818,7 +4874,7 @@ function TaskRow({task,project,onToggle,onEdit,onDelete,showProject}) {
   const streak=isRecurring(task)?taskStreak(task):0;
   return (
     <div className={`trk-task-row ${done?"done":""}`}>
-      <button className={`status-btn ${done?"done":""}`} onClick={()=>onToggle(task.id)}>{done&&<Check size={16}/>}</button>
+      <button className={`status-btn ${done?"done":""}`} onClick={()=>onToggle(task.id)}>{done&&<Check size={12}/>}</button>
       <div className="trk-task-main">
         <div className="trk-task-title">{task.title}</div>
         <div className="trk-task-meta">
@@ -4832,8 +4888,8 @@ function TaskRow({task,project,onToggle,onEdit,onDelete,showProject}) {
         </div>
       </div>
       <div className="trk-task-actions">
-        <button className="del-btn" onClick={()=>onEdit(task)}><Edit3 size={16}/></button>
-        <button className="del-btn" onClick={()=>onDelete(task.id)}><Trash2 size={16}/></button>
+        <button className="del-btn" onClick={()=>onEdit(task)}><Edit3 size={12}/></button>
+        <button className="del-btn" onClick={()=>onDelete(task.id)}><Trash2 size={12}/></button>
       </div>
     </div>
   );
@@ -4870,7 +4926,7 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
     <div>
       {showCheckin&&<CheckinModal project={project} lastValue={curVal} onClose={()=>setShowCheckin(false)} onSave={saveCheckin}/>}
       {showTask&&<TaskModal initial={editTask} projects={data.projects||[]} defaultProjectId={project.id} onClose={()=>{setShowTask(false);setEditTask(null);}} onSave={saveTask}/>}
-      <button className="back-btn" style={{marginBottom:16}} onClick={onBack}><ChevronLeft size={22}/> Back to overview</button>
+      <button className="back-btn" style={{marginBottom:16}} onClick={onBack}><ChevronLeft size={14}/> Back to overview</button>
       <div className="card" style={{borderTop:`3px solid ${project.color}`}}>
         <div className="prj-detail-head">
           <div className="prj-detail-ring">
@@ -4878,11 +4934,11 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
               <circle cx="50" cy="50" r={r} className="ring-track" strokeWidth="7"/>
               {exp!=null&&prog<100&&<circle cx="50" cy="50" r={r} stroke="#ffffff26" strokeDasharray={`${(exp/100)*c} ${c}`} fill="none" strokeWidth="7" strokeLinecap="round" transform="rotate(-90 50 50)"/>}
               <circle cx="50" cy="50" r={r} stroke={project.color} strokeDasharray={c} strokeDashoffset={off} fill="none" strokeWidth="7" strokeLinecap="round" transform="rotate(-90 50 50)" style={{transition:"stroke-dashoffset .5s ease"}}/>
-              <text x="50" y="56" textAnchor="middle" style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:22,fill:"#fff",fontWeight:700}}>{prog}%</text>
+              <text x="50" y="56" textAnchor="middle" style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:14,fill:"#fff",fontWeight:700}}>{prog}%</text>
             </svg>
           </div>
           <div style={{flex:1,minWidth:0}}>
-            <div className="goal-cat-badge" style={{background:`${project.color}22`,color:project.color,width:"fit-content"}}><CatIcon size={15}/> {cat.label}</div>
+            <div className="goal-cat-badge" style={{background:`${project.color}22`,color:project.color,width:"fit-content"}}><CatIcon size={12}/> {cat.label}</div>
             <div className="prj-detail-title">{project.title}</div>
             {project.description&&<div className="goal-card-desc" style={{WebkitLineClamp:3}}>{project.description}</div>}
             <div className="prj-badge-row">
@@ -4891,7 +4947,7 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
               {exp!=null&&prog<100&&<span className="prj-meta-badge">ควรอยู่ที่ {Math.round(exp)}%</span>}
             </div>
           </div>
-          <button className="text-btn" onClick={()=>onEdit(project)}><Edit3 size={16}/> แก้ไข</button>
+          <button className="text-btn" onClick={()=>onEdit(project)}><Edit3 size={12}/> แก้ไข</button>
         </div>
       </div>
       {project.measureType==="numeric"&&(
@@ -4899,23 +4955,23 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
           <div className="prj-stat-row">
             <div className="prj-stat"><div className="prj-stat-label">Current</div><div className="prj-stat-value" style={{color:project.color}}>{curVal.toLocaleString()}</div><div className="prj-stat-unit">/ {(project.targetValue||0).toLocaleString()} {project.unit}</div></div>
             <div className="prj-stat"><div className="prj-stat-label">Remaining</div><div className="prj-stat-value">{Math.max(0,(project.targetValue||0)-curVal).toLocaleString()}</div><div className="prj-stat-unit">{project.unit}</div></div>
-            <div className="prj-stat"><div className="prj-stat-label">Velocity</div><div className="prj-stat-value" style={{color:vel&&vel.perWeek>0?"#34d399":"#8a82a8"}}>{vel?`${Math.round(vel.perWeek).toLocaleString()}`:"—"}</div><div className="prj-stat-unit">{project.unit}/สัปดาห์</div></div>
-            <div className="prj-stat"><div className="prj-stat-label">Projected finish</div><div className="prj-stat-value" style={{fontSize:20,color:vel&&vel.projectedDate&&project.targetDate&&vel.projectedDate>project.targetDate?"#fb923c":"#60a5fa"}}>{vel&&vel.projectedDate?thaiDate(vel.projectedDate).replace(/^\S+\s/,""):"—"}</div><div className="prj-stat-unit">{vel&&vel.projectedDate&&project.targetDate?(vel.projectedDate>project.targetDate?"ช้ากว่ากำหนด":"ทันกำหนด"):"ต้อง check-in ≥2 ครั้ง"}</div></div>
+            <div className="prj-stat"><div className="prj-stat-label">Velocity</div><div className="prj-stat-value" style={{color:vel&&vel.perWeek>0?"#34d399":"var(--ink-5)"}}>{vel?`${Math.round(vel.perWeek).toLocaleString()}`:"—"}</div><div className="prj-stat-unit">{project.unit}/สัปดาห์</div></div>
+            <div className="prj-stat"><div className="prj-stat-label">Projected finish</div><div className="prj-stat-value" style={{fontSize:13,color:vel&&vel.projectedDate&&project.targetDate&&vel.projectedDate>project.targetDate?"#fb923c":"#60a5fa"}}>{vel&&vel.projectedDate?thaiDate(vel.projectedDate).replace(/^\S+\s/,""):"—"}</div><div className="prj-stat-unit">{vel&&vel.projectedDate&&project.targetDate?(vel.projectedDate>project.targetDate?"ช้ากว่ากำหนด":"ทันกำหนด"):"ต้อง check-in ≥2 ครั้ง"}</div></div>
           </div>
           <div className="card">
             <div className="card-head">Progress Chart
-              <div className="card-head-right"><button className="quick-capture-btn" style={{fontSize:16,padding:"9px 15px"}} onClick={()=>setShowCheckin(true)}><Plus size={16}/> Check-in</button></div>
+              <div className="card-head-right"><button className="quick-capture-btn" style={{fontSize:11.5,padding:"9px 15px"}} onClick={()=>setShowCheckin(true)}><Plus size={12}/> Check-in</button></div>
             </div>
             {chartData.length===0&&<div className="empty" style={{textAlign:"center",padding:30}}>ยังไม่มีข้อมูล กด Check-in เพื่อบันทึกครั้งแรก</div>}
             {chartData.length>0&&(
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart data={chartData} margin={{top:5,right:12,left:0,bottom:5}}>
                   <defs><linearGradient id={`grad-${project.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={project.color} stopOpacity={0.5}/><stop offset="100%" stopColor={project.color} stopOpacity={0}/></linearGradient></defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2f2745" vertical={false}/>
-                  <XAxis dataKey="date" tick={{fontSize:15,fill:"#a29bc4"}} axisLine={{stroke:"#3a3155"}} tickLine={false}/>
-                  <YAxis tick={{fontSize:14,fill:"#a29bc4"}} axisLine={false} tickLine={false} tickFormatter={v=>v>=1000?`${v/1000}k`:v}/>
-                  <Tooltip contentStyle={{background:"#221b38",border:"1px solid #3a3155",borderRadius:10,color:"#f2eefc",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`${Number(v).toLocaleString()} ${project.unit||""}`,"ค่าที่บันทึก"]}/>
-                  {project.targetValue>0&&<ReferenceLine y={project.targetValue} stroke="#34d399" strokeDasharray="5 5" label={{value:"เป้าหมาย",fill:"#34d399",fontSize:14,position:"insideTopRight"}}/>}
+                  <CartesianGrid strokeDasharray="3 3" stroke="#274038" vertical={false}/>
+                  <XAxis dataKey="date" tick={{fontSize:11,fill:"#9bc4b1"}} axisLine={{stroke:"#304a3f"}} tickLine={false}/>
+                  <YAxis tick={{fontSize:11,fill:"#9bc4b1"}} axisLine={false} tickLine={false} tickFormatter={v=>v>=1000?`${v/1000}k`:v}/>
+                  <Tooltip contentStyle={{background:"var(--surface-modal)",border:"1px solid var(--line)",borderRadius:10,color:"var(--ink)",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`${Number(v).toLocaleString()} ${project.unit||""}`,"ค่าที่บันทึก"]}/>
+                  {project.targetValue>0&&<ReferenceLine y={project.targetValue} stroke="#34d399" strokeDasharray="5 5" label={{value:"เป้าหมาย",fill:"#34d399",fontSize:11,position:"insideTopRight"}}/>}
                   <Area type="monotone" dataKey="value" stroke={project.color} strokeWidth={3} fill={`url(#grad-${project.id})`} dot={{r:4,fill:project.color}}/>
                 </AreaChart>
               </ResponsiveContainer>
@@ -4934,9 +4990,9 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
                         <tr key={ci.id}>
                           <td className="exp-col-date">{ci.date}</td>
                           <td className="exp-col-amount" style={{fontFamily:"'IBM Plex Mono',monospace",color:project.color,fontWeight:600}}>{ci.value.toLocaleString()}</td>
-                          <td className="exp-col-amount" style={{fontFamily:"'IBM Plex Mono',monospace",color:diff==null?"#7a7398":diff>=0?"#34d399":"#fb923c"}}>{diff==null?"—":`${diff>=0?"+":""}${diff.toLocaleString()}`}</td>
+                          <td className="exp-col-amount" style={{fontFamily:"'IBM Plex Mono',monospace",color:diff==null?"var(--ink-6)":diff>=0?"#34d399":"#fb923c"}}>{diff==null?"—":`${diff>=0?"+":""}${diff.toLocaleString()}`}</td>
                           <td className="exp-col-memo">{ci.note||"—"}</td>
-                          <td className="exp-col-action"><button className="del-btn" onClick={()=>delCheckin(ci.id)}><Trash2 size={17}/></button></td>
+                          <td className="exp-col-action"><button className="del-btn" onClick={()=>delCheckin(ci.id)}><Trash2 size={12}/></button></td>
                         </tr>
                       );
                     })}
@@ -4952,13 +5008,13 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
           <div className="card-head">Update Progress</div>
           <div style={{display:"flex",alignItems:"center",gap:16}}>
             <input type="range" min="0" max="100" value={project.manualValue||0} onChange={e=>persist({...data,projects:data.projects.map(p=>p.id===project.id?{...p,manualValue:Number(e.target.value)}:p)})} style={{flex:1}}/>
-            <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:26,fontWeight:700,color:project.color,minWidth:70,textAlign:"right"}}>{project.manualValue||0}%</span>
+            <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:project.color,minWidth:70,textAlign:"right"}}>{project.manualValue||0}%</span>
           </div>
         </div>
       )}
       {msList.length>0&&(
         <div className="card">
-          <div className="card-head"><Flag size={22}/> หมุดความคืบหน้า ({msDone}/{msList.length})</div>
+          <div className="card-head"><Flag size={14}/> หมุดความคืบหน้า ({msDone}/{msList.length})</div>
           <div className="prj-bar ms-track">
             <div className="prj-bar-fill" style={{width:`${prog}%`,background:project.color}}/>
             {msList.map(m=>(
@@ -4970,7 +5026,7 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
               const hit=!!m.reachedAt; const vt=milestoneValueText(project,m.pct);
               return (
                 <div key={m.id} className={`ms-item ${hit?"hit":""}`}>
-                  <div className="ms-item-dot" style={hit?{background:project.color,borderColor:project.color,color:"#0b0817"}:null}>{hit?<Check size={13}/>:null}</div>
+                  <div className="ms-item-dot" style={hit?{background:project.color,borderColor:project.color,color:"var(--bg-1)"}:null}>{hit?<Check size={13}/>:null}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div className="ms-item-title">{milestoneLabel(m)}</div>
                     <div className="ms-item-sub">{m.pct}%{vt?` · ${vt}`:""}</div>
@@ -4984,8 +5040,8 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
       )}
       <div className="card">
         <div className="card-head">
-          <ListChecks size={24}/> Project Tasks ({doneTasks.length}/{tasks.length})
-          <div className="card-head-right"><button className="icon-btn" onClick={()=>{setEditTask(null);setShowTask(true);}}><Plus size={22}/></button></div>
+          <ListChecks size={14}/> Project Tasks ({doneTasks.length}/{tasks.length})
+          <div className="card-head-right"><button className="icon-btn" onClick={()=>{setEditTask(null);setShowTask(true);}}><Plus size={14}/></button></div>
         </div>
         {tasks.length===0&&<div className="empty">ยังไม่มีงาน กด + เพื่อเพิ่มงานย่อย</div>}
         {openTasks.map(t=><TaskRow key={t.id} task={t} onToggle={toggleTask} onEdit={tk=>{setEditTask(tk);setShowTask(true);}} onDelete={delTask}/>)}
@@ -5060,10 +5116,10 @@ function TodayPanel({data,persist,onOpenProject,onAddTask,onEditTask}) {
   return (
     <div className="card">
       <div className="card-head">
-        <ListTodo size={24}/> Today
+        <ListTodo size={14}/> Today
         <div className="card-head-right">
           <span className="trk-today-pct">{doneCount}/{todayList.length}</span>
-          <button className="icon-btn" onClick={onAddTask}><Plus size={22}/></button>
+          <button className="icon-btn" onClick={onAddTask}><Plus size={14}/></button>
         </div>
       </div>
       <div className="trk-today-bar"><div className="trk-today-bar-fill" style={{width:`${pct}%`}}/></div>
@@ -5103,7 +5159,7 @@ function TrackerPage({data,persist}) {
       {showProjModal&&<ProjectModal initial={editProj} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
       <ProjectDetail project={openProject} data={data} persist={persist} onBack={()=>setOpenId(null)} onEdit={p=>{setEditProj(p);setShowProjModal(true);}}/>
       <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
-        <button className="del-txt-btn" onClick={()=>delProject(openProject.id)}><Trash2 size={16}/> ลบโปรเจกต์นี้</button>
+        <button className="del-txt-btn" onClick={()=>delProject(openProject.id)}><Trash2 size={12}/> ลบโปรเจกต์นี้</button>
       </div>
     </div>
   );
@@ -5119,10 +5175,10 @@ function TrackerPage({data,persist}) {
       {showProjModal&&<ProjectModal initial={editProj} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
       {showTaskModal&&<TaskModal initial={editTask} projects={projects} onClose={()=>{setShowTaskModal(false);setEditTask(null);}} onSave={saveTask}/>}
       <div className="goal-stat-row">
-        <div className="goal-stat-card"><div className="goal-stat-icon all"><Target size={22}/></div><div><div className="goal-stat-label">Total</div><div className="goal-stat-value">{projects.length}</div></div></div>
-        <div className="goal-stat-card"><div className="goal-stat-icon active"><Zap size={22}/></div><div><div className="goal-stat-label">Active</div><div className="goal-stat-value">{activeList.length}</div></div></div>
-        <div className="goal-stat-card"><div className="goal-stat-icon done"><Check size={22}/></div><div><div className="goal-stat-label">Completed</div><div className="goal-stat-value">{doneList.length}</div></div></div>
-        <div className="goal-stat-card"><div className="goal-stat-icon soon"><AlertCircle size={22}/></div><div><div className="goal-stat-label">Behind</div><div className="goal-stat-value">{behindList.length}</div></div></div>
+        <div className="goal-stat-card"><div className="goal-stat-icon all"><Target size={14}/></div><div><div className="goal-stat-label">Total</div><div className="goal-stat-value">{projects.length}</div></div></div>
+        <div className="goal-stat-card"><div className="goal-stat-icon active"><Zap size={14}/></div><div><div className="goal-stat-label">Active</div><div className="goal-stat-value">{activeList.length}</div></div></div>
+        <div className="goal-stat-card"><div className="goal-stat-icon done"><Check size={14}/></div><div><div className="goal-stat-label">Completed</div><div className="goal-stat-value">{doneList.length}</div></div></div>
+        <div className="goal-stat-card"><div className="goal-stat-icon soon"><AlertCircle size={14}/></div><div><div className="goal-stat-label">Behind</div><div className="goal-stat-value">{behindList.length}</div></div></div>
       </div>
       <div className="tracker-split">
         <div className="tracker-col-today">
@@ -5131,7 +5187,7 @@ function TrackerPage({data,persist}) {
         <div className="tracker-col-projects">
           <div className="card">
             <div className="card-head">
-              <Target size={24}/> Projects
+              <Target size={14}/> Projects
               <div className="card-head-right">
                 <div className="goal-filter-pills">
                   <button className={`goal-filter-pill ${filter==="active"?"active":""}`} onClick={()=>setFilter("active")}>Active</button>
@@ -5139,7 +5195,7 @@ function TrackerPage({data,persist}) {
                   <button className={`goal-filter-pill ${filter==="done"?"active":""}`} onClick={()=>setFilter("done")}>Done</button>
                   <button className={`goal-filter-pill ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>All</button>
                 </div>
-                <button className="icon-btn" onClick={()=>{setEditProj(null);setShowProjModal(true);}}><Plus size={22}/></button>
+                <button className="icon-btn" onClick={()=>{setEditProj(null);setShowProjModal(true);}}><Plus size={14}/></button>
               </div>
             </div>
             {shown.length===0&&<div className="empty" style={{padding:"24px 0",textAlign:"center"}}>ไม่มีโปรเจกต์ในตัวกรองนี้ กด + เพื่อสร้าง</div>}
@@ -5161,20 +5217,20 @@ function HealthPage({data,persist}) {
   return (
     <div className="page-content">
       <div className="card">
-        <div className="card-head"><Heart size={27}/> Health &amp; Wellness</div>
+        <div className="card-head"><Heart size={15}/> Health &amp; Wellness</div>
         {today&&(
           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:14}}>
-            <div style={{background:"#191330",padding:12,borderRadius:8}}>
-              <div style={{fontSize:17,color:"#a29bc4"}}>น้ำหนัก</div>
-              <div style={{fontSize:27,fontWeight:600,color:"#fb923c"}}>{today.weight} kg</div>
+            <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8}}>
+              <div style={{fontSize:12.5,color:"var(--ink-2)"}}>น้ำหนัก</div>
+              <div style={{fontSize:20,fontWeight:600,color:"#fb923c"}}>{today.weight} kg</div>
             </div>
             <div style={{display:"grid",gap:6}}>
-              <div style={{background:"#191330",padding:8,borderRadius:8,textAlign:"center",fontSize:20}}>
-                <div style={{fontSize:14,color:"#a29bc4"}}>พลังงาน</div>
+              <div style={{background:"var(--surface-sunken)",padding:8,borderRadius:8,textAlign:"center",fontSize:13}}>
+                <div style={{fontSize:11,color:"var(--ink-2)"}}>พลังงาน</div>
                 <div style={{color:"#60a5fa"}}>{"⭐".repeat(today.energy)}</div>
               </div>
-              <div style={{background:"#191330",padding:8,borderRadius:8,textAlign:"center",fontSize:20}}>
-                <div style={{fontSize:14,color:"#a29bc4"}}>นอน</div>
+              <div style={{background:"var(--surface-sunken)",padding:8,borderRadius:8,textAlign:"center",fontSize:13}}>
+                <div style={{fontSize:11,color:"var(--ink-2)"}}>นอน</div>
                 <div style={{color:"#34d399"}}>{"⭐".repeat(today.sleep)}</div>
               </div>
             </div>
@@ -5182,7 +5238,7 @@ function HealthPage({data,persist}) {
         )}
         {!today&&showForm===false&&<div className="empty">ยังไม่บันทึกข้อมูลวันนี้</div>}
         {showForm&&(
-          <div style={{background:"#191330",padding:12,borderRadius:8,marginBottom:12}}>
+          <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8,marginBottom:12}}>
             <div style={{marginBottom:10}}>
               <label className="field-label">น้ำหนัก (kg) *</label>
               <input className="modal-input" type="number" step=".1" placeholder="70" value={form.weight} onChange={e=>setForm({...form,weight:e.target.value})}/>
@@ -5205,11 +5261,11 @@ function HealthPage({data,persist}) {
             </div>
           </div>
         )}
-        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={21}/> เพิ่มวันนี้</button>}
+        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={13}/> เพิ่มวันนี้</button>}
         <div style={{marginTop:14,maxHeight:300,overflowY:"auto"}}>
           {health.slice().reverse().map(h=>(
-            <div key={h.id} style={{padding:8,borderBottom:"1px solid #2f2745",fontSize:18}}>
-              <div style={{color:"#a29bc4"}}>{h.date}</div>
+            <div key={h.id} style={{padding:8,borderBottom:"1px solid var(--chip-bg)",fontSize:12.5}}>
+              <div style={{color:"var(--ink-2)"}}>{h.date}</div>
               <div style={{marginTop:4}}>น้ำหนัก {h.weight} kg · พลังงาน {"⭐".repeat(h.energy)} · นอน {"⭐".repeat(h.sleep)}</div>
             </div>
           ))}
@@ -5228,23 +5284,23 @@ function DocumentPage({data,persist}) {
   return (
     <div className="page-content">
       <div className="card">
-        <div className="card-head"><FileText size={27}/> Documents</div>
+        <div className="card-head"><FileText size={15}/> Documents</div>
         {docs.length===0&&<div className="empty">ยังไม่มีเอกสาร</div>}
         {docs.map(d=>(
-          <div key={d.id} style={{padding:10,marginBottom:8,background:"#191330",borderRadius:8,border:"1px solid #3a3155"}}>
+          <div key={d.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,border:"1px solid var(--line)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:20,fontWeight:600}}>{d.title}</div>
-                <div style={{fontSize:17,color:"#8b5cf6",marginTop:4}}>{d.category}</div>
-                {d.description&&<div style={{fontSize:18,color:"#a29bc4",marginTop:4}}>{d.description}</div>}
-                {d.link&&<div style={{fontSize:16,color:"#34d399",marginTop:4,wordBreak:"break-all"}}>{d.link}</div>}
+                <div style={{fontSize:13,fontWeight:600}}>{d.title}</div>
+                <div style={{fontSize:12.5,color:"var(--accent)",marginTop:4}}>{d.category}</div>
+                {d.description&&<div style={{fontSize:12.5,color:"var(--ink-2)",marginTop:4}}>{d.description}</div>}
+                {d.link&&<div style={{fontSize:11.5,color:"#34d399",marginTop:4,wordBreak:"break-all"}}>{d.link}</div>}
               </div>
-              <button className="del-btn" onClick={()=>removeDoc(d.id)}><Trash2 size={20}/></button>
+              <button className="del-btn" onClick={()=>removeDoc(d.id)}><Trash2 size={13}/></button>
             </div>
           </div>
         ))}
         {showForm&&(
-          <div style={{background:"#191330",padding:12,borderRadius:8,marginBottom:12}}>
+          <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8,marginBottom:12}}>
             <div style={{marginBottom:10}}>
               <label className="field-label">ชื่อเอกสาร *</label>
               <input className="modal-input" placeholder="บัตรประชาชน" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
@@ -5270,7 +5326,7 @@ function DocumentPage({data,persist}) {
             </div>
           </div>
         )}
-        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={21}/> เอกสารใหม่</button>}
+        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={13}/> เอกสารใหม่</button>}
       </div>
     </div>
   );
@@ -5289,27 +5345,27 @@ function BookQueuePage({data,persist}) {
   return (
     <div className="page-content">
       <div className="card">
-        <div className="card-head"><BookOpen size={27}/> Book Queue</div>
+        <div className="card-head"><BookOpen size={15}/> Book Queue</div>
         {books.length===0&&<div className="empty">ไม่มีหนังสืออยู่ในรายการ</div>}
         {Object.entries(groups).map(([status,items])=>(
           <div key={status} style={{marginBottom:14}}>
-            <div style={{fontSize:20,fontWeight:600,color:statusColors[status],marginBottom:8}}>{statusLabels[status]} ({items.length})</div>
-            {items.length===0&&<div className="empty" style={{fontSize:18}}>ว่างเปล่า</div>}
+            <div style={{fontSize:13,fontWeight:600,color:statusColors[status],marginBottom:8}}>{statusLabels[status]} ({items.length})</div>
+            {items.length===0&&<div className="empty" style={{fontSize:12.5}}>ว่างเปล่า</div>}
             {items.map(b=>(
-              <div key={b.id} style={{padding:10,marginBottom:8,background:"#191330",borderRadius:8,border:`1px solid ${statusColors[status]}33`}}>
+              <div key={b.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,border:`1px solid ${statusColors[status]}33`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:20,fontWeight:600}}>{b.title}</div>
-                    <div style={{fontSize:18,color:"#a29bc4",marginTop:4}}>โดย {b.author}</div>
-                    <div style={{fontSize:17,color:"#fb923c",marginTop:4}}>ความสำคัญ {"⭐".repeat(b.priority)}</div>
+                    <div style={{fontSize:13,fontWeight:600}}>{b.title}</div>
+                    <div style={{fontSize:12.5,color:"var(--ink-2)",marginTop:4}}>โดย {b.author}</div>
+                    <div style={{fontSize:12.5,color:"#fb923c",marginTop:4}}>ความสำคัญ {"⭐".repeat(b.priority)}</div>
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     {status!=='done'&&(
-                      <button onClick={()=>updateBook(b.id,{status:status==='to-read'?'reading':'done'})} style={{fontSize:17,padding:"4px 8px",borderRadius:6,border:"1px solid #3a3155",background:"transparent",color:"#a29bc4",cursor:"pointer"}}>
+                      <button onClick={()=>updateBook(b.id,{status:status==='to-read'?'reading':'done'})} style={{fontSize:12.5,padding:"4px 8px",borderRadius:6,border:"1px solid var(--line)",background:"transparent",color:"var(--ink-2)",cursor:"pointer"}}>
                         {status==='to-read'?"อ่านเลย":"ใจตัดสินแล้ว"}
                       </button>
                     )}
-                    <button className="del-btn" onClick={()=>removeBook(b.id)}><Trash2 size={20}/></button>
+                    <button className="del-btn" onClick={()=>removeBook(b.id)}><Trash2 size={13}/></button>
                   </div>
                 </div>
               </div>
@@ -5317,7 +5373,7 @@ function BookQueuePage({data,persist}) {
           </div>
         ))}
         {showForm&&(
-          <div style={{background:"#191330",padding:12,borderRadius:8,marginBottom:12}}>
+          <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8,marginBottom:12}}>
             <div style={{marginBottom:10}}>
               <label className="field-label">ชื่อหนังสือ *</label>
               <input className="modal-input" placeholder="Atomic Habits" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
@@ -5337,7 +5393,7 @@ function BookQueuePage({data,persist}) {
             </div>
           </div>
         )}
-        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={21}/> หนังสือใหม่</button>}
+        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={13}/> หนังสือใหม่</button>}
       </div>
     </div>
   );
@@ -5351,23 +5407,23 @@ function JournalPage({data,persist}) {
   return (
     <div className="page-content">
       <div className="card">
-        <div className="card-head"><PenTool size={27}/> Daily Journal</div>
+        <div className="card-head"><PenTool size={15}/> Daily Journal</div>
         <div style={{marginBottom:14}}>
           <label className="field-label">วันนี้เป็นอย่างไรบ้าง?</label>
           <textarea className="modal-input" rows={6} placeholder="เขียนบันทึกวันนี้สั้นๆ..." value={form.entry} onChange={e=>setForm({...form,entry:e.target.value})} style={{resize:"vertical"}}/>
           <div style={{marginTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{fontSize:17,color:"#a29bc4"}}>{form.entry.length} ตัวอักษร</div>
+            <div style={{fontSize:12.5,color:"var(--ink-2)"}}>{form.entry.length} ตัวอักษร</div>
             <button className="modal-btn-save" onClick={saveEntry} disabled={!form.entry.trim()}>บันทึก</button>
           </div>
         </div>
         {journal.length>0&&(
           <div>
-            <div style={{fontSize:20,fontWeight:600,marginBottom:8,color:"#8b5cf6"}}>บันทึกเดิม</div>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:"var(--accent)"}}>บันทึกเดิม</div>
             <div style={{maxHeight:300,overflowY:"auto"}}>
               {journal.slice().reverse().map(j=>(
-                <div key={j.id} style={{padding:10,marginBottom:8,background:"#191330",borderRadius:8,borderLeft:"3px solid #8b5cf6"}}>
-                  <div style={{fontSize:17,color:"#a29bc4",marginBottom:4}}>{j.date}</div>
-                  <div style={{fontSize:18,lineHeight:1.5}}>{j.entry}</div>
+                <div key={j.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,borderLeft:"3px solid var(--accent)"}}>
+                  <div style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4}}>{j.date}</div>
+                  <div style={{fontSize:12.5,lineHeight:1.5}}>{j.entry}</div>
                 </div>
               ))}
             </div>
@@ -5394,14 +5450,14 @@ function QuickCaptureModal({onClose,onSave}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:460}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>⚡ Quick Capture</span><button className="modal-close" onClick={onClose}><X size={27}/></button></div>
+        <div className="modal-head"><span>⚡ Quick Capture</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div className="quick-type-row">
             {QUICK_TYPES.map(t=>{
               const Icon=t.icon;
               return (
                 <button key={t.key} className={`quick-type-btn ${type===t.key?"active":""}`} onClick={()=>setType(t.key)}>
-                  <Icon size={20}/><span>{t.label}</span>
+                  <Icon size={13}/><span>{t.label}</span>
                 </button>
               );
             })}
@@ -5435,7 +5491,7 @@ function QuickCaptureModal({onClose,onSave}) {
             <div>
               <label className="field-label">{type==="journal"?"บันทึกวันนี้":type==="task"?"ชื่องาน":"เนื้อหาโน้ต"} *</label>
               <textarea className="modal-input" rows={type==="journal"?5:3} placeholder="พิมพ์ที่นี่..." value={text} onChange={e=>setText(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)) save();}}/>
-              <div style={{fontSize:15,color:"#7a7398",marginTop:6}}>กด Ctrl/⌘ + Enter เพื่อบันทึกเร็ว</div>
+              <div style={{fontSize:11,color:"var(--ink-6)",marginTop:6}}>กด Ctrl/⌘ + Enter เพื่อบันทึกเร็ว</div>
             </div>
           )}
         </div>
@@ -5457,7 +5513,7 @@ function HistoryPanel({activity}) {
   return (
     <div className="card">
       <div className="card-head">
-        <Clock size={24}/> History
+        <Clock size={14}/> History
         <div className="card-head-right hist-filter-row">
           <button className={`hist-filter ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>All</button>
           {presentSources.map(s=>(
@@ -5472,13 +5528,13 @@ function HistoryPanel({activity}) {
             <thead><tr><th>Event</th><th>Source</th><th>Status</th><th>Time</th></tr></thead>
             <tbody>
               {visible.map(a=>{
-                const meta=ACTIVITY_META[a.source]||{label:a.source,icon:FileText,color:"#8b5cf6"};
+                const meta=ACTIVITY_META[a.source]||{label:a.source,icon:FileText,color:"var(--accent)"};
                 const Icon=meta.icon;
                 return (
                   <tr key={a.id}>
                     <td>
                       <div className="hist-event">
-                        <span className="hist-icon" style={{background:`${meta.color}22`,color:meta.color}}><Icon size={16}/></span>
+                        <span className="hist-icon" style={{background:`${meta.color}22`,color:meta.color}}><Icon size={12}/></span>
                         <span className="hist-text">{a.text}</span>
                       </div>
                     </td>
@@ -5494,7 +5550,7 @@ function HistoryPanel({activity}) {
       )}
       {filtered.length>6&&(
         <button className="show-more-btn" onClick={()=>setShowAll(s=>!s)}>
-          {showAll?<>แสดงน้อยลง<ChevronUp size={20}/></>:<>ดูเพิ่มอีก {filtered.length-6} รายการ<ChevronDown size={20}/></>}
+          {showAll?<>แสดงน้อยลง<ChevronUp size={13}/></>:<>ดูเพิ่มอีก {filtered.length-6} รายการ<ChevronDown size={13}/></>}
         </button>
       )}
     </div>
@@ -5520,13 +5576,13 @@ function useCountUp(target,ms=800){
 function MilestoneToast({toast,onClose}) {
   useEffect(()=>{ const t=setTimeout(onClose,7000); return()=>clearTimeout(t); },[]);
   return (
-    <div className="ms-toast" style={{"--goal-color":toast.color||"#8b5cf6"}}>
-      <div className="ms-toast-icon"><Flag size={19}/></div>
+    <div className="ms-toast" style={{"--goal-color":toast.color||"var(--accent)"}}>
+      <div className="ms-toast-icon"><Flag size={13}/></div>
       <div style={{flex:1,minWidth:0}}>
         <div className="ms-toast-title">ถึงหมุดแล้ว · {toast.label}</div>
         <div className="ms-toast-sub">{toast.title}{toast.valueText?` · ${toast.valueText}`:""}</div>
       </div>
-      <button className="ms-toast-x" onClick={onClose}><X size={18}/></button>
+      <button className="ms-toast-x" onClick={onClose}><X size={13}/></button>
     </div>
   );
 }
@@ -5797,7 +5853,7 @@ function DashMonthCard({review,setPage}){
       <div className="db-row"><span className="lab"><span className="db-dot g"/> ออม/ลงทุน</span><span className="val gld db-mono">{dbNum(review.totalSaved)}</span></div>
       <div className="db-row" style={{paddingTop:14}}>
         <span className="lab" style={{color:"var(--ink)"}}>คงเหลือ</span>
-        <span className={`val db-mono${review.leftover<0?" down":""}`} style={{fontSize:17}}>{dbNum(review.leftover)}</span>
+        <span className={`val db-mono${review.leftover<0?" down":""}`} style={{fontSize:12.5}}>{dbNum(review.leftover)}</span>
       </div>
       {budgetPct!=null&&(
         <div style={{marginTop:14}}>
@@ -5930,7 +5986,7 @@ function DashGoalCard({data,setPage}){
         <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
       </div>
       <div style={{display:"flex",alignItems:"baseline",gap:10}}>
-        <span className="db-mono" style={{fontSize:26,fontWeight:600,letterSpacing:"-.6px"}}>{Math.round(prog)}%</span>
+        <span className="db-mono" style={{fontSize:18,fontWeight:600,letterSpacing:"-.6px"}}>{Math.round(prog)}%</span>
         {p.measureType==="numeric"&&<span className="db-mono" style={{fontSize:12,color:"var(--ink-5)"}}>{dbNum(projectCurrentValue(p,data))} / {dbNum(p.targetValue||0)}</span>}
       </div>
       <div className="db-track">
@@ -6181,8 +6237,8 @@ function SecretaryDashboard() {
                       {visibleNotes.map(n=>(
                         <div key={n.id} className={`note-card ${n.color}`}>
                           <div className="note-actions">
-                            <button className="note-action-btn" onClick={()=>openEditNote(n)}><Edit3 size={15}/></button>
-                            <button className="note-action-btn" onClick={()=>removeNote(n.id)}><Trash2 size={15}/></button>
+                            <button className="note-action-btn" onClick={()=>openEditNote(n)}><Edit3 size={12}/></button>
+                            <button className="note-action-btn" onClick={()=>removeNote(n.id)}><Trash2 size={12}/></button>
                           </div>
                           {n.text}
                         </div>

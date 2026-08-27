@@ -349,6 +349,48 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   }
 
   /* ───────── จอมือถือ: ห้าม scroll แนวนอน ───────── */
+  /* ───────── ข้อ 24/6: กันสเกล/สีธีมเก่ากลับมา ─────────
+     ตรวจทุกหน้า: ห้ามมีสีม่วงของธีมเดิม และห้ามมีตัวอักษรใหญ่เกินตารางสเกลในธรรมนูญข้อ 32 */
+  console.log('\n[ข้อ 24/6] สเกล + สีทั้งแอปต้องสัมพันธ์กับหน้า Home');
+  // ตัวเลข/หัวข้อที่ตั้งใจให้ใหญ่ (ดูตารางสเกลในข้อ 32) — 24 = เลขกลางวงแหวนโมเมนตัมหน้า Home ที่ ohm อนุมัติแล้ว
+  const ALLOWED_BIG=[15,18,20,22,24,26,30,32,38,40];
+  const scanPage=async(label)=>await p.evaluate((allowed)=>{
+    const purple=(r,g,b)=>b>g+18&&r>g+4&&b>60;
+    const parse=(c)=>{const m=/rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c||"");return m?[+m[1],+m[2],+m[3]]:null;};
+    const root=document.querySelector('.content-main')||document.body;
+    const els=[...root.querySelectorAll('*')].filter(e=>e.offsetParent!==null);
+    const badFs=[],badColor=[];
+    for(const e of els){
+      const cs=getComputedStyle(e);
+      const isIcon=e.tagName==='I'&&/\bfa-/.test(e.className);
+      const cls=(typeof e.className==='string'?e.className:'').trim().split(/\s+/).slice(0,2).join('.');
+      const fs=parseFloat(cs.fontSize);
+      const hasText=[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim());
+      if(!isIcon&&fs>14&&!allowed.includes(fs)&&(hasText||['INPUT','SELECT','BUTTON','TEXTAREA'].includes(e.tagName)))
+        badFs.push(`${fs}px ${e.tagName.toLowerCase()}.${cls}`);
+      for(const prop of ['color','backgroundColor','borderTopColor']){
+        const v=parse(cs[prop]);
+        if(v&&purple(...v)) badColor.push(`${cs[prop]} ${prop} ${e.tagName.toLowerCase()}.${cls}`);
+      }
+    }
+    return {badFs:[...new Set(badFs)],badColor:[...new Set(badColor)]};
+  },allowed=ALLOWED_BIG);
+  for(const [label,click] of [['Home','Home'],['Tracker','Tracker'],['Books','Books']]){
+    await p.locator(`.nav-pill button:has-text("${click}")`).first().click().catch(()=>{});
+    await p.waitForTimeout(1500);
+    const r=await scanPage(label);
+    check(`${label} · ไม่มีสีธีมม่วงหลงเหลือ`,r.badColor.length===0,r.badColor.slice(0,3).join(' | '));
+    check(`${label} · ไม่มีตัวอักษรนอกสเกล`,r.badFs.length===0,r.badFs.slice(0,3).join(' | '));
+  }
+  await p.locator('.nav-pill button:has-text("Finance")').first().click(); await p.waitForTimeout(1500);
+  for(const t of ['Overview','Review','Income','Expenses','Investments','Debts']){
+    await p.locator(`.fin-tab-btn:has-text("${t}")`).first().click().catch(()=>{});
+    await p.waitForTimeout(1800);
+    const r=await scanPage(t);
+    check(`Finance/${t} · ไม่มีสีม่วง + สเกลตรง`,r.badColor.length===0&&r.badFs.length===0,
+      [...r.badColor.slice(0,2),...r.badFs.slice(0,2)].join(' | '));
+  }
+
   console.log('\n[จอมือถือ 390px] ห้ามล้นแนวนอน');
   await p.setViewportSize({width:390,height:844}); await p.waitForTimeout(1200);
   await p.locator('button:has-text("Finance")').first().click().catch(()=>{}); await p.waitForTimeout(1200);
