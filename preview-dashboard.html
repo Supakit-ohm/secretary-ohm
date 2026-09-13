@@ -711,10 +711,11 @@ function projectHealth(p,data){
   const exp=expectedProgress(p);
   const dLeft=daysUntil(p.targetDate);
   if(dLeft!=null&&dLeft<0) return {key:"overdue",label:"เลยกำหนด",color:"#f87171",prog,exp};
-  if(exp==null) return {key:"active",label:"กำลังทำ",color:"#60a5fa",prog};
+  /* ข้อ 24/6: "กำลังทำ"/"ตามแผน" เคยเป็นฟ้า #60a5fa ของธีมม่วง → เขียว accent ของ Dark Emerald */
+  if(exp==null) return {key:"active",label:"กำลังทำ",color:"#10b981",prog};
   const diff=prog-exp;
-  if(diff>=5) return {key:"ahead",label:"เร็วกว่าแผน",color:"#34d399",prog,exp};
-  if(diff>=-8) return {key:"ontrack",label:"ตามแผน",color:"#60a5fa",prog,exp};
+  if(diff>=5) return {key:"ahead",label:"เร็วกว่าแผน",color:"#6ee7b7",prog,exp};
+  if(diff>=-8) return {key:"ontrack",label:"ตามแผน",color:"#10b981",prog,exp};
   return {key:"behind",label:"ช้ากว่าแผน",color:"#fb923c",prog,exp};
 }
 /* ═══ Milestones: หมุดความคืบหน้าต่อโปรเจกต์ ═══ */
@@ -3406,9 +3407,11 @@ const DEBT_TYPES_EXTERNAL=[
   {key:"other",label:"อื่นๆ"},
 ];
 const DEBT_TYPE_LABELS=DEBT_TYPES_EXTERNAL.reduce((a,t)=>{a[t.key]=t.label;return a;},{});
+/* ป้ายชนิดหนี้ — ธีม Dark Emerald: ภายนอก = ส้ม (เงินคนอื่น) · ตัวเอง = ทอง (เงินตัวเอง)
+   เดิม self เป็นฟ้า #38bdf8 ที่ตกค้างจากธีมม่วง (ข้อ 35 ล้างสีนอกธีมทั้งแอป) */
 const DEBT_KIND_STYLE={
-  external:{color:"#fb923c",borderColor:"#4a3320",background:"#33220f"},
-  self:{color:"#38bdf8",borderColor:"#1f3a4a",background:"#0f2833"},
+  external:{color:"var(--orange-soft)",borderColor:"var(--orange)",background:"rgba(251,146,60,.13)"},
+  self:{color:"var(--gold-soft)",borderColor:"var(--gold)",background:"var(--gold-dim)"},
 };
 /* ═══ Net Worth: เงินสด + มูลค่าพอร์ตลงทุน − หนี้คงเหลือ ═══
    แหล่งคำนวณเดียวของทั้งแอป — FinanceInvestmentsTab ก็เรียก 2 ตัวนี้ด้วย อย่าคำนวณซ้ำที่อื่น */
@@ -3530,6 +3533,110 @@ function AddCashAccountModal({onClose,onSave}) {
     </div>
   );
 }
+/* ═══ ข้อ 24/5: โมดัลเพิ่ม/แก้ไขหนี้ — ตัวเดียวใช้ทั้งสองงาน ═══
+   เดิมเป็น "การ์ดฟอร์มเพิ่มหนี้" ใหญ่ค้างหน้าจอ + แก้ไข inline ในตาราง
+   ยุบมาเป็นโมดัลเพราะข้อ 32/2 บังคับให้ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียวต่อหน้า
+   initial = undefined → โหมดเพิ่ม · initial = ค่าเดิม → โหมดแก้ไข */
+function DebtFormModal({initial,expCategories,catDisabled,onClose,onSave}) {
+  const blankForm={kind:"external",name:"",type:"car-loan",principal:"",currentBalance:"",
+    interestRate:"",minPayment:"",dueDay:"",startDate:todayISO(),note:"",linkedExpenseCategory:""};
+  const [form,setForm]=useState(initial||blankForm);
+  const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const onKind=(k)=>setForm(f=>({...f,kind:k,type:k==="self"?"other":(f.type&&f.type!=="other"?f.type:"car-loan")}));
+  const ext=form.kind!=="self";
+  const ready=String(form.name||"").trim().length>0&&nv(form.currentBalance)>0;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal debt-modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head">
+          <span>{initial?"แก้ไขหนี้":"➕ เพิ่มหนี้"}</span>
+          <button className="modal-close" onClick={onClose}><X size={15}/></button>
+        </div>
+        <div className="modal-body">
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">ชนิดหนี้</label>
+              <select className="modal-input" value={form.kind} onChange={e=>onKind(e.target.value)}>
+                {DEBT_KINDS.map(k=><option key={k.key} value={k.key}>{k.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="field-label">ชื่อหนี้ / เจ้าหนี้</label>
+              <input className="modal-input" placeholder={ext?"เช่น ผ่อนรถ Honda":"เช่น ยืมเงินเก็บมาซ่อมบ้าน"}
+                value={form.name} onChange={e=>setF("name",e.target.value)}/>
+            </div>
+          </div>
+          <div className={ext?"debt-row-3":"fin-row-2"}>
+            {ext&&(
+              <div>
+                <label className="field-label">ประเภท</label>
+                <select className="modal-input" value={form.type} onChange={e=>setF("type",e.target.value)}>
+                  {DEBT_TYPES_EXTERNAL.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="field-label">ยอดคงเหลือ</label>
+              <input type="number" className="modal-input db-mono" inputMode="decimal" placeholder="0"
+                value={form.currentBalance} onChange={e=>setF("currentBalance",e.target.value)}/>
+            </div>
+            <div>
+              <label className="field-label">ยอดตั้งต้น (ไม่บังคับ)</label>
+              <input type="number" className="modal-input db-mono" inputMode="decimal" placeholder="0"
+                value={form.principal} onChange={e=>setF("principal",e.target.value)}/>
+            </div>
+          </div>
+          <div className={ext?"debt-row-3":"fin-row-2"}>
+            <div>
+              <label className="field-label">ผ่อนขั้นต่ำ/เดือน (ไม่บังคับ)</label>
+              <input type="number" className="modal-input db-mono" inputMode="decimal" placeholder="0"
+                value={form.minPayment} onChange={e=>setF("minPayment",e.target.value)}/>
+            </div>
+            {ext?(
+              <>
+                <div>
+                  <label className="field-label">ดอกเบี้ย % ต่อปี (ไม่บังคับ)</label>
+                  <input type="number" className="modal-input db-mono" inputMode="decimal" placeholder="0"
+                    value={form.interestRate} onChange={e=>setF("interestRate",e.target.value)}/>
+                </div>
+                <div>
+                  <label className="field-label">วันครบกำหนดในเดือน (1-31)</label>
+                  <input type="number" className="modal-input db-mono" inputMode="numeric" min="1" max="31" placeholder="—"
+                    value={form.dueDay} onChange={e=>setF("dueDay",e.target.value)}/>
+                </div>
+              </>
+            ):(
+              <div>
+                <label className="field-label">วันที่เริ่ม</label>
+                <input type="date" className="modal-input" value={form.startDate||""} onChange={e=>setF("startDate",e.target.value)}/>
+              </div>
+            )}
+          </div>
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">ผูกกับหมวดรายจ่าย (ไม่บังคับ)</label>
+              <select className="modal-input" value={form.linkedExpenseCategory} onChange={e=>setF("linkedExpenseCategory",e.target.value)}>
+                <option value="">— ไม่ผูก —</option>
+                {expCategories.map(c=>(
+                  <option key={c} value={c} disabled={catDisabled(c)}>{c}{catDisabled(c)?" (ผูกกับหนี้อื่นแล้ว)":""}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="field-label">โน้ต (ไม่บังคับ)</label>
+              <input className="modal-input" value={form.note} onChange={e=>setF("note",e.target.value)}/>
+            </div>
+          </div>
+          <div className="db-note">ผูกหมวดรายจ่ายไว้แล้วยังต้องกด “ยืนยันหักยอดคงเหลือ” เองในหน้าหลัก — ระบบไม่หักอัตโนมัติ</div>
+          <button className="modal-btn-save debt-save-btn" disabled={!ready} onClick={()=>ready&&onSave(form)}>
+            {initial?"บันทึกการแก้ไข":"บันทึกหนี้"}
+          </button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
 function FinanceDebtsTab({finance,persist}) {
   const list=(finance.finance.debts||[]).slice().sort((a,b)=>(Number(b.currentBalance)||0)-(Number(a.currentBalance)||0));
   const n=(v)=>{ const x=Number(v); return isFinite(x)?x:0; };
@@ -3565,255 +3672,279 @@ function FinanceDebtsTab({finance,persist}) {
   const totMin=list.reduce((a,d)=>a+n(d.minPayment),0);
   const totAll=totExternal+totSelf;
 
-  /* ── ฟอร์มเพิ่มหนี้ใหม่ ── */
-  const blank={kind:"external",name:"",type:"car-loan",principal:"",currentBalance:"",interestRate:"",minPayment:"",dueDay:"",startDate:todayISO(),note:"",linkedExpenseCategory:""};
-  const [form,setForm]=useState(blank);
-  const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const onKind=(k)=>setForm(f=>({...f,kind:k,type:k==="self"?"other":(f.type||"car-loan")}));
-  const canAdd=form.name.trim()&&n(form.currentBalance)>0;
-  const addDebt=()=>{
-    if(!canAdd) return;
-    const row={
-      id:uid(),kind:form.kind,name:form.name.trim(),type:form.kind==="self"?"other":form.type,
-      principal:form.principal===""?null:n(form.principal),
-      currentBalance:n(form.currentBalance),updatedAt:todayISO(),
-      interestRate:form.kind==="self"||form.interestRate===""?null:n(form.interestRate),
-      minPayment:form.minPayment===""?null:n(form.minPayment),
-      dueDay:form.kind==="self"||form.dueDay===""?null:n(form.dueDay),
-      linkedExpenseCategory:form.linkedExpenseCategory||null,
-      note:form.note.trim(),startDate:form.startDate,source:"manual",
-    };
-    setDebts([...(finance.finance.debts||[]),row]);
-    setForm(blank);
-  };
-
-  /* ── แก้ไข inline (pattern เดียวกับ FinanceInvestmentsTab) ── */
-  const [editId,setEditId]=useState(null);
-  const [draft,setDraft]=useState(null);
-  const startEdit=(d)=>{ setEditId(d.id); setDraft({
+  /* ── ข้อ 24/5: เพิ่ม/แก้ไขผ่าน DebtFormModal ตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า)
+       เดิม = การ์ดฟอร์มใหญ่ค้างหน้าจอ + แก้ไข inline ในตาราง ── */
+  const [modal,setModal]=useState(null);   // null | {mode:"add"} | {mode:"edit",id,initial}
+  const openAdd=()=>setModal({mode:"add"});
+  const openEdit=(d)=>setModal({mode:"edit",id:d.id,initial:{
     kind:d.kind||"external",name:d.name||"",type:d.type||"other",
     principal:d.principal==null?"":d.principal,currentBalance:d.currentBalance==null?"":d.currentBalance,
     interestRate:d.interestRate==null?"":d.interestRate,minPayment:d.minPayment==null?"":d.minPayment,
-    dueDay:d.dueDay==null?"":d.dueDay,note:d.note||"",startDate:d.startDate||"",
+    dueDay:d.dueDay==null?"":d.dueDay,note:d.note||"",startDate:d.startDate||todayISO(),
     linkedExpenseCategory:d.linkedExpenseCategory||"",
-  }); };
-  const cancelEdit=()=>{ setEditId(null); setDraft(null); };
-  const setD=(k,v)=>setDraft(x=>({...x,[k]:v}));
-  const saveEdit=()=>{
-    if(!draft.name.trim()) return;
-    setDebts((finance.finance.debts||[]).map(d=>{
-      if(d.id!==editId) return d;
-      const balChanged=n(draft.currentBalance)!==n(d.currentBalance);
-      return {...d,
-        kind:draft.kind,name:draft.name.trim(),type:draft.kind==="self"?"other":draft.type,
-        principal:draft.principal===""?null:n(draft.principal),
-        currentBalance:n(draft.currentBalance),
-        updatedAt:balChanged?todayISO():(d.updatedAt||todayISO()),
-        interestRate:draft.kind==="self"||draft.interestRate===""?null:n(draft.interestRate),
-        minPayment:draft.minPayment===""?null:n(draft.minPayment),
-        dueDay:draft.kind==="self"||draft.dueDay===""?null:n(draft.dueDay),
-        linkedExpenseCategory:draft.linkedExpenseCategory||null,
-        note:draft.note.trim(),startDate:draft.startDate||null,
-      };
-    }));
-    cancelEdit();
+  }});
+  /* แปลงค่าจากฟอร์มเป็นรูปแบบที่เก็บจริง — ใช้ร่วมกันทั้งเพิ่มและแก้ไข ไม่ให้กฎ null/0 หลุดกัน */
+  const normalizeDebt=(f)=>({
+    kind:f.kind,name:String(f.name||"").trim(),type:f.kind==="self"?"other":f.type,
+    principal:f.principal===""||f.principal==null?null:n(f.principal),
+    currentBalance:n(f.currentBalance),
+    interestRate:f.kind==="self"||f.interestRate===""||f.interestRate==null?null:n(f.interestRate),
+    minPayment:f.minPayment===""||f.minPayment==null?null:n(f.minPayment),
+    dueDay:f.kind==="self"||f.dueDay===""||f.dueDay==null?null:n(f.dueDay),
+    linkedExpenseCategory:f.linkedExpenseCategory||null,
+    note:String(f.note||"").trim(),startDate:f.startDate||null,
+  });
+  const saveDebt=(f)=>{
+    const row=normalizeDebt(f);
+    if(!row.name) return;
+    if(modal&&modal.mode==="edit"){
+      setDebts((finance.finance.debts||[]).map(d=>d.id!==modal.id?d:{...d,...row,
+        updatedAt:n(row.currentBalance)!==n(d.currentBalance)?todayISO():(d.updatedAt||todayISO())}));
+    } else {
+      setDebts([...(finance.finance.debts||[]),{id:uid(),...row,updatedAt:todayISO(),source:"manual"}]);
+    }
+    setModal(null);
   };
 
-  const kindBadge=(k)=>(
-    <span className="exp-csv-badge" style={DEBT_KIND_STYLE[k==="self"?"self":"external"]}>
-      {k==="self"?"หนี้ตัวเอง":"หนี้ภายนอก"}
-    </span>
-  );
+  /* ── ตัวเลขสรุปสำหรับการ์ด bento ── */
+  /* ยอดตั้งต้น: ก้อนไหนไม่ได้กรอกให้ถือว่าเท่ากับยอดคงเหลือ (= ยังไม่ได้ชำระ) ไม่งั้น % ชำระแล้วจะเวอร์ */
+  const totPrincipal=list.reduce((a,d)=>a+(n(d.principal)>0?n(d.principal):n(d.currentBalance)),0);
+  const paid=Math.max(0,totPrincipal-totAll);
+  const paidPct=totPrincipal>0?Math.min(100,(paid/totPrincipal)*100):0;
+  /* รายรับเฉลี่ยต่อเดือน (ไม่เกิน 6 เดือนล่าสุด) — ใช้บอกว่าผ่อนรวมกินรายรับกี่ % */
+  const incByMonth={};
+  (finance.finance.income||[]).forEach(i=>{
+    const m=i.month||monthYearKey(i.date);
+    if(/^\d{4}-\d{2}$/.test(m)) incByMonth[m]=(incByMonth[m]||0)+n(i.amount);
+  });
+  const incMonths=Object.keys(incByMonth).sort().slice(-6);
+  const avgIncome=incMonths.length?incMonths.reduce((a,m)=>a+incByMonth[m],0)/incMonths.length:0;
+  const dsr=avgIncome>0?(totMin/avgIncome)*100:null;
+  /* ครบกำหนดถัดไป — dueDay คือวันในเดือน ถ้าเลยไปแล้วนับเป็นเดือนหน้า (clamp วันสิ้นเดือน เช่น 31 ก.พ.) */
+  const today0=new Date(); today0.setHours(0,0,0,0);
+  const lastOfMonth=(yy,mm)=>new Date(yy,mm+1,0).getDate();
+  const nextDueDate=(d)=>{
+    const day=n(d.dueDay); if(!day) return null;
+    let y=today0.getFullYear(),mo=today0.getMonth();
+    if(today0.getDate()>Math.min(day,lastOfMonth(y,mo))){ mo+=1; if(mo>11){ mo=0; y+=1; } }
+    return new Date(y,mo,Math.min(day,lastOfMonth(y,mo)));
+  };
+  /* แถวในการ์ด "ภาระต่อเดือน" = หนี้ทุกก้อน ไม่ใช่เฉพาะก้อนที่ตั้งวันครบกำหนด
+     (ก้อนที่ยังไม่ตั้งยอดผ่อน/วันครบกำหนดก็ต้องเห็น จะได้รู้ว่ายังกรอกไม่ครบ)
+     เรียงตามวันครบกำหนดที่ใกล้ที่สุดก่อน · ก้อนที่ไม่มีวันครบกำหนดไปท้ายสุด */
+  const dueRows=list.map(d=>{
+    const dt=n(d.dueDay)>0?nextDueDate(d):null;
+    return {d,dt,days:dt?Math.round((dt-today0)/86400000):null};
+  }).sort((a,b)=>(a.days==null?9999:a.days)-(b.days==null?9999:b.days));
+  /* ประมาณการปลดหนี้ — หารยอดคงเหลือด้วยผ่อนขั้นต่ำตรงๆ ไม่คิดดอกเบี้ย (เขียนกำกับไว้ในการ์ด) */
+  const payoff=list.map(d=>{
+    const bal=n(d.currentBalance),mp=n(d.minPayment);
+    return {d,bal,mp,months:mp>0&&bal>0?Math.ceil(bal/mp):null};
+  });
+  const payoffMax=payoff.reduce((a,x)=>Math.max(a,x.months||0),0);
+  const freeDate=payoffMax>0?new Date(today0.getFullYear(),today0.getMonth()+payoffMax,1):null;
+  /* หนี้ที่ผูกหมวดรายจ่ายไว้ — p.rows คือรายจ่ายที่ยังไม่ได้หัก (ต้องกดยืนยันเอง ห้ามหักอัตโนมัติ) */
+  const matchRows=list.map(d=>({d,p:pendingFor(d)})).filter(x=>x.p);
+  const matchReady=matchRows.filter(x=>x.p.rows.length>0);
+  const segs=list.filter(d=>n(d.currentBalance)>0)
+    .map((d,i)=>({key:d.id,label:d.name||"(ไม่มีชื่อ)",value:n(d.currentBalance),color:DB_CAT_COLORS[i%DB_CAT_COLORS.length]}));
 
   return (
-    <div className="fin-section">
-      <div className="fin-stat-row">
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon expense"><TrendingDown size={14}/></div>
-          <div><div className="fin-stat-label">หนี้คงเหลือรวม</div><div className="fin-stat-value" style={{color:"#fb923c"}}>฿{Math.round(totAll).toLocaleString()}</div><div style={{fontSize:11,color:"var(--ink-2)"}}>{list.length} รายการ</div></div>
+    <div className="fin-section fin-page">
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 (38px + margin:0) ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Debts <span>· หนี้สิน</span></h1>
+          <div className="db-hero-line">
+            {list.length} ก้อน · ภายนอก ฿{dbNum(totExternal)} · ตัวเอง ฿{dbNum(totSelf)}
+            {paid>0&&<> · ชำระไปแล้ว {paidPct.toFixed(0)}% ของยอดตั้งต้น</>}
+          </div>
+          {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว */}
+          <button className="db-btn primary inv-add-btn" onClick={openAdd}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon expense"><Users size={14}/></div>
-          <div><div className="fin-stat-label">หนี้ภายนอก</div><div className="fin-stat-value" style={{color:"#fb923c"}}>฿{Math.round(totExternal).toLocaleString()}</div></div>
-        </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon net"><PiggyBank size={14}/></div>
-          <div><div className="fin-stat-label">หนี้ตัวเอง</div><div className="fin-stat-value" style={{color:"#38bdf8"}}>฿{Math.round(totSelf).toLocaleString()}</div></div>
-        </div>
-        <div className="fin-stat-card">
-          <div className="fin-stat-icon active"><CalendarDays size={14}/></div>
-          <div><div className="fin-stat-label">ผ่อนขั้นต่ำรวม/เดือน</div><div className="fin-stat-value">฿{Math.round(totMin).toLocaleString()}</div></div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(totAll)}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> หนี้คงเหลือ</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n gld db-mono">฿{dbShort(totMin)}</div>
+            <div className="l"><span className="db-dot g"/> ผ่อนขั้นต่ำ/เดือน</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n acc db-mono">฿{dbShort(paid)}</div>
+            <div className="l"><span className="db-dot a"/> ชำระไปแล้ว</div>
+          </div>
         </div>
       </div>
 
-      <div className="card" style={{margin:"0 20px 20px"}}>
-        <div className="card-head">เพิ่มหนี้ใหม่</div>
-        <div className="fin-row-2">
-          <div>
-            <label className="field-label">ชนิดหนี้</label>
-            <select className="modal-input" value={form.kind} onChange={e=>onKind(e.target.value)}>
-              {DEBT_KINDS.map(k=><option key={k.key} value={k.key}>{k.label}</option>)}
-            </select>
+      <div className="db-bento">
+        {/* ── การ์ด 1: สัดส่วนหนี้ (โดนัท SVG ชุดเดียวกับหน้า Home ไม่ใช้ Recharts) ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">สัดส่วนหนี้</div><div className="db-note">แยกตามก้อน · เรียงจากมากไปน้อย</div></div>
+            <div className="db-bignum-inline db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(totAll)}</div>
           </div>
-          <div>
-            <label className="field-label">ชื่อหนี้ / เจ้าหนี้</label>
-            <input className="modal-input" placeholder={form.kind==="self"?"เช่น ยืมเงินเก็บมาซ่อมบ้าน":"เช่น ผ่อนรถ Honda"} value={form.name} onChange={e=>setF("name",e.target.value)}/>
-          </div>
-        </div>
-        <div className="fin-row-2">
-          {form.kind!=="self"&&(
-            <div>
-              <label className="field-label">ประเภท</label>
-              <select className="modal-input" value={form.type} onChange={e=>setF("type",e.target.value)}>
-                {DEBT_TYPES_EXTERNAL.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="field-label">ยอดคงเหลือ</label>
-            <input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={form.currentBalance} onChange={e=>setF("currentBalance",e.target.value)}/>
-          </div>
-          {form.kind==="self"&&(
-            <div>
-              <label className="field-label">ยอดตั้งต้น (ไม่บังคับ)</label>
-              <input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={form.principal} onChange={e=>setF("principal",e.target.value)}/>
-            </div>
-          )}
-        </div>
-        {form.kind!=="self"&&(
-          <div className="fin-row-2">
-            <div>
-              <label className="field-label">ยอดตั้งต้น (ไม่บังคับ)</label>
-              <input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={form.principal} onChange={e=>setF("principal",e.target.value)}/>
-            </div>
-            <div>
-              <label className="field-label">ดอกเบี้ย % ต่อปี (ไม่บังคับ)</label>
-              <input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={form.interestRate} onChange={e=>setF("interestRate",e.target.value)}/>
-            </div>
-          </div>
-        )}
-        <div className="fin-row-2">
-          <div>
-            <label className="field-label">ผ่อนขั้นต่ำ/เดือน (ไม่บังคับ)</label>
-            <input type="number" className="modal-input" inputMode="decimal" placeholder="0" value={form.minPayment} onChange={e=>setF("minPayment",e.target.value)}/>
-          </div>
-          {form.kind!=="self"?(
-            <div>
-              <label className="field-label">วันครบกำหนดในเดือน (1-31)</label>
-              <input type="number" className="modal-input" inputMode="numeric" min="1" max="31" placeholder="—" value={form.dueDay} onChange={e=>setF("dueDay",e.target.value)}/>
-            </div>
+          {segs.length===0?(
+            <div className="db-empty">ยังไม่มีหนี้คงเหลือ — กด “เพิ่มข้อมูล” ด้านบนเพื่อบันทึกก้อนแรก</div>
           ):(
-            <div>
-              <label className="field-label">วันที่เริ่ม</label>
-              <input type="date" className="modal-input" value={form.startDate} onChange={e=>setF("startDate",e.target.value)}/>
+            <div className="db-donut-wrap">
+              <DashDonut segs={segs} total={totAll}/>
+              <div className="db-legend">
+                {segs.slice(0,6).map(s=>(
+                  <div key={s.key} className="db-lg">
+                    <i style={{background:s.color}}/>
+                    <span className="debt-lg-name">{s.label}</span>
+                    <b className="db-mono">{Math.round((s.value/totAll)*100)}%</b>
+                  </div>
+                ))}
+                {segs.length>6&&(
+                  <div className="db-lg"><i style={{background:"var(--ink-6)"}}/><span className="debt-lg-name">อีก {segs.length-6} ก้อน</span></div>
+                )}
+              </div>
             </div>
           )}
+          {totPrincipal>0&&(
+            <>
+              <div className="db-track"><div className="db-fill" style={{width:`${paidPct}%`}}/></div>
+              <div className="db-row">
+                <span className="lab">ชำระแล้ว {paidPct.toFixed(0)}% จากยอดตั้งต้นรวม ฿{dbNum(totPrincipal)}</span>
+                <span className="val db-mono up">฿{dbNum(paid)}</span>
+              </div>
+            </>
+          )}
         </div>
-        <div className="fin-row-2">
-          <div>
-            <label className="field-label">ผูกกับหมวดรายจ่าย (ไม่บังคับ)</label>
-            <select className="modal-input" value={form.linkedExpenseCategory} onChange={e=>setF("linkedExpenseCategory",e.target.value)}>
-              <option value="">— ไม่ผูก —</option>
-              {expCategories.map(c=><option key={c} value={c} disabled={!!catDisabled(c,null)}>{c}{catDisabled(c,null)?" (ผูกกับหนี้อื่นแล้ว)":""}</option>)}
-            </select>
+
+        {/* ── การ์ด 2: ภาระต่อเดือน + ครบกำหนดถัดไป ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div>
+              <div className="db-title">ภาระต่อเดือน</div>
+              <div className="db-note">{dsr!=null?`คิดเป็น ${dsr.toFixed(0)}% ของรายรับเฉลี่ย ฿${dbNum(avgIncome)}/เดือน`:"ยังไม่มีข้อมูลรายรับให้เทียบ"}</div>
+            </div>
+            <div className="db-bignum-inline db-mono">฿{dbShort(totMin)}</div>
           </div>
-          <div>
-            <label className="field-label">โน้ต (ไม่บังคับ)</label>
-            <input className="modal-input" value={form.note} onChange={e=>setF("note",e.target.value)}/>
-          </div>
+          {dsr!=null&&(
+            <div className="db-track">
+              <div className="db-fill" style={{width:`${Math.min(100,dsr)}%`,background:dsr>40?"linear-gradient(90deg,var(--orange-deep),var(--orange))":undefined}}/>
+            </div>
+          )}
+          {dueRows.length===0&&<div className="db-empty">ยังไม่มีหนี้ในระบบ</div>}
+          {dueRows.map(({d,days})=>(
+            <div key={d.id} className="db-row">
+              <span className="lab">
+                <i className="db-dot" style={{background:days!=null&&days<=7?"var(--orange)":"var(--ink-5)"}}/>
+                <span className="db-tname">{d.name||"(ไม่มีชื่อ)"}</span>
+              </span>
+              {n(d.minPayment)>0?(
+                <span className="val db-mono">
+                  ฿{dbNum(n(d.minPayment))}
+                  <span className="debt-due-when">{days==null?"ไม่ได้ตั้งวันครบกำหนด":(days===0?"วันนี้":`อีก ${days} วัน`)}</span>
+                </span>
+              ):(
+                <span className="val db-mono debt-dim">ยังไม่ตั้งยอดผ่อน</span>
+              )}
+            </div>
+          ))}
+          {dsr!=null&&dsr>40&&<div className="inv-warn">ผ่อนรวมเกิน 40% ของรายรับเฉลี่ยต่อเดือน — ระวังสภาพคล่อง</div>}
         </div>
-        <button className="icon-btn" disabled={!canAdd} onClick={addDebt} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
+
+        {/* ── การ์ด 3: ประมาณการปลดหนี้ (ข้อ 32/3 พับได้) ── */}
+        <DashCollapse
+          title="ประมาณการปลดหนี้"
+          note={payoffMax>0?`ผ่อนขั้นต่ำต่อเนื่อง ปลอดหนี้ราว ${payoffMax} เดือน (${dbThaiMonth(freeDate)})`:"ยังไม่ได้ตั้งยอดผ่อนขั้นต่ำ"}
+          defaultOpen={payoffMax>0}>
+          <div className="db-note debt-note-top">คำนวณแบบหยาบ = ยอดคงเหลือ ÷ ผ่อนขั้นต่ำ ไม่ได้คิดดอกเบี้ย ใช้ดูลำดับว่าก้อนไหนจะหมดก่อน</div>
+          {payoff.length===0&&<div className="db-empty">ยังไม่มีหนี้ในระบบ</div>}
+          {payoff.map(({d,months})=>(
+            <div key={d.id} className="db-row">
+              <span className="lab"><span className="db-tname">{d.name||"(ไม่มีชื่อ)"}</span></span>
+              <span className={`val db-mono ${months?"":"debt-dim"}`}>{months?`~${months} เดือน`:"ยังไม่ตั้งยอดผ่อน"}</span>
+            </div>
+          ))}
+        </DashCollapse>
+
+        {/* ── การ์ด 4: หักยอดจากรายจ่ายที่ผูกไว้ — ยืนยันเองเสมอ ห้ามหักอัตโนมัติ ── */}
+        <DashCollapse
+          title="หักยอดจากรายจ่ายที่ผูกไว้"
+          note={matchReady.length?`มี ${matchReady.length} ก้อนที่มีรายจ่ายรอหักยอด`:"ต้องกดยืนยันเองทุกครั้ง ไม่หักอัตโนมัติ"}
+          defaultOpen={matchReady.length>0}>
+          {matchRows.length===0&&<div className="db-empty">ยังไม่มีหนี้ก้อนไหนผูกกับหมวดรายจ่าย — ตั้งได้ตอนเพิ่ม/แก้ไขหนี้</div>}
+          {matchRows.map(({d,p})=>(
+            <div key={d.id} className="debt-match">
+              <div className="db-row">
+                <span className="lab">
+                  <span className="db-tname">{d.name||"(ไม่มีชื่อ)"}</span>
+                  <span className="inv-tag">{d.linkedExpenseCategory}</span>
+                </span>
+                <span className="val db-mono">{p.rows.length?`฿${dbNum(p.sum)}`:"—"}</span>
+              </div>
+              {p.rows.length===0?(
+                <div className="db-note debt-note-top">ไม่พบรายจ่ายใหม่ที่ยังไม่ได้หัก</div>
+              ):(
+                <div className="debt-match-act">
+                  <span className="db-note debt-note-top">{p.rows.length} รายการ · {p.from} → {p.to}</span>
+                  <button className="pill-btn primary" onClick={()=>confirmMatch(d)}>ยืนยันหักยอดคงเหลือ</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </DashCollapse>
+
+        {/* ── การ์ด 5: รายการหนี้ — การ์ดต่อก้อน แทนตารางเดิม (ข้อ 32/1) ── */}
+        <DashCollapse span="db-span4" title="รายการหนี้"
+          note={list.length?`${list.length} ก้อน · รวม ฿${dbNum(totAll)}`:"ยังไม่มีรายการ"}
+          defaultOpen={true}>
+          {list.length===0&&<div className="db-empty">ยังไม่มีรายการหนี้ — กด “เพิ่มข้อมูล” ด้านบน</div>}
+          <div className="debt-grid">
+            {list.map(d=>{
+              const bal=n(d.currentBalance),pr=n(d.principal);
+              const pct=pr>0?Math.min(100,Math.max(0,((pr-bal)/pr)*100)):null;
+              return (
+                <div key={d.id} className="debt-item">
+                  <div className="debt-item-head">
+                    <div className="debt-item-name">
+                      <div className="db-tname debt-name">{d.name||"(ไม่มีชื่อ)"}</div>
+                      {d.note&&<div className="db-tsub">{d.note}</div>}
+                    </div>
+                    <div className="inv-item-actions">
+                      <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(d)}><Edit3 size={12}/></button>
+                      <button className="db-chip" title="ลบ" onClick={()=>remove(d.id)}><Trash2 size={12}/></button>
+                    </div>
+                  </div>
+                  <div className="debt-bal db-mono">฿{dbNum(bal)}</div>
+                  {pct!=null&&(
+                    <>
+                      <div className="db-track debt-track"><div className="db-fill" style={{width:`${pct}%`}}/></div>
+                      <div className="db-blab">ชำระแล้ว {pct.toFixed(0)}% จากยอดตั้งต้น ฿{dbNum(pr)}</div>
+                    </>
+                  )}
+                  <div className="inv-list-meta debt-meta">
+                    <span className="inv-tag debt-kind" style={DEBT_KIND_STYLE[d.kind==="self"?"self":"external"]}>
+                      {d.kind==="self"?"หนี้ตัวเอง":"หนี้ภายนอก"}
+                    </span>
+                    {d.kind!=="self"&&<span className="inv-tag">{DEBT_TYPE_LABELS[d.type]||DEBT_TYPE_LABELS.other}</span>}
+                    {n(d.minPayment)>0&&<span className="inv-tag">ผ่อน ฿{dbNum(n(d.minPayment))}/เดือน</span>}
+                    {n(d.interestRate)>0&&<span className="inv-tag">ดอกเบี้ย {d.interestRate}%</span>}
+                    {n(d.dueDay)>0&&<span className="inv-tag">ครบกำหนดทุกวันที่ {d.dueDay}</span>}
+                    {d.linkedExpenseCategory&&<span className="inv-tag">ผูกหมวด {d.linkedExpenseCategory}</span>}
+                    <span className="inv-tag">อัปเดต {d.updatedAt||"—"}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DashCollapse>
       </div>
 
-      <div className="card" style={{margin:"0 20px"}}>
-        <div className="card-head">รายการหนี้</div>
-        {list.length===0&&<div className="empty">ยังไม่มีรายการหนี้ — เพิ่มได้จากฟอร์มด้านบน</div>}
-        {list.length>0&&(
-          <div className="exp-table-wrap">
-            <table className="exp-table">
-              <thead><tr>
-                <th>ชนิด</th><th>ชื่อ</th><th>ประเภท</th>
-                <th className="exp-col-amount">ยอดคงเหลือ</th>
-                <th className="exp-col-amount">ผ่อน/เดือน</th>
-                <th>ดอกเบี้ย</th><th>ครบกำหนด</th><th>อัปเดต</th>
-                <th className="exp-col-action"></th>
-              </tr></thead>
-              <tbody>
-                {list.map(d=>editId===d.id?(
-                  <React.Fragment key={d.id}>
-                  <tr>
-                    <td>
-                      <select className="modal-input" style={{maxWidth:130}} value={draft.kind} onChange={e=>setD("kind",e.target.value)}>
-                        {DEBT_KINDS.map(k=><option key={k.key} value={k.key}>{k.label}</option>)}
-                      </select>
-                    </td>
-                    <td><input className="modal-input" style={{maxWidth:160}} value={draft.name} onChange={e=>setD("name",e.target.value)}/></td>
-                    <td>
-                      {draft.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:(
-                        <select className="modal-input" style={{maxWidth:140}} value={draft.type} onChange={e=>setD("type",e.target.value)}>
-                          {DEBT_TYPES_EXTERNAL.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
-                        </select>
-                      )}
-                    </td>
-                    <td className="exp-col-amount"><input type="number" className="modal-input" style={{maxWidth:120,textAlign:"right"}} inputMode="decimal" value={draft.currentBalance} onChange={e=>setD("currentBalance",e.target.value)}/></td>
-                    <td className="exp-col-amount"><input type="number" className="modal-input" style={{maxWidth:110,textAlign:"right"}} inputMode="decimal" value={draft.minPayment} onChange={e=>setD("minPayment",e.target.value)}/></td>
-                    <td>{draft.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:<input type="number" className="modal-input" style={{maxWidth:80,textAlign:"right"}} inputMode="decimal" value={draft.interestRate} onChange={e=>setD("interestRate",e.target.value)}/>}</td>
-                    <td>{draft.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:<input type="number" className="modal-input" style={{maxWidth:70,textAlign:"right"}} inputMode="numeric" value={draft.dueDay} onChange={e=>setD("dueDay",e.target.value)}/>}</td>
-                    <td><input className="modal-input" style={{maxWidth:150}} placeholder="โน้ต" value={draft.note} onChange={e=>setD("note",e.target.value)}/></td>
-                    <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" style={{color:"#34d399"}} onClick={saveEdit}><Check size={13}/></button>
-                      <button className="del-btn" onClick={cancelEdit}><X size={13}/></button>
-                      <button className="del-btn" onClick={()=>{cancelEdit();remove(d.id);}}><Trash2 size={13}/></button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan={9} style={{paddingTop:0}}>
-                      <label className="field-label">ผูกกับหมวดรายจ่าย</label>
-                      <select className="modal-input" style={{maxWidth:280}} value={draft.linkedExpenseCategory} onChange={e=>setD("linkedExpenseCategory",e.target.value)}>
-                        <option value="">— ไม่ผูก —</option>
-                        {expCategories.map(c=><option key={c} value={c} disabled={!!catDisabled(c,d.id)}>{c}{catDisabled(c,d.id)?" (ผูกกับหนี้อื่นแล้ว)":""}</option>)}
-                      </select>
-                    </td>
-                  </tr>
-                  </React.Fragment>
-                ):(
-                  <React.Fragment key={d.id}>
-                  <tr>
-                    <td>{kindBadge(d.kind)}</td>
-                    <td>{d.name}{d.note?<div style={{fontSize:11,color:"var(--ink-2)"}}>{d.note}</div>:null}</td>
-                    <td>{d.kind==="self"?<span style={{color:"var(--ink-2)"}}>—</span>:<span className="exp-csv-badge" style={{color:"var(--ink-3)",borderColor:"var(--line)",background:"var(--surface-modal)"}}>{DEBT_TYPE_LABELS[d.type]||DEBT_TYPE_LABELS.other}</span>}</td>
-                    <td className="exp-col-amount exp-amount-value" style={{color:"#fb923c"}}>฿{Math.round(n(d.currentBalance)).toLocaleString()}</td>
-                    <td className="exp-col-amount">{d.minPayment?`฿${Math.round(n(d.minPayment)).toLocaleString()}`:"—"}</td>
-                    <td>{d.interestRate?`${d.interestRate}%`:"—"}</td>
-                    <td>{d.dueDay?`ทุกวันที่ ${d.dueDay}`:"—"}</td>
-                    <td style={{fontSize:11,color:"var(--ink-2)"}}>{d.updatedAt||"—"}</td>
-                    <td className="exp-col-action" style={{display:"flex",gap:6}}>
-                      <button className="del-btn" onClick={()=>startEdit(d)}><Edit3 size={12}/></button>
-                      <button className="del-btn" onClick={()=>remove(d.id)}><Trash2 size={13}/></button>
-                    </td>
-                  </tr>
-                  {(()=>{ const p=pendingFor(d); if(!p) return null; return (
-                    <tr>
-                      <td colSpan={9} style={{paddingTop:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11,color:"var(--ink-2)"}}>
-                          <span>ผูกกับหมวด <b style={{color:"var(--ink-3)"}}>{d.linkedExpenseCategory}</b></span>
-                          {p.rows.length===0?<span>— ไม่พบรายจ่ายใหม่ที่ยังไม่ได้หัก</span>:(
-                            <>
-                              <span>พบ {p.rows.length} รายการ รวม ฿{Math.round(p.sum).toLocaleString()} ({p.from} → {p.to})</span>
-                              <button className="pill-btn primary" onClick={()=>confirmMatch(d)}>ยืนยันหักยอดคงเหลือ</button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ); })()}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {modal&&(
+        <DebtFormModal
+          initial={modal.initial}
+          expCategories={expCategories}
+          catDisabled={(c)=>!!catDisabled(c,modal.mode==="edit"?modal.id:null)}
+          onClose={()=>setModal(null)}
+          onSave={saveDebt}/>
+      )}
     </div>
   );
 }
@@ -4898,6 +5029,7 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
   const [showCheckin,setShowCheckin]=useState(false);
   const [showTask,setShowTask]=useState(false);
   const [editTask,setEditTask]=useState(null);
+  const [showAddPicker,setShowAddPicker]=useState(false);
   const tasks=projectTasks(data,project.id);
   const checkins=projectCheckins(data,project.id);
   const prog=projectProgress(project,data);
@@ -4922,49 +5054,127 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
   const chartData=checkins.map(ci=>({date:ci.date.slice(5),value:ci.value,label:ci.date}));
   const openTasks=tasks.filter(t=>!taskDoneOn(t));
   const doneTasks=tasks.filter(t=>taskDoneOn(t));
+  const isNumeric=project.measureType==="numeric";
+  /* การ์ด "งานในโปรเจกต์" เป็นใบสุดท้าย — ให้กว้าง 2 หรือ 4 ช่องตามจำนวนการ์ดก่อนหน้า
+     ไม่งั้นกริดจะเหลือช่องโหว่ครึ่งแถว (กับดักเดิมจากข้อ 33) */
+  const cardsBefore=1+(isNumeric?2:0)+(isNumeric&&checkins.length>0?1:0)+(msList.length>0?1:0);
+  const taskSpan=cardsBefore%2===0?"db-span4":"db-span2";
   return (
     <div>
       {showCheckin&&<CheckinModal project={project} lastValue={curVal} onClose={()=>setShowCheckin(false)} onSave={saveCheckin}/>}
       {showTask&&<TaskModal initial={editTask} projects={data.projects||[]} defaultProjectId={project.id} onClose={()=>{setShowTask(false);setEditTask(null);}} onSave={saveTask}/>}
-      <button className="back-btn" style={{marginBottom:16}} onClick={onBack}><ChevronLeft size={14}/> Back to overview</button>
-      <div className="card" style={{borderTop:`3px solid ${project.color}`}}>
-        <div className="prj-detail-head">
-          <div className="prj-detail-ring">
-            <svg viewBox="0 0 100 100" className="prj-big-ring">
-              <circle cx="50" cy="50" r={r} className="ring-track" strokeWidth="7"/>
-              {exp!=null&&prog<100&&<circle cx="50" cy="50" r={r} stroke="#ffffff26" strokeDasharray={`${(exp/100)*c} ${c}`} fill="none" strokeWidth="7" strokeLinecap="round" transform="rotate(-90 50 50)"/>}
-              <circle cx="50" cy="50" r={r} stroke={project.color} strokeDasharray={c} strokeDashoffset={off} fill="none" strokeWidth="7" strokeLinecap="round" transform="rotate(-90 50 50)" style={{transition:"stroke-dashoffset .5s ease"}}/>
-              <text x="50" y="56" textAnchor="middle" style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:14,fill:"#fff",fontWeight:700}}>{prog}%</text>
-            </svg>
+      <button className="back-btn trk-back" onClick={onBack}><ChevronLeft size={14}/> กลับไปหน้ารวม</button>
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
+      <div className="db-hero">
+        <div className="trk-hero-left">
+          <div className="goal-cat-badge trk-cat" style={{background:`${project.color}22`,color:project.color}}><CatIcon size={12}/> {cat.label}</div>
+          <h1 className="db-hero-title">{project.title}</h1>
+          {project.description&&<div className="db-hero-line">{project.description}</div>}
+          <div className="prj-badge-row">
+            <span className="prj-health-badge" style={{background:`${health.color}22`,color:health.color}}>● {health.label}</span>
+            {project.targetDate&&<span className="prj-meta-badge"><Clock size={13}/> {dLeft<0?`เลยมา ${Math.abs(dLeft)} วัน`:`เหลือ ${dLeft} วัน`}</span>}
+            {exp!=null&&prog<100&&<span className="prj-meta-badge">ควรอยู่ที่ {Math.round(exp)}%</span>}
           </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div className="goal-cat-badge" style={{background:`${project.color}22`,color:project.color,width:"fit-content"}}><CatIcon size={12}/> {cat.label}</div>
-            <div className="prj-detail-title">{project.title}</div>
-            {project.description&&<div className="goal-card-desc" style={{WebkitLineClamp:3}}>{project.description}</div>}
-            <div className="prj-badge-row">
-              <span className="prj-health-badge" style={{background:`${health.color}22`,color:health.color}}>● {health.label}</span>
-              {project.targetDate&&<span className="prj-meta-badge"><Clock size={14}/> {dLeft<0?`เลยมา ${Math.abs(dLeft)} วัน`:`เหลือ ${dLeft} วัน`}</span>}
-              {exp!=null&&prog<100&&<span className="prj-meta-badge">ควรอยู่ที่ {Math.round(exp)}%</span>}
+          <div className="trk-hero-actions">
+            {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของหน้านี้เหลือปุ่มเดียว (เดิมมี Check-in + งานย่อยแยกกันคนละการ์ด) */}
+            <button className="db-btn primary inv-add-btn" onClick={()=>isNumeric?setShowAddPicker(true):(setEditTask(null),setShowTask(true))}>
+              <Plus size={14}/> เพิ่มข้อมูล
+            </button>
+            <button className="db-btn trk-edit-btn" onClick={()=>onEdit(project)}><Edit3 size={12}/> แก้ไขโปรเจกต์</button>
+          </div>
+        </div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:project.color}}>{prog}%</div>
+            <div className="l"><span className="db-dot" style={{background:project.color}}/> ความคืบหน้า</div>
+          </div>
+          {isNumeric?(
+            <div className="db-bignum">
+              <div className="n gld db-mono">{dbShort(curVal)}</div>
+              <div className="l"><span className="db-dot g"/> จาก {dbShort(project.targetValue||0)} {project.unit}</div>
             </div>
-          </div>
-          <button className="text-btn" onClick={()=>onEdit(project)}><Edit3 size={12}/> แก้ไข</button>
+          ):(
+            <div className="db-bignum">
+              <div className="n gld db-mono">{doneTasks.length}<span className="trk-of">/{tasks.length}</span></div>
+              <div className="l"><span className="db-dot g"/> งานที่เสร็จแล้ว</div>
+            </div>
+          )}
+          {msList.length>0&&(
+            <div className="db-bignum">
+              <div className="n acc db-mono">{msDone}<span className="trk-of">/{msList.length}</span></div>
+              <div className="l"><span className="db-dot a"/> หมุดที่ถึงแล้ว</div>
+            </div>
+          )}
         </div>
       </div>
-      {project.measureType==="numeric"&&(
-        <>
-          <div className="prj-stat-row">
-            <div className="prj-stat"><div className="prj-stat-label">Current</div><div className="prj-stat-value" style={{color:project.color}}>{curVal.toLocaleString()}</div><div className="prj-stat-unit">/ {(project.targetValue||0).toLocaleString()} {project.unit}</div></div>
-            <div className="prj-stat"><div className="prj-stat-label">Remaining</div><div className="prj-stat-value">{Math.max(0,(project.targetValue||0)-curVal).toLocaleString()}</div><div className="prj-stat-unit">{project.unit}</div></div>
-            <div className="prj-stat"><div className="prj-stat-label">Velocity</div><div className="prj-stat-value" style={{color:vel&&vel.perWeek>0?"#34d399":"var(--ink-5)"}}>{vel?`${Math.round(vel.perWeek).toLocaleString()}`:"—"}</div><div className="prj-stat-unit">{project.unit}/สัปดาห์</div></div>
-            <div className="prj-stat"><div className="prj-stat-label">Projected finish</div><div className="prj-stat-value" style={{fontSize:13,color:vel&&vel.projectedDate&&project.targetDate&&vel.projectedDate>project.targetDate?"#fb923c":"#60a5fa"}}>{vel&&vel.projectedDate?thaiDate(vel.projectedDate).replace(/^\S+\s/,""):"—"}</div><div className="prj-stat-unit">{vel&&vel.projectedDate&&project.targetDate?(vel.projectedDate>project.targetDate?"ช้ากว่ากำหนด":"ทันกำหนด"):"ต้อง check-in ≥2 ครั้ง"}</div></div>
+
+      <div className="db-bento">
+        {/* ── การ์ดความคืบหน้า: วงแหวน + เส้นจางบอกว่า "ควรอยู่ที่เท่าไร" ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">ความคืบหน้า</div><div className="db-note">{exp!=null&&prog<100?`ตามแผนควรอยู่ที่ ${Math.round(exp)}% (วงจางด้านใน)`:"วัดจาก"+(isNumeric?" ค่าที่ check-in":project.measureType==="tasks"?" งานย่อยที่เสร็จ":" ค่าที่กรอกเอง")}</div></div>
           </div>
-          <div className="card">
-            <div className="card-head">Progress Chart
-              <div className="card-head-right"><button className="quick-capture-btn" style={{fontSize:11.5,padding:"9px 15px"}} onClick={()=>setShowCheckin(true)}><Plus size={12}/> Check-in</button></div>
+          <div className="trk-ring-wrap">
+            <div className="prj-detail-ring">
+              <svg viewBox="0 0 100 100" className="prj-big-ring">
+                <circle cx="50" cy="50" r={r} className="ring-track" strokeWidth="7"/>
+                {exp!=null&&prog<100&&<circle cx="50" cy="50" r={r} stroke="#ffffff26" strokeDasharray={`${(exp/100)*c} ${c}`} fill="none" strokeWidth="7" strokeLinecap="round" transform="rotate(-90 50 50)"/>}
+                <circle cx="50" cy="50" r={r} stroke={project.color} strokeDasharray={c} strokeDashoffset={off} fill="none" strokeWidth="7" strokeLinecap="round" transform="rotate(-90 50 50)" style={{transition:"stroke-dashoffset .5s ease"}}/>
+                <text x="50" y="56" textAnchor="middle" className="trk-ring-text">{prog}%</text>
+              </svg>
             </div>
-            {chartData.length===0&&<div className="empty" style={{textAlign:"center",padding:30}}>ยังไม่มีข้อมูล กด Check-in เพื่อบันทึกครั้งแรก</div>}
+            <div className="trk-ring-side">
+              {project.startDate&&<div className="db-row"><span className="lab">เริ่ม</span><span className="val db-mono">{thaiDate(project.startDate)}</span></div>}
+              {project.targetDate&&<div className="db-row"><span className="lab">กำหนดเสร็จ</span><span className="val db-mono">{thaiDate(project.targetDate)}</span></div>}
+              <div className="db-row"><span className="lab">สถานะ</span><span className="val" style={{color:health.color}}>{health.label}</span></div>
+            </div>
+          </div>
+          {project.measureType==="manual"&&(
+            <div className="trk-manual">
+              <div className="db-note trk-manual-lab">เลื่อนเพื่ออัปเดตความคืบหน้าเอง</div>
+              <div className="trk-manual-row">
+                <input type="range" min="0" max="100" value={project.manualValue||0}
+                  onChange={e=>persist({...data,projects:data.projects.map(p=>p.id===project.id?{...p,manualValue:Number(e.target.value)}:p)})}/>
+                <span className="trk-manual-val db-mono" style={{color:project.color}}>{project.manualValue||0}%</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isNumeric&&(
+          <div className="db-card db-span2">
+            <div className="db-head">
+              <div><div className="db-title">ตัวเลขสำคัญ</div><div className="db-note">คำนวณจากประวัติ check-in {checkins.length} ครั้ง</div></div>
+              <div className="db-bignum-inline db-mono">{dbShort(Math.max(0,(project.targetValue||0)-curVal))}<span> เหลือ</span></div>
+            </div>
+            <div className="db-row"><span className="lab">ค่าปัจจุบัน</span><span className="val db-mono" style={{color:project.color}}>{curVal.toLocaleString()} {project.unit}</span></div>
+            <div className="db-row"><span className="lab">เหลืออีก</span><span className="val db-mono">{Math.max(0,(project.targetValue||0)-curVal).toLocaleString()} {project.unit}</span></div>
+            <div className="db-row">
+              <span className="lab">ความเร็วเฉลี่ย</span>
+              <span className={`val db-mono ${vel&&vel.perWeek>0?"up":"debt-dim"}`}>{vel?`${Math.round(vel.perWeek).toLocaleString()} ${project.unit||""}/สัปดาห์`:"ต้อง check-in ≥2 ครั้ง"}</span>
+            </div>
+            <div className="db-row">
+              <span className="lab">คาดว่าเสร็จ</span>
+              <span className="val db-mono" style={{color:vel&&vel.projectedDate&&project.targetDate&&vel.projectedDate>project.targetDate?"var(--orange)":undefined}}>
+                {vel&&vel.projectedDate?thaiDate(vel.projectedDate):"—"}
+              </span>
+            </div>
+            {vel&&vel.projectedDate&&project.targetDate&&(
+              <div className={`inv-warn ${vel.projectedDate>project.targetDate?"danger":""}`}>
+                {vel.projectedDate>project.targetDate?"ที่ความเร็วนี้จะเสร็จช้ากว่ากำหนด — ต้องเร่งหรือเลื่อนกำหนด":"ที่ความเร็วนี้เสร็จทันกำหนด"}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isNumeric&&(
+          <div className="db-card db-span2">
+            <div className="db-head">
+              <div><div className="db-title">กราฟความคืบหน้า</div><div className="db-note">ค่าที่บันทึกไว้แต่ละครั้ง · เส้นประคือเป้าหมาย</div></div>
+            </div>
+            {chartData.length===0&&<div className="db-empty">ยังไม่มีข้อมูล — กด “เพิ่มข้อมูล” ด้านบนแล้วเลือกบันทึกความคืบหน้า</div>}
             {chartData.length>0&&(
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={chartData} margin={{top:5,right:12,left:0,bottom:5}}>
                   <defs><linearGradient id={`grad-${project.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={project.color} stopOpacity={0.5}/><stop offset="100%" stopColor={project.color} stopOpacity={0}/></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#274038" vertical={false}/>
@@ -4977,77 +5187,86 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
               </ResponsiveContainer>
             )}
           </div>
-          {checkins.length>0&&(
-            <div className="card">
-              <div className="card-head">Check-in History ({checkins.length})</div>
-              <div className="exp-table-wrap">
-                <table className="exp-table">
-                  <thead><tr><th>Date</th><th className="exp-col-amount">Value</th><th className="exp-col-amount">Change</th><th>Note</th><th className="exp-col-action"></th></tr></thead>
-                  <tbody>
-                    {checkins.slice().reverse().map((ci,i,arr)=>{
-                      const prev=arr[i+1]; const diff=prev?ci.value-prev.value:null;
-                      return (
-                        <tr key={ci.id}>
-                          <td className="exp-col-date">{ci.date}</td>
-                          <td className="exp-col-amount" style={{fontFamily:"'IBM Plex Mono',monospace",color:project.color,fontWeight:600}}>{ci.value.toLocaleString()}</td>
-                          <td className="exp-col-amount" style={{fontFamily:"'IBM Plex Mono',monospace",color:diff==null?"var(--ink-6)":diff>=0?"#34d399":"#fb923c"}}>{diff==null?"—":`${diff>=0?"+":""}${diff.toLocaleString()}`}</td>
-                          <td className="exp-col-memo">{ci.note||"—"}</td>
-                          <td className="exp-col-action"><button className="del-btn" onClick={()=>delCheckin(ci.id)}><Trash2 size={12}/></button></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+        )}
+
+        {msList.length>0&&(
+          <DashCollapse title="หมุดความคืบหน้า" note={`ถึงแล้ว ${msDone} จาก ${msList.length} หมุด`} defaultOpen={true}>
+            <div className="prj-bar ms-track">
+              <div className="prj-bar-fill" style={{width:`${prog}%`,background:project.color}}/>
+              {msList.map(m=>(
+                <div key={m.id} className={`prj-bar-ms ${prog>=Number(m.pct)?"hit":""}`} style={{left:`${Math.min(100,Number(m.pct))}%`,"--goal-color":project.color}} title={`${milestoneLabel(m)} · ${m.pct}%`}/>
+              ))}
             </div>
-          )}
-        </>
-      )}
-      {project.measureType==="manual"&&(
-        <div className="card">
-          <div className="card-head">Update Progress</div>
-          <div style={{display:"flex",alignItems:"center",gap:16}}>
-            <input type="range" min="0" max="100" value={project.manualValue||0} onChange={e=>persist({...data,projects:data.projects.map(p=>p.id===project.id?{...p,manualValue:Number(e.target.value)}:p)})} style={{flex:1}}/>
-            <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:project.color,minWidth:70,textAlign:"right"}}>{project.manualValue||0}%</span>
-          </div>
-        </div>
-      )}
-      {msList.length>0&&(
-        <div className="card">
-          <div className="card-head"><Flag size={14}/> หมุดความคืบหน้า ({msDone}/{msList.length})</div>
-          <div className="prj-bar ms-track">
-            <div className="prj-bar-fill" style={{width:`${prog}%`,background:project.color}}/>
-            {msList.map(m=>(
-              <div key={m.id} className={`prj-bar-ms ${prog>=Number(m.pct)?"hit":""}`} style={{left:`${Math.min(100,Number(m.pct))}%`,"--goal-color":project.color}} title={`${milestoneLabel(m)} · ${m.pct}%`}/>
-            ))}
-          </div>
-          <div className="ms-list">
-            {msList.map(m=>{
-              const hit=!!m.reachedAt; const vt=milestoneValueText(project,m.pct);
-              return (
-                <div key={m.id} className={`ms-item ${hit?"hit":""}`}>
-                  <div className="ms-item-dot" style={hit?{background:project.color,borderColor:project.color,color:"var(--bg-1)"}:null}>{hit?<Check size={13}/>:null}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div className="ms-item-title">{milestoneLabel(m)}</div>
-                    <div className="ms-item-sub">{m.pct}%{vt?` · ${vt}`:""}</div>
+            <div className="ms-list">
+              {msList.map(m=>{
+                const hit=!!m.reachedAt; const vt=milestoneValueText(project,m.pct);
+                return (
+                  <div key={m.id} className={`ms-item ${hit?"hit":""}`}>
+                    <div className="ms-item-dot" style={hit?{background:project.color,borderColor:project.color,color:"var(--bg-1)"}:null}>{hit?<Check size={13}/>:null}</div>
+                    <div className="ms-item-main">
+                      <div className="ms-item-title">{milestoneLabel(m)}</div>
+                      <div className="ms-item-sub">{m.pct}%{vt?` · ${vt}`:""}</div>
+                    </div>
+                    <div className="ms-item-right" style={hit?{color:project.color}:null}>{hit?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:`อีก ${Math.max(0,Math.ceil(Number(m.pct)-prog))}%`}</div>
                   </div>
-                  <div className="ms-item-right" style={hit?{color:project.color}:null}>{hit?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:`อีก ${Math.max(0,Math.ceil(Number(m.pct)-prog))}%`}</div>
+                );
+              })}
+            </div>
+          </DashCollapse>
+        )}
+
+        {isNumeric&&checkins.length>0&&(
+          <DashCollapse title="ประวัติ Check-in" note={`${checkins.length} ครั้ง · ล่าสุด ${checkins[checkins.length-1].date}`} defaultOpen={false}>
+            {checkins.slice().reverse().map((ci,i,arr)=>{
+              const prev=arr[i+1]; const diff=prev?ci.value-prev.value:null;
+              return (
+                <div key={ci.id} className="db-row trk-ci-row">
+                  <span className="lab">
+                    <span className="db-tname">{thaiDate(ci.date)}</span>
+                    {ci.note&&<span className="inv-tag">{ci.note}</span>}
+                  </span>
+                  <span className="trk-ci-right">
+                    <span className="val db-mono" style={{color:project.color}}>{ci.value.toLocaleString()}</span>
+                    <span className={`db-mono trk-ci-diff ${diff==null?"none":diff>=0?"up":"down"}`}>{diff==null?"—":`${diff>=0?"+":""}${diff.toLocaleString()}`}</span>
+                    <button className="db-chip" title="ลบ check-in นี้" onClick={()=>delCheckin(ci.id)}><Trash2 size={12}/></button>
+                  </span>
                 </div>
               );
             })}
+          </DashCollapse>
+        )}
+
+        <DashCollapse span={taskSpan} title="งานในโปรเจกต์"
+          note={tasks.length?`เสร็จแล้ว ${doneTasks.length} จาก ${tasks.length} งาน`:"ยังไม่มีงานย่อย"}
+          defaultOpen={true}>
+          {tasks.length===0&&<div className="db-empty">ยังไม่มีงาน — กด “เพิ่มข้อมูล” ด้านบนเพื่อเพิ่มงานย่อย</div>}
+          {openTasks.map(t=><TaskRow key={t.id} task={t} onToggle={toggleTask} onEdit={tk=>{setEditTask(tk);setShowTask(true);}} onDelete={delTask}/>)}
+          {doneTasks.length>0&&<div className="trk-section-label">เสร็จแล้ว</div>}
+          {doneTasks.map(t=><TaskRow key={t.id} task={t} onToggle={toggleTask} onEdit={tk=>{setEditTask(tk);setShowTask(true);}} onDelete={delTask}/>)}
+        </DashCollapse>
+      </div>
+
+      {showAddPicker&&(
+        <div className="modal-backdrop" onClick={()=>setShowAddPicker(false)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-head"><span>➕ เพิ่มข้อมูลในโปรเจกต์</span><button className="modal-close" onClick={()=>setShowAddPicker(false)}><X size={15}/></button></div>
+            <div className="modal-body">
+              <div className="quick-type-row inv-pick">
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setShowCheckin(true);}}>
+                  <TrendingUp size={13}/><span>บันทึกความคืบหน้า</span>
+                </button>
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditTask(null);setShowTask(true);}}>
+                  <ListChecks size={13}/><span>งานย่อย</span>
+                </button>
+              </div>
+              <div className="db-note trk-pick-note">
+                “บันทึกความคืบหน้า” = ค่าล่าสุดของตัวเลขที่วัด (check-in) ใช้คำนวณความเร็วและวันที่คาดว่าเสร็จ
+              </div>
+            </div>
+            <div className="modal-foot"><button className="modal-btn-cancel" onClick={()=>setShowAddPicker(false)}>ยกเลิก</button></div>
           </div>
         </div>
       )}
-      <div className="card">
-        <div className="card-head">
-          <ListChecks size={14}/> Project Tasks ({doneTasks.length}/{tasks.length})
-          <div className="card-head-right"><button className="icon-btn" onClick={()=>{setEditTask(null);setShowTask(true);}}><Plus size={14}/></button></div>
-        </div>
-        {tasks.length===0&&<div className="empty">ยังไม่มีงาน กด + เพื่อเพิ่มงานย่อย</div>}
-        {openTasks.map(t=><TaskRow key={t.id} task={t} onToggle={toggleTask} onEdit={tk=>{setEditTask(tk);setShowTask(true);}} onDelete={delTask}/>)}
-        {doneTasks.length>0&&<div className="trk-section-label">Completed</div>}
-        {doneTasks.map(t=><TaskRow key={t.id} task={t} onToggle={toggleTask} onEdit={tk=>{setEditTask(tk);setShowTask(true);}} onDelete={delTask}/>)}
-      </div>
     </div>
   );
 }
@@ -5092,6 +5311,15 @@ function ProjectCard({project,data,onOpen}) {
     </button>
   );
 }
+/* ═══ ข้อ 24/6: หน้า Tracker เป็น bento ตามธรรมนูญข้อ 32 ═══
+   สถานะโปรเจกต์ 5 กลุ่ม — สีเป็น hex ไม่ใช่ var() เพราะ DashDonut ยัดลง SVG stroke */
+const TRK_BUCKETS=[
+  {key:"overdue",label:"เลยกำหนด",color:"#f87171"},
+  {key:"behind",label:"ช้ากว่าแผน",color:"#fb923c"},
+  {key:"ontrack",label:"ตามแผน",color:"#10b981"},
+  {key:"done",label:"สำเร็จแล้ว",color:"#6ee7b7"},
+  {key:"paused",label:"พักไว้",color:"#4d7f6c"},
+];
 function TodayPanel({data,persist,onOpenProject,onAddTask,onEditTask}) {
   const tasks=data.tasks||[];
   const projById={}; (data.projects||[]).forEach(p=>projById[p.id]=p);
@@ -5113,20 +5341,18 @@ function TodayPanel({data,persist,onOpenProject,onAddTask,onEditTask}) {
       {list.map(t=><TaskRow key={t.id} task={t} project={projById[t.projectId]} showProject onToggle={toggleTask} onEdit={onEditTask} onDelete={delTask}/>)}
     </>
   );
+  /* ปุ่ม + ในหัวการ์ดถูกถอดออก — ปุ่มเพิ่มข้อมูลของหน้าเหลือปุ่มเดียวในฮีโร่ (ข้อ 32/2) */
   return (
-    <div className="card">
-      <div className="card-head">
-        <ListTodo size={14}/> Today
-        <div className="card-head-right">
-          <span className="trk-today-pct">{doneCount}/{todayList.length}</span>
-          <button className="icon-btn" onClick={onAddTask}><Plus size={14}/></button>
-        </div>
+    <div className="db-card db-span2">
+      <div className="db-head">
+        <div><div className="db-title">งานวันนี้</div><div className="db-note">{thaiDate(todayISO())}</div></div>
+        <div className="db-bignum-inline db-mono">{doneCount}<span>/{todayList.length}</span></div>
       </div>
-      <div className="trk-today-bar"><div className="trk-today-bar-fill" style={{width:`${pct}%`}}/></div>
-      {todayList.length===0&&<div className="empty">ไม่มีงานค้างวันนี้ 🎉 กด + เพื่อเพิ่มงาน</div>}
-      {group("⚠️ Overdue",overdue)}
-      {group("📅 Due today",dueToday)}
-      {group("🔁 Recurring",recurring)}
+      <div className="db-track trk-today-track"><div className="db-fill" style={{width:`${pct}%`}}/></div>
+      {todayList.length===0&&<div className="db-empty">ไม่มีงานค้างวันนี้ 🎉 กด “เพิ่มข้อมูล” ด้านบนถ้าอยากเพิ่มงาน</div>}
+      {group("⚠️ เลยกำหนด",overdue)}
+      {group("📅 ครบกำหนดวันนี้",dueToday)}
+      {group("🔁 งานประจำ",recurring)}
     </div>
   );
 }
@@ -5136,7 +5362,10 @@ function TrackerPage({data,persist}) {
   const [editProj,setEditProj]=useState(null);
   const [showTaskModal,setShowTaskModal]=useState(false);
   const [editTask,setEditTask]=useState(null);
+  const [showAddPicker,setShowAddPicker]=useState(false);
   const [filter,setFilter]=useState("active");
+  /* ต้องเรียก hook ก่อน early return ของหน้ารายละเอียดโปรเจกต์ ไม่งั้นผิด rules of hooks */
+  const rl=useRowLimit(6);
   const projects=data.projects||[];
   const openProject=projects.find(p=>p.id===openId);
   const saveProject=(p)=>{
@@ -5155,10 +5384,10 @@ function TrackerPage({data,persist}) {
     setOpenId(null);
   };
   if(openProject) return (
-    <div className="page-content">
+    <div className="page-content trk-page">
       {showProjModal&&<ProjectModal initial={editProj} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
       <ProjectDetail project={openProject} data={data} persist={persist} onBack={()=>setOpenId(null)} onEdit={p=>{setEditProj(p);setShowProjModal(true);}}/>
-      <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+      <div className="trk-del-row">
         <button className="del-txt-btn" onClick={()=>delProject(openProject.id)}><Trash2 size={12}/> ลบโปรเจกต์นี้</button>
       </div>
     </div>
@@ -5170,41 +5399,122 @@ function TrackerPage({data,persist}) {
   let shown=filter==="active"?activeList:filter==="done"?doneList:filter==="behind"?behindList:withProg;
   const rank={high:0,medium:1,low:2};
   shown=shown.slice().sort((a,b)=>(rank[a.priority]??1)-(rank[b.priority]??1));
+  /* สถานะโปรเจกต์ — ยุบ health 7 แบบเป็น 5 กลุ่มที่ "ต้องทำอะไรต่อ" ต่างกันจริง
+     สีเป็น hex เพราะ DashDonut ยัดลง SVG stroke (presentation attribute ใช้ var() ไม่ได้ — ข้อ 35) */
+  const bucketOf=(h)=>(h.key==="overdue"||h.key==="behind"||h.key==="done"||h.key==="paused")?h.key:"ontrack";
+  const bucketCount={};
+  withProg.forEach(p=>{ const b=bucketOf(p._health); bucketCount[b]=(bucketCount[b]||0)+1; });
+  const hSegs=TRK_BUCKETS.filter(b=>bucketCount[b.key]>0)
+    .map(b=>({key:b.key,label:b.label,color:b.color,value:bucketCount[b.key]}));
+  const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
+  const todayDone=todayTasks.filter(t=>taskDoneOn(t)).length;
+  const avgProg=Math.round(overallProgressNow(data));
+  const nextDeadline=withProg.filter(p=>p._prog<100&&p.targetDate)
+    .map(p=>({p,d:daysUntil(p.targetDate)})).sort((a,b)=>a.d-b.d)[0];
+  const shownLimited=shown.slice(0,rl.limit);
   return (
-    <div className="page-content">
+    <div className="page-content trk-page">
       {showProjModal&&<ProjectModal initial={editProj} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
       {showTaskModal&&<TaskModal initial={editTask} projects={projects} onClose={()=>{setShowTaskModal(false);setEditTask(null);}} onSave={saveTask}/>}
-      <div className="goal-stat-row">
-        <div className="goal-stat-card"><div className="goal-stat-icon all"><Target size={14}/></div><div><div className="goal-stat-label">Total</div><div className="goal-stat-value">{projects.length}</div></div></div>
-        <div className="goal-stat-card"><div className="goal-stat-icon active"><Zap size={14}/></div><div><div className="goal-stat-label">Active</div><div className="goal-stat-value">{activeList.length}</div></div></div>
-        <div className="goal-stat-card"><div className="goal-stat-icon done"><Check size={14}/></div><div><div className="goal-stat-label">Completed</div><div className="goal-stat-value">{doneList.length}</div></div></div>
-        <div className="goal-stat-card"><div className="goal-stat-icon soon"><AlertCircle size={14}/></div><div><div className="goal-stat-label">Behind</div><div className="goal-stat-value">{behindList.length}</div></div></div>
-      </div>
-      <div className="tracker-split">
-        <div className="tracker-col-today">
-          <TodayPanel data={data} persist={persist} onOpenProject={setOpenId} onAddTask={()=>{setEditTask(null);setShowTaskModal(true);}} onEditTask={t=>{setEditTask(t);setShowTaskModal(true);}}/>
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Tracker <span>· โปรเจกต์และงาน</span></h1>
+          <div className="db-hero-line">
+            {projects.length} โปรเจกต์ · กำลังทำ {activeList.length} · สำเร็จ {doneList.length}
+            {nextDeadline&&<> · ใกล้ครบกำหนดสุด “{nextDeadline.p.title}” {nextDeadline.d<0?`เลยมา ${Math.abs(nextDeadline.d)} วัน`:`อีก ${nextDeadline.d} วัน`}</>}
+          </div>
+          <div className="fin-range">
+            <button className={`fin-range-btn ${filter==="active"?"active":""}`} onClick={()=>setFilter("active")}>กำลังทำ</button>
+            <button className={`fin-range-btn ${filter==="behind"?"active":""}`} onClick={()=>setFilter("behind")}>ต้องเร่ง</button>
+            <button className={`fin-range-btn ${filter==="done"?"active":""}`} onClick={()=>setFilter("done")}>สำเร็จแล้ว</button>
+            <button className={`fin-range-btn ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>ทั้งหมด</button>
+          </div>
+          {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว (เดิมมี + ในหัวการ์ด 2 จุด) */}
+          <button className="db-btn primary inv-add-btn" onClick={()=>setShowAddPicker(true)}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
-        <div className="tracker-col-projects">
-          <div className="card">
-            <div className="card-head">
-              <Target size={14}/> Projects
-              <div className="card-head-right">
-                <div className="goal-filter-pills">
-                  <button className={`goal-filter-pill ${filter==="active"?"active":""}`} onClick={()=>setFilter("active")}>Active</button>
-                  <button className={`goal-filter-pill ${filter==="behind"?"active":""}`} onClick={()=>setFilter("behind")}>Behind</button>
-                  <button className={`goal-filter-pill ${filter==="done"?"active":""}`} onClick={()=>setFilter("done")}>Done</button>
-                  <button className={`goal-filter-pill ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>All</button>
-                </div>
-                <button className="icon-btn" onClick={()=>{setEditProj(null);setShowProjModal(true);}}><Plus size={14}/></button>
-              </div>
-            </div>
-            {shown.length===0&&<div className="empty" style={{padding:"24px 0",textAlign:"center"}}>ไม่มีโปรเจกต์ในตัวกรองนี้ กด + เพื่อสร้าง</div>}
-            <div className="prj-grid">
-              {shown.map(p=><ProjectCard key={p.id} project={p} data={data} onOpen={setOpenId}/>)}
-            </div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n acc db-mono">{avgProg}%</div>
+            <div className="l"><span className="db-dot a"/> ความคืบหน้าเฉลี่ย</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n gld db-mono">{activeList.length}</div>
+            <div className="l"><span className="db-dot g"/> โปรเจกต์ที่ทำอยู่</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n db-mono">{todayDone}<span className="trk-of">/{todayTasks.length}</span></div>
+            <div className="l"><span className="db-dot"/> งานวันนี้</div>
           </div>
         </div>
       </div>
+
+      <div className="db-bento">
+        <TodayPanel data={data} persist={persist} onOpenProject={setOpenId} onAddTask={()=>{setEditTask(null);setShowTaskModal(true);}} onEditTask={t=>{setEditTask(t);setShowTaskModal(true);}}/>
+
+        {/* ── การ์ดสถานะโปรเจกต์ — กด legend เพื่อกรองการ์ดด้านล่าง ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">สถานะโปรเจกต์</div><div className="db-note">กดที่สถานะเพื่อกรองรายการด้านล่าง</div></div>
+            <div className="db-bignum-inline db-mono">{projects.length}<span> โปรเจกต์</span></div>
+          </div>
+          {hSegs.length===0?(
+            <div className="db-empty">ยังไม่มีโปรเจกต์ — กด “เพิ่มข้อมูล” ด้านบนเพื่อสร้างอันแรก</div>
+          ):(
+            <div className="db-donut-wrap">
+              <DashDonut segs={hSegs} total={withProg.length}/>
+              <div className="db-legend fin-legend-click">
+                {hSegs.map(s=>(
+                  <div key={s.key} className={`db-lg fin-lg-btn ${(filter==="behind"&&(s.key==="behind"||s.key==="overdue"))||(filter==="done"&&s.key==="done")?"on":""}`}
+                    onClick={()=>setFilter(s.key==="done"?"done":(s.key==="behind"||s.key==="overdue")?"behind":"all")}>
+                    <i style={{background:s.color}}/>
+                    <span className="debt-lg-name">{s.label}</span>
+                    <b className="db-mono">{s.value}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="db-track"><div className="db-fill" style={{width:`${avgProg}%`}}/></div>
+          <div className="db-row">
+            <span className="lab">ความคืบหน้าเฉลี่ยของโปรเจกต์ที่ยังไม่เก็บเข้าคลัง</span>
+            <span className="val db-mono">{avgProg}%</span>
+          </div>
+        </div>
+
+        {/* ── การ์ดโปรเจกต์ — .prj-grid เดิม ห่อด้วย DashCollapse + ปุ่ม "อีก X รายการ" (ข้อ 32/3) ── */}
+        <DashCollapse span="db-span4" title="โปรเจกต์"
+          note={shown.length?`${shown.length} รายการในตัวกรองนี้`:"ไม่มีโปรเจกต์ในตัวกรองนี้"}
+          defaultOpen={true}>
+          {shown.length===0&&<div className="db-empty">ไม่มีโปรเจกต์ในตัวกรองนี้ — กด “เพิ่มข้อมูล” ด้านบนเพื่อสร้าง</div>}
+          <div className="prj-grid">
+            {shownLimited.map(p=><ProjectCard key={p.id} project={p} data={data} onOpen={setOpenId}/>)}
+          </div>
+          <ShowMoreRow rl={rl} total={shown.length}/>
+        </DashCollapse>
+      </div>
+
+      {showAddPicker&&(
+        <div className="modal-backdrop" onClick={()=>setShowAddPicker(false)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-head"><span>➕ เพิ่มข้อมูลใน Tracker</span><button className="modal-close" onClick={()=>setShowAddPicker(false)}><X size={15}/></button></div>
+            <div className="modal-body">
+              <div className="quick-type-row inv-pick">
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditProj(null);setShowProjModal(true);}}>
+                  <Target size={13}/><span>โปรเจกต์</span>
+                </button>
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditTask(null);setShowTaskModal(true);}}>
+                  <ListTodo size={13}/><span>งาน</span>
+                </button>
+              </div>
+              <div className="db-note trk-pick-note">
+                “โปรเจกต์” = เป้าหมายที่วัดความคืบหน้าได้ (ตัวเลข/งานย่อย/กรอกเอง) · “งาน” = สิ่งที่ต้องทำเป็นครั้งหรือทำซ้ำ จะผูกกับโปรเจกต์หรือไม่ก็ได้
+              </div>
+            </div>
+            <div className="modal-foot"><button className="modal-btn-cancel" onClick={()=>setShowAddPicker(false)}>ยกเลิก</button></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1054,6 +1054,73 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .fin-acc-name{font-size:12.5px;padding:6px 10px;border-radius:9px;max-width:220px;}
 .fin-acc-when{min-width:74px;text-align:right;}
 
+/* ── ข้อ 24/5: หน้า Debts ── */
+/* โมดัลเพิ่ม/แก้ไขหนี้ กว้างกว่าโมดัลปกติเพราะเป็นฟอร์ม 2 คอลัมน์หลายแถว */
+.debt-modal{max-width:620px;}
+.debt-row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.debt-save-btn{width:100%;margin-top:4px;}
+/* ชื่อหนี้ใน legend โดนัท — ตัด ... ไม่ให้ดันตัวเลข % ตกบรรทัด */
+.debt-lg-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* "อีก N วัน" ต่อท้ายยอดผ่อนในการ์ดภาระต่อเดือน */
+.debt-due-when{font-size:11px;color:var(--ink-5);font-weight:400;margin-left:6px;}
+.db-row .val.debt-dim{color:var(--ink-6);font-weight:400;}
+.debt-note-top{margin-top:0;}
+/* บล็อกจับคู่รายจ่ายต่อหนี้ 1 ก้อน */
+.debt-match{padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.075);}
+.debt-match:last-child{padding-bottom:0;border-bottom:none;}
+.debt-match .db-row{border-bottom:none;padding-bottom:4px;}
+.debt-match-act{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+/* การ์ดหนี้รายก้อน — แทนตาราง .exp-table เดิม (ธรรมนูญข้อ 32/1) */
+.debt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;}
+.debt-item{display:flex;flex-direction:column;background:rgba(255,255,255,.032);
+  border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:14px 16px;min-width:0;}
+.debt-item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.debt-item-name{min-width:0;}
+.debt-name{white-space:normal;}
+.debt-bal{font-size:18px;font-weight:600;letter-spacing:-.3px;color:var(--orange-soft);margin-top:8px;}
+.debt-track{margin:10px 0 6px;height:8px;}
+.debt-meta{margin-top:10px;}
+.debt-kind{border:1px solid;}
+
+/* ── ข้อ 24/6: หน้า Tracker (ภาพรวม + รายละเอียดโปรเจกต์) ── */
+.trk-page{padding:0 20px 20px;}
+.trk-back{margin-bottom:16px;}
+.trk-del-row{display:flex;justify-content:flex-end;margin-top:16px;}
+/* "/12" ต่อท้ายตัวเลขใหญ่ในฮีโร่ — เล็กและจางกว่าตัวหลัก */
+.db-bignum .n .trk-of{font-size:20px;color:var(--ink-5);letter-spacing:-.4px;}
+.trk-hero-left{min-width:0;max-width:760px;}
+.trk-cat{width:fit-content;font-size:11px;margin-bottom:10px;}
+.trk-hero-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.trk-edit-btn{flex:none;width:auto;margin-top:16px;padding:10px 18px;display:inline-flex;align-items:center;gap:7px;}
+.trk-pick-note{margin-top:12px;}
+/* แถบความคืบหน้างานวันนี้ — ชิดหัวการ์ดกว่า .db-track ปกติ */
+.trk-today-track{margin:0 0 4px;}
+/* การ์ดความคืบหน้าในหน้ารายละเอียด: วงแหวนซ้าย + ข้อมูลวันที่ขวา */
+.trk-ring-wrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap;}
+.trk-ring-side{flex:1;min-width:180px;}
+.trk-ring-text{font-family:'IBM Plex Mono',monospace;font-size:14px;fill:var(--ink-bright);font-weight:700;}
+/* สไลเดอร์กรอกความคืบหน้าเอง (measureType manual) */
+.trk-manual{margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.075);}
+.trk-manual-lab{margin-top:0;margin-bottom:8px;}
+.trk-manual-row{display:flex;align-items:center;gap:14px;}
+.trk-manual-row input[type=range]{flex:1;min-width:0;}
+.trk-manual-val{font-size:20px;font-weight:600;min-width:58px;text-align:right;}
+/* ประวัติ check-in — แถวแทนตาราง (ข้อ 32/1) */
+.trk-ci-row{gap:12px;}
+.trk-ci-row .lab{flex:1;min-width:0;flex-wrap:wrap;}
+.trk-ci-right{display:flex;align-items:center;gap:10px;flex:none;}
+.trk-ci-diff{font-size:11px;min-width:64px;text-align:right;}
+.trk-ci-diff.up{color:var(--accent-soft);} .trk-ci-diff.down{color:var(--orange);} .trk-ci-diff.none{color:var(--ink-6);}
+/* การ์ดโปรเจกต์อยู่ในการ์ด db- แล้ว — ลดกรอบ/เงาไม่ให้ซ้อนสองชั้น (แนวเดียวกับ .inv-item-card ข้อ 24/3) */
+.db-card .prj-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+.db-card .prj-card{background:rgba(255,255,255,.032);border:1px solid rgba(255,255,255,.06);
+  border-left:3px solid var(--goal-color,var(--accent));border-radius:16px;box-shadow:none;}
+.db-card .prj-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.3);}
+.ms-item-main{flex:1;min-width:0;}
+/* .prj-bar มี flex:1 ไว้ใช้ในแถวแนวนอน (.prj-bar-wrap) — พออยู่ใน .db-card ที่เป็น flex column
+   มันจะยืดสูงเต็มการ์ด ต้องปิด flex ทิ้ง (เคยได้แถบหมุดสูง 78px แทน 10px) */
+.db-card .ms-track{flex:none;}
+
 @media(max-width:1200px){
   .crypto-platform-grid{grid-template-columns:1fr;}
 }
@@ -1064,4 +1131,9 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .inv-val-input{max-width:96px;}
   .fin-acc-name{max-width:none;}
   .fin-acc-when{display:none;}
+  .debt-grid{grid-template-columns:1fr;}
+  .debt-modal .fin-row-2,.debt-row-3{grid-template-columns:1fr;}
+  .trk-page{padding:0 0 20px;}
+  .db-card .prj-grid{grid-template-columns:1fr;}
+  .trk-ring-side{min-width:0;}
 }

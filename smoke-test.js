@@ -190,6 +190,80 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('โมดัลเพิ่มบัญชีเงินสดเปิดได้',false,'ไม่เจอปุ่ม');
 
+  console.log('\n[ข้อ 24/5] หน้า Debts รีดีไซน์ตามธรรมนูญข้อ 32');
+  await p.locator('button:has-text("Debts")').first().click(); await p.waitForTimeout(2000);
+  const dbt=await p.evaluate(()=>{
+    const sec=document.querySelector('.fin-section');
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className)))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const h=document.querySelector('.fin-page .db-hero-title');
+    return {
+      page:!!document.querySelector('.fin-section.fin-page'),
+      heroFs:h?getComputedStyle(h).fontSize:'',
+      heroMargin:h?getComputedStyle(h).marginTop:'',
+      cards:document.querySelectorAll('.fin-page .db-bento > .db-card').length,
+      bignums:document.querySelectorAll('.fin-page .db-bignum .n').length,
+      donuts:document.querySelectorAll('.fin-page .db-donut').length,
+      recharts:document.querySelectorAll('.fin-page .recharts-wrapper').length,
+      items:document.querySelectorAll('.fin-page .debt-item').length,
+      bals:[...document.querySelectorAll('.fin-page .debt-bal')].map(e=>e.textContent.trim()),
+      addBtns:[...document.querySelectorAll('.fin-page button')].filter(b=>/เพิ่มข้อมูล|เพิ่มหนี้/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      legacy:document.querySelectorAll('.fin-page .card, .fin-page .empty, .fin-page .fin-stat-card, .fin-page table, .fin-page .exp-table-wrap').length,
+      // ปุ่มมีข้อความห้ามใช้ .icon-btn (บั๊กข้อ 35 — ข้อความล้นทับแถวบน)
+      iconBtnWithText:[...document.querySelectorAll('.fin-page .icon-btn')].filter(b=>(b.textContent||'').trim().length>0).length,
+      confirmBtn:!!document.querySelector('.fin-page .debt-match-act .pill-btn'),
+      collapses:document.querySelectorAll('.fin-page .db-bento > .db-card .db-head[role="button"]').length,
+      inlineFs,
+    };
+  });
+  check('หน้าใช้โครง .fin-page + db-bento',dbt.page&&dbt.cards>=5,`การ์ด ${dbt.cards} ใบ`);
+  check('ฮีโร่ 38px และมี margin:0 (ข้อ 31)',dbt.heroFs==='38px'&&dbt.heroMargin==='0px',`${dbt.heroFs} / margin-top ${dbt.heroMargin}`);
+  check('ตัวเลขใหญ่สรุป 3 ตัว (คงเหลือ/ผ่อน/ชำระแล้ว)',dbt.bignums===3,`${dbt.bignums} ตัว`);
+  check('โดนัทสัดส่วนหนี้ (DashDonut ไม่ใช่ Recharts)',dbt.donuts===1&&dbt.recharts===0,`${dbt.donuts} วง · recharts ${dbt.recharts}`);
+  check('หนี้แสดงเป็นการ์ดต่อก้อน ไม่ใช่ตาราง (ข้อ 32/1)',dbt.items===2,`${dbt.items} การ์ด · ยอด ${dbt.bals.join(' | ')}`);
+  check('การ์ดพับได้อย่างน้อย 3 ใบ (ข้อ 32/3)',dbt.collapses>=3,`${dbt.collapses} ใบ`);
+  check('ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',dbt.addBtns.length===1,dbt.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('ไม่เหลือคลาสธีมเก่า/ตารางในหน้านี้',dbt.legacy===0,`เจอ ${dbt.legacy}`);
+  check('ปุ่มมีข้อความไม่ใช้ .icon-btn (ข้อ 35)',dbt.iconBtnWithText===0,`เจอ ${dbt.iconBtnWithText}`);
+  check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',dbt.inlineFs.length===0,dbt.inlineFs.slice(0,5).join(' | '));
+  check('ปุ่มยืนยันหักยอดคงเหลือยังอยู่ (seed ผูกหมวด "ผ่อนรถ")',dbt.confirmBtn,'');
+  // กดยืนยันหักยอด → ยอดคงเหลือต้องลดลงตามผลรวมรายจ่ายในหมวดที่ผูกไว้ (250000 − 5000)
+  const cfm=p.locator('.fin-page .debt-match-act .pill-btn').first();
+  if(await cfm.count()){
+    await cfm.click(); await p.waitForTimeout(1400);
+    const after=await p.evaluate(()=>{
+      const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1')).finance.debts.find(x=>x.id==='d1');
+      return {bal:Number(d.currentBalance),shown:(document.querySelector('.fin-page .debt-item .debt-bal')||{}).textContent};
+    });
+    check('ยืนยันหักยอดแล้วยอดคงเหลือลดจริง',after.bal===245000,`เหลือ ${after.bal} · การ์ดโชว์ ${after.shown}`);
+  } else check('ยืนยันหักยอดแล้วยอดคงเหลือลดจริง',false,'ไม่เจอปุ่มยืนยัน');
+  // ปุ่มเดียว → โมดัลเพิ่มหนี้ · แล้วเพิ่มจริง
+  const dbAdd=p.locator('.fin-page .inv-add-btn').first();
+  if(await dbAdd.count()){
+    await dbAdd.click(); await p.waitForTimeout(800);
+    const hasModal=await p.evaluate(()=>!!document.querySelector('.modal-backdrop .debt-modal'));
+    check('โมดัลเพิ่มหนี้เปิดได้',hasModal,'');
+    if(hasModal){
+      await p.locator('.debt-modal input').first().fill('หนี้ทดสอบ');
+      await p.locator('.debt-modal input[inputmode="decimal"]').first().fill('12000');
+      await p.locator('.debt-modal .debt-save-btn').click(); await p.waitForTimeout(1400);
+      const n2=await p.evaluate(()=>document.querySelectorAll('.fin-page .debt-item').length);
+      check('บันทึกหนี้ใหม่จากโมดัลได้',n2===3,`${n2} การ์ด`);
+    } else check('บันทึกหนี้ใหม่จากโมดัลได้',false,'ไม่มีโมดัล');
+  } else check('โมดัลเพิ่มหนี้เปิดได้',false,'ไม่เจอปุ่ม');
+  // ปุ่มแก้ไขบนการ์ด → โมดัลเดิมพร้อมค่าเก่า
+  const dbEdit=p.locator('.fin-page .debt-item .db-chip[title="แก้ไข"]').first();
+  if(await dbEdit.count()){
+    await dbEdit.click(); await p.waitForTimeout(800);
+    const ed=await p.evaluate(()=>{
+      const m=document.querySelector('.modal-backdrop .debt-modal');
+      return m?{head:m.querySelector('.modal-head span')?.textContent.trim(),name:m.querySelector('input')?.value}:null;
+    });
+    check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',!!ed&&/แก้ไข/.test(ed.head||'')&&!!ed.name,ed?`${ed.head} · ${ed.name}`:'');
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
+  } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',false,'ไม่เจอปุ่มแก้ไข');
+
   console.log('\n[ข้อ 24/3] หน้า Investments รีดีไซน์ตามธรรมนูญข้อ 32');
   await p.locator('button:has-text("Investments")').first().click(); await p.waitForTimeout(2000);
   const inv=await p.evaluate(()=>{
@@ -254,6 +328,81 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('การ์ดพับได้กางรายการยาวออกมา (ข้อ 32/3)',after>before,`${before} → ${after} การ์ด`);
   } else check('การ์ดพับได้กางรายการยาวออกมา (ข้อ 32/3)',false,'ไม่เจอหัวการ์ด');
 
+  console.log('\n[ข้อ 24/6 Tracker] หน้า Tracker รีดีไซน์ตามธรรมนูญข้อ 32');
+  await p.locator('button:has-text("Tracker")').first().click(); await p.waitForTimeout(2000);
+  const ov6=await p.evaluate(()=>{
+    const root='.trk-page';
+    const sec=document.querySelector(root);
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className))&&!e.closest('svg'))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const h=document.querySelector(root+' .db-hero-title');
+    return {
+      page:!!sec,
+      heroFs:h?getComputedStyle(h).fontSize:'',
+      heroMargin:h?getComputedStyle(h).marginTop:'',
+      cards:document.querySelectorAll(root+' .db-bento > .db-card').length,
+      bignums:document.querySelectorAll(root+' .db-bignum .n').length,
+      donuts:document.querySelectorAll(root+' .db-donut').length,
+      prjInCard:document.querySelectorAll(root+' .db-card .prj-card').length,
+      filters:document.querySelectorAll(root+' .fin-range-btn').length,
+      addBtns:[...document.querySelectorAll(root+' button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      legacy:document.querySelectorAll(root+' .card, '+root+' .empty, '+root+' .goal-stat-card, '+root+' .tracker-split, '+root+' table').length,
+      inlineFs,
+    };
+  });
+  check('Tracker · หน้าใช้โครง .trk-page + db-bento',ov6.page&&ov6.cards>=3,`การ์ด ${ov6.cards} ใบ`);
+  check('Tracker · ฮีโร่ 38px และมี margin:0 (ข้อ 31)',ov6.heroFs==='38px'&&ov6.heroMargin==='0px',`${ov6.heroFs} / margin-top ${ov6.heroMargin}`);
+  check('Tracker · ตัวเลขใหญ่สรุป 3 ตัว',ov6.bignums===3,`${ov6.bignums} ตัว`);
+  check('Tracker · โดนัทสถานะโปรเจกต์',ov6.donuts===1,`${ov6.donuts} วง`);
+  check('Tracker · ตัวกรองเป็นแคปซูล 4 ปุ่ม',ov6.filters===4,`${ov6.filters} ปุ่ม`);
+  check('Tracker · การ์ดโปรเจกต์อยู่ในการ์ด bento',ov6.prjInCard>=3,`${ov6.prjInCard} การ์ด`);
+  check('Tracker · ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',ov6.addBtns.length===1,ov6.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('Tracker · ไม่เหลือคลาสธีมเก่า/ตาราง',ov6.legacy===0,`เจอ ${ov6.legacy}`);
+  check('Tracker · ไม่เหลือ fontSize inline (ข้อ 32/4)',ov6.inlineFs.length===0,ov6.inlineFs.slice(0,5).join(' | '));
+  const trkAdd=p.locator('.trk-page .inv-add-btn').first();
+  if(await trkAdd.count()){
+    await trkAdd.click(); await p.waitForTimeout(800);
+    const pick=await p.evaluate(()=>[...document.querySelectorAll('.modal-backdrop .quick-type-btn')].map(b=>b.textContent.trim()));
+    check('Tracker · ปุ่มเดียวเปิดโมดัลเลือกชนิด (โปรเจกต์/งาน)',pick.length===2,pick.join(' | '));
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
+  } else check('Tracker · ปุ่มเดียวเปิดโมดัลเลือกชนิด (โปรเจกต์/งาน)',false,'ไม่เจอปุ่ม');
+  // หน้ารายละเอียดโปรเจกต์ (ใช้โปรเจกต์แบบตัวเลข = การ์ดครบที่สุด)
+  await p.locator('.prj-card:has-text("เก็บเงินล้าน")').first().click(); await p.waitForTimeout(1800);
+  const det6=await p.evaluate(()=>{
+    const root='.trk-page';
+    const sec=document.querySelector(root);
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className))&&!e.closest('svg'))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const h=document.querySelector(root+' .db-hero-title');
+    return {
+      title:h?h.textContent.trim():'',
+      heroFs:h?getComputedStyle(h).fontSize:'',
+      heroMargin:h?getComputedStyle(h).marginTop:'',
+      cards:document.querySelectorAll(root+' .db-bento > .db-card').length,
+      ring:!!document.querySelector(root+' .prj-big-ring'),
+      ciRows:document.querySelectorAll(root+' .trk-ci-row').length,
+      addBtns:[...document.querySelectorAll(root+' button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      legacy:document.querySelectorAll(root+' .card, '+root+' .empty, '+root+' .prj-stat, '+root+' table').length,
+      inlineFs,
+    };
+  });
+  check('ProjectDetail · ฮีโร่เป็นชื่อโปรเจกต์ 38px + margin:0',det6.heroFs==='38px'&&det6.heroMargin==='0px'&&/เก็บเงินล้าน/.test(det6.title),`${det6.title} · ${det6.heroFs}`);
+  check('ProjectDetail · เป็น bento และยังมีวงแหวนความคืบหน้า',det6.cards>=4&&det6.ring,`การ์ด ${det6.cards} ใบ`);
+  check('ProjectDetail · ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',det6.addBtns.length===1,det6.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('ProjectDetail · ไม่เหลือคลาสธีมเก่า/ตาราง',det6.legacy===0,`เจอ ${det6.legacy}`);
+  check('ProjectDetail · ไม่เหลือ fontSize inline (ข้อ 32/4)',det6.inlineFs.length===0,det6.inlineFs.slice(0,5).join(' | '));
+  // ประวัติ check-in เป็นแถว ไม่ใช่ตาราง — ต้องกางการ์ดก่อน (defaultOpen=false)
+  // ต้องเจาะที่ .db-title เป๊ะๆ — :has-text จับ "คำนวณจากประวัติ check-in 2 ครั้ง" ในการ์ดตัวเลขสำคัญด้วย
+  const ciHead=p.locator('.trk-page .db-card .db-head:has(.db-title:text-is("ประวัติ Check-in"))').first();
+  if(await ciHead.count()){
+    await ciHead.click(); await p.waitForTimeout(800);
+    const ci=await p.evaluate(()=>document.querySelectorAll('.trk-ci-row').length);
+    check('ProjectDetail · ประวัติ check-in เป็นแถวการ์ด ไม่ใช่ตาราง',ci===2,`${ci} แถว`);
+  } else check('ProjectDetail · ประวัติ check-in เป็นแถวการ์ด ไม่ใช่ตาราง',false,'ไม่เจอการ์ด');
+  await p.locator('.trk-back').first().click(); await p.waitForTimeout(1200);
+
   /* ───────── รอบ 21: หมุดโปรเจกต์ + toast ───────── */
   console.log('\n[ข้อ 21] หมุดโปรเจกต์ + toast');
   await p.locator('button:has-text("Tracker")').first().click().catch(async()=>{
@@ -273,11 +422,12 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     card:!!document.querySelector('.ms-track'),
     items:document.querySelectorAll('.ms-item').length,
     hits:document.querySelectorAll('.ms-item.hit').length,
-    head:(Array.from(document.querySelectorAll('.card-head')).find(e=>/หมุดความคืบหน้า/.test(e.innerText))||{}).innerText||"",
+    // ข้อ 24/6: หัวการ์ดย้ายจาก .card-head → .db-head ของ DashCollapse (นับอยู่ใน note ไม่ใช่วงเล็บ)
+    head:(Array.from(document.querySelectorAll('.db-head')).find(e=>/หมุดความคืบหน้า/.test(e.innerText))||{}).innerText||"",
     firstItem:(document.querySelector('.ms-item')||{}).innerText||"",
     named:document.body.innerText.includes('ครึ่งทาง')}));
   check('การ์ดหมุดในหน้ารายละเอียด',det.card&&det.items===4,`${det.items} หมุด (ถึงแล้ว ${det.hits})`);
-  check('หัวการ์ดนับถูก',/หมุดความคืบหน้า \(1\/4\)/.test(det.head),det.head.replace(/\n/g,' '));
+  check('หัวการ์ดนับถูก',/ถึงแล้ว 1 จาก 4 หมุด/.test(det.head),det.head.replace(/\n/g,' '));
   check('หมุดที่ตั้งชื่อแสดงชื่อ',det.named,'หา "ครึ่งทาง"');
   check('หมุดไม่ตั้งชื่อแสดงเป็น %',/^25%/.test(det.firstItem.trim()),det.firstItem.split('\n')[0]);
 
@@ -400,6 +550,12 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     const o=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
     check(`มือถือ · แท็บ ${t} ไม่ล้นแนวนอน`,o.sw<=o.iw+2,`scrollWidth ${o.sw} vs ${o.iw}`);
   }
+  await p.locator('button:has-text("Tracker")').first().click().catch(()=>{}); await p.waitForTimeout(1600);
+  const mTrk=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
+  check('มือถือ · หน้า Tracker ไม่ล้นแนวนอน',mTrk.sw<=mTrk.iw+2,`scrollWidth ${mTrk.sw} vs ${mTrk.iw}`);
+  await p.locator('.prj-card').first().click().catch(()=>{}); await p.waitForTimeout(1600);
+  const mDet=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
+  check('มือถือ · หน้ารายละเอียดโปรเจกต์ไม่ล้นแนวนอน',mDet.sw<=mDet.iw+2,`scrollWidth ${mDet.sw} vs ${mDet.iw}`);
 
   /* ───────── สรุป ───────── */
   const failed=results.filter(r=>!r.ok);
