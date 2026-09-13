@@ -4408,44 +4408,34 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
   );
 }
 function BudgetPanel({data,persist,cats}) {
-  const [open,setOpen]=useState(false);
   const setBudget=(cat,patch)=>{
     const cur=getBudget(data,cat);
     persist({...data,budgets:{...(data.budgets||{}),[cat]:{amount:patch.amount!=null?Number(patch.amount)||0:cur.amount,type:patch.type||cur.type}}});
   };
   const totalVar=cats.filter(c=>getBudget(data,c).type==="variable").reduce((a,c)=>a+getBudget(data,c).amount,0);
   const totalFix=cats.filter(c=>getBudget(data,c).type==="fixed").reduce((a,c)=>a+getBudget(data,c).amount,0);
+  /* ข้อ 24/7: ยกมาเป็น DashCollapse ตามธรรมนูญข้อ 32 (เดิมเป็น .card พับเองด้วย useState) — ปิดเป็นค่าเริ่มต้นเหมือนเดิม */
   return (
-    <div className="card">
-      <div className="card-head" style={{marginBottom:open?16:0,cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
-        <Wallet size={14}/> Budget Settings
-        <div className="card-head-right">
-          <span style={{fontSize:11.5,color:"var(--ink-2)"}}>คุมได้ ฿{totalVar.toLocaleString()} · คงที่ ฿{totalFix.toLocaleString()}</span>
-          {open?<ChevronUp size={13}/>:<ChevronDown size={13}/>}
-        </div>
+    <DashCollapse span="db-span4" title="Budget Settings"
+      note={`คุมได้ ฿${totalVar.toLocaleString()} · คงที่ ฿${totalFix.toLocaleString()}`}>
+      <div className="db-note inv-inline-note" style={{marginBottom:12}}>ตั้งงบต่อเดือนของแต่ละหมวด และระบุว่าเป็นค่าคงที่ (ควบคุมไม่ได้) หรือคุมได้ — หน้ารีวิวจะโฟกัสเฉพาะหมวดที่คุมได้</div>
+      <div className="budget-grid">
+        {cats.length===0&&<div className="db-empty">ยังไม่มีหมวดหมู่</div>}
+        {cats.map(c=>{
+          const b=getBudget(data,c);
+          return (
+            <div key={c} className="budget-row">
+              <span className="budget-cat">{c}</span>
+              <div className="budget-type-toggle">
+                <button className={`budget-type-btn ${b.type==="variable"?"on":""}`} onClick={()=>setBudget(c,{type:"variable"})}>คุมได้</button>
+                <button className={`budget-type-btn ${b.type==="fixed"?"on fixed":""}`} onClick={()=>setBudget(c,{type:"fixed"})}>คงที่</button>
+              </div>
+              <input type="number" className="modal-input budget-input" placeholder="ไม่ตั้งงบ" value={b.amount||""} onChange={e=>setBudget(c,{amount:e.target.value})}/>
+            </div>
+          );
+        })}
       </div>
-      {open&&(
-        <>
-          <div className="recat-hint" style={{marginBottom:12}}>ตั้งงบต่อเดือนของแต่ละหมวด และระบุว่าเป็นค่าคงที่ (ควบคุมไม่ได้) หรือคุมได้ — หน้ารีวิวจะโฟกัสเฉพาะหมวดที่คุมได้</div>
-          <div className="budget-grid">
-            {cats.length===0&&<div className="empty">ยังไม่มีหมวดหมู่</div>}
-            {cats.map(c=>{
-              const b=getBudget(data,c);
-              return (
-                <div key={c} className="budget-row">
-                  <span className="budget-cat">{c}</span>
-                  <div className="budget-type-toggle">
-                    <button className={`budget-type-btn ${b.type==="variable"?"on":""}`} onClick={()=>setBudget(c,{type:"variable"})}>คุมได้</button>
-                    <button className={`budget-type-btn ${b.type==="fixed"?"on fixed":""}`} onClick={()=>setBudget(c,{type:"fixed"})}>คงที่</button>
-                  </div>
-                  <input type="number" className="modal-input budget-input" placeholder="ไม่ตั้งงบ" value={b.amount||""} onChange={e=>setBudget(c,{amount:e.target.value})}/>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+    </DashCollapse>
   );
 }
 function FinanceReviewTab({finance,persist}) {
@@ -4471,98 +4461,139 @@ function FinanceReviewTab({finance,persist}) {
   /* ข้อ 32/3: 3 ลิสต์ในหน้านี้ยาวได้ไม่จำกัด (หมวดรายจ่าย/รายจ่ายคงที่/รายการผิดปกติ) — ตัดเหลือ 6 แถวแล้วกางเอง */
   const rlVar=useRowLimit(6), rlFix=useRowLimit(6), rlAnom=useRowLimit(6);
   const barColor=(r)=>r.budget<=0?"var(--ink-6)":r.total>r.budget?"#f87171":r.total>r.budget*0.85?"#fbbf24":"#34d399";
+  /* ── ข้อ 24/7: รีดีไซน์เป็น bento ตามธรรมนูญข้อ 32 — ตรรกะ buildMonthReview/detectAnomalies/budgetRank ไม่แตะเลย
+       เปลี่ยนแค่ชั้น UI: ฮีโร่ 38px+margin:0 · ตัวเลขใหญ่ 3 ตัว (รับ/จ่าย/คงเหลือ) · การ์ดยาวห่อด้วย DashCollapse
+       ปุ่มเดียวต่อหน้า (ข้อ 32/2) — หน้านี้ไม่มี "เพิ่มข้อมูล" จริงๆ ปุ่มเดียวคือ "จัดหมวดใหม่" (ยูทิลิตี้ ไม่ใช่กรอกข้อมูลใหม่) ── */
   return (
-    <div className="fin-section" style={{padding:"0 20px"}}>
+    <div className="fin-section fin-page">
       {showRecat&&<RecategorizeModal finance={finance} persist={persist} startCat={recatCat} onClose={()=>{setShowRecat(false);setRecatCat(null);}}/>}
-      <div className="rv-toolbar">
-        <select className="txn-filter-select" value={month} onChange={e=>setMonth(e.target.value)}>
-          {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
-        </select>
-        <button className="quick-capture-btn" style={{fontSize:11.5,padding:"9px 15px"}} onClick={()=>{setRecatCat(null);setShowRecat(true);}}><FileText size={12}/> จัดหมวดใหม่</button>
-      </div>
-      <div className="rv-hero">
-        <div className="rv-hero-main">
-          <div className="rv-hero-label">คงเหลือหลังหักทุกอย่าง</div>
-          <div className="rv-hero-value" style={{color:R.leftover>=0?"#6ee7b7":"#f87171"}}>฿{Math.round(R.leftover).toLocaleString()}</div>
-          <div className="rv-hero-sub">อัตราการออม <b style={{color:R.savingRate>=20?"#34d399":R.savingRate>=10?"#fbbf24":"#fb923c"}}>{R.savingRate.toFixed(1)}%</b> ของรายรับ</div>
-        </div>
-        <div className="rv-hero-grid">
-          <div className="rv-mini"><span className="rv-mini-label">รายรับ</span><span className="rv-mini-val" style={{color:"#34d399"}}>฿{Math.round(R.totalIncome).toLocaleString()}</span></div>
-          <div className="rv-mini"><span className="rv-mini-label">รายจ่าย</span><span className="rv-mini-val" style={{color:"#fb923c"}}>฿{Math.round(R.totalExpense).toLocaleString()}</span></div>
-          <div className="rv-mini"><span className="rv-mini-label">ออม/ลงทุน</span><span className="rv-mini-val" style={{color:"var(--accent-soft)"}}>฿{Math.round(R.totalSaved).toLocaleString()}</span></div>
-          <div className="rv-mini"><span className="rv-mini-label">คุมได้ / คงที่</span><span className="rv-mini-val" style={{fontSize:13}}>฿{Math.round(R.variableTotal).toLocaleString()} / ฿{Math.round(R.fixedTotal).toLocaleString()}</span></div>
-        </div>
-      </div>
-      <div className="card">
-        <div className="card-head">
-          <Zap size={14}/> รายจ่ายที่คุมได้
-          {R.hasBudget&&<div className="card-head-right"><span style={{fontSize:11.5,color:R.totalVsBudget>R.totalBudget?"#f87171":"#34d399"}}>฿{Math.round(R.totalVsBudget).toLocaleString()} / ฿{R.totalBudget.toLocaleString()}</span></div>}
-        </div>
-        {R.variable.length===0&&<div className="empty">ไม่มีรายจ่ายหมวดที่คุมได้ในเดือนนี้</div>}
-        {R.variable.slice(0,rlVar.limit).map((r,i)=>{
-          const rank=budgetRank(r);
-          const showLabel=i===0||budgetRank(R.variable[i-1])!==rank;
-          return (
-            <React.Fragment key={r.cat}>
-              {showLabel&&<div className="rv-group-label">{BUDGET_GROUP_LABEL[rank]}</div>}
-              <div className="rv-cat-row">
-                <div className="rv-cat-head">
-                  <span className="rv-cat-name">{r.cat}</span>
-                  {r.budget>0
-                    ? <span className={`rv-cat-badge ${r.total>r.budget?"over":"under"}`}>{r.total>r.budget?`เกิน ฿${Math.round(r.total-r.budget).toLocaleString()}`:`เหลือ ฿${Math.round(r.budget-r.total).toLocaleString()}`}</span>
-                    : <span className="rv-cat-badge none">ยังไม่ตั้งงบ</span>}
-                  <span className="rv-cat-amt">฿{Math.round(r.total).toLocaleString()}{r.budget>0&&<span className="rv-cat-budget"> / {r.budget.toLocaleString()}</span>}</span>
-                </div>
-                <div className="rv-bar"><div className="rv-bar-fill" style={{width:`${r.budget>0?Math.min(100,(r.total/r.budget)*100):100}%`,background:barColor(r)}}/></div>
-                {r.avg!=null&&<div className="rv-cat-sub">เฉลี่ย 3 เดือนก่อน ฿{Math.round(r.avg).toLocaleString()} · {r.total>r.avg?`สูงกว่า ${Math.round(((r.total-r.avg)/r.avg)*100)}%`:`ต่ำกว่า ${Math.round(((r.avg-r.total)/r.avg)*100)}%`}</div>}
-              </div>
-            </React.Fragment>
-          );
-        })}
-        <ShowMoreRow rl={rlVar} total={R.variable.length}/>
-      </div>
-      {R.fixed.length>0&&(
-        <div className="card">
-          <div className="card-head">🔒 รายจ่ายคงที่ <div className="card-head-right"><span style={{fontSize:11.5,color:"var(--ink-2)"}}>฿{Math.round(R.fixedTotal).toLocaleString()}</span></div></div>
-          <div className="rv-fixed-list">
-            {R.fixed.slice(0,rlFix.limit).map(r=>(
-              <div key={r.cat} className="rv-fixed-item"><span>{r.cat}</span><span className="rv-fixed-amt">฿{Math.round(r.total).toLocaleString()}</span></div>
-            ))}
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 (38px + margin:0) ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Review <span>· รีวิวรายเดือน</span></h1>
+          <div className="db-hero-line">
+            {monthLabel} · อัตราการออม <b style={{color:R.savingRate>=20?"#34d399":R.savingRate>=10?"#fbbf24":"#fb923c"}}>{R.savingRate.toFixed(1)}%</b> ของรายรับ
+            {R.hasBudget&&<> · คุมได้ ฿{Math.round(R.totalVsBudget).toLocaleString()} / ฿{R.totalBudget.toLocaleString()}</>}
           </div>
-          <ShowMoreRow rl={rlFix} total={R.fixed.length}/>
+          <div className="fin-range">
+            <select className="fin-range-select" value={month} onChange={e=>setMonth(e.target.value)}>
+              {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
+            </select>
+          </div>
+          <button className="db-btn inv-add-btn" onClick={()=>{setRecatCat(null);setShowRecat(true);}}><FileText size={14}/> จัดหมวดใหม่</button>
         </div>
-      )}
-      <div className="card">
-        <div className="card-head"><AlertCircle size={14}/> รายการผิดปกติ {anomalies.length>0&&<span className="rv-anom-count">{anomalies.length}</span>}</div>
-        {anomalies.length===0&&<div className="empty">ไม่พบอะไรผิดปกติเดือนนี้ 👍</div>}
-        {anomalies.slice(0,rlAnom.limit).map(a=>(
-          <div key={a.key} className={`rv-anom rv-anom-${a.level}`}>
-            <span className="rv-anom-icon">{a.icon}</span>
-            <div style={{flex:1,minWidth:0}}>
-              <div className="rv-anom-title">{a.title}</div>
-              <div className="rv-anom-detail">{a.detail}</div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n acc db-mono">฿{dbShort(R.totalIncome)}</div>
+            <div className="l"><span className="db-dot a"/> รายรับ</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(R.totalExpense)}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> รายจ่าย</div>
+          </div>
+          <div className="db-bignum">
+            <div className={`n db-mono ${R.leftover>=0?"gld":"neg"}`}>{R.leftover<0?"-":""}฿{dbShort(Math.abs(R.leftover))}</div>
+            <div className="l"><span className={`db-dot ${R.leftover>=0?"g":"d"}`}/> คงเหลือ</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="db-bento">
+        {/* ── การ์ด 1: สรุปย่อยเดือนนี้ ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">สรุปเดือนนี้</div><div className="db-note">{monthLabel}</div></div>
+            <div className="db-bignum-inline db-mono" style={{color:R.savingRate>=20?"var(--accent-soft)":R.savingRate>=10?"var(--gold-soft)":"var(--orange-soft)"}}>{R.savingRate.toFixed(1)}<span>%</span></div>
+          </div>
+          <div className="db-row"><span className="lab">ออม/ลงทุนเดือนนี้</span><span className="val db-mono up">฿{Math.round(R.totalSaved).toLocaleString()}</span></div>
+          <div className="db-row"><span className="lab">รายจ่ายที่คุมได้</span><span className="val db-mono">฿{Math.round(R.variableTotal).toLocaleString()}</span></div>
+          <div className="db-row"><span className="lab">รายจ่ายคงที่</span><span className="val db-mono">฿{Math.round(R.fixedTotal).toLocaleString()}</span></div>
+          {R.hasBudget&&(
+            <div className="db-row">
+              <span className="lab">งบรวมที่ตั้งไว้ vs ใช้จริง</span>
+              <span className={`val db-mono ${R.totalVsBudget>R.totalBudget?"down":"up"}`}>฿{Math.round(R.totalVsBudget).toLocaleString()} / ฿{R.totalBudget.toLocaleString()}</span>
             </div>
-            <button className="text-btn" style={{flexShrink:0,fontSize:11,padding:"5px 10px"}} onClick={()=>{setRecatCat(a.cat);setShowRecat(true);}}>ดู/จัดหมวด</button>
-          </div>
-        ))}
-        <ShowMoreRow rl={rlAnom} total={anomalies.length}/>
-      </div>
-      <div className="card">
-        <div className="card-head"><PenTool size={14}/> สรุปเดือนนี้ด้วยตัวเอง</div>
-        <div className="rv-rate-row">
-          <span className="rv-rate-label">ให้คะแนนเดือนนี้</span>
-          {[1,2,3,4,5].map(n=>(
-            <button key={n} className={`rv-star ${rating>=n?"on":""}`} onClick={()=>{setRating(n);setDirty(true);}}>★</button>
+          )}
+        </div>
+
+        {/* ── การ์ด 2: รายการผิดปกติ (ข้อ 32/3 พับได้) ── */}
+        <DashCollapse span="db-span2" title="รายการผิดปกติ"
+          note={anomalies.length>0?`${anomalies.length} รายการที่ควรดู`:"ไม่พบอะไรผิดปกติเดือนนี้ 👍"}
+          defaultOpen={true}>
+          {anomalies.length===0&&<div className="db-empty">ไม่พบอะไรผิดปกติเดือนนี้ 👍</div>}
+          {anomalies.slice(0,rlAnom.limit).map(a=>(
+            <div key={a.key} className={`rv-anom rv-anom-${a.level}`}>
+              <span className="rv-anom-icon">{a.icon}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div className="rv-anom-title">{a.title}</div>
+                <div className="rv-anom-detail">{a.detail}</div>
+              </div>
+              <button className="text-btn" style={{flexShrink:0}} onClick={()=>{setRecatCat(a.cat);setShowRecat(true);}}>ดู/จัดหมวด</button>
+            </div>
           ))}
-          {rating>0&&<span className="rv-rate-word">{["","แย่มาก","ต้องปรับ","พอใช้","ดี","ดีมาก"][rating]}</span>}
+          <ShowMoreRow rl={rlAnom} total={anomalies.length}/>
+        </DashCollapse>
+
+        {/* ── การ์ด 3: รายจ่ายที่คุมได้ — เนื้อหาหลัก เต็มแถว ── */}
+        <DashCollapse span="db-span4" title="รายจ่ายที่คุมได้"
+          note={R.hasBudget?`฿${Math.round(R.totalVsBudget).toLocaleString()} / ฿${R.totalBudget.toLocaleString()}`:`${R.variable.length} หมวด`}
+          defaultOpen={true}>
+          {R.variable.length===0&&<div className="db-empty">ไม่มีรายจ่ายหมวดที่คุมได้ในเดือนนี้</div>}
+          {R.variable.slice(0,rlVar.limit).map((r,i)=>{
+            const rank=budgetRank(r);
+            const showLabel=i===0||budgetRank(R.variable[i-1])!==rank;
+            return (
+              <React.Fragment key={r.cat}>
+                {showLabel&&<div className="rv-group-label">{BUDGET_GROUP_LABEL[rank]}</div>}
+                <div className="rv-cat-row">
+                  <div className="rv-cat-head">
+                    <span className="rv-cat-name">{r.cat}</span>
+                    {r.budget>0
+                      ? <span className={`rv-cat-badge ${r.total>r.budget?"over":"under"}`}>{r.total>r.budget?`เกิน ฿${Math.round(r.total-r.budget).toLocaleString()}`:`เหลือ ฿${Math.round(r.budget-r.total).toLocaleString()}`}</span>
+                      : <span className="rv-cat-badge none">ยังไม่ตั้งงบ</span>}
+                    <span className="rv-cat-amt">฿{Math.round(r.total).toLocaleString()}{r.budget>0&&<span className="rv-cat-budget"> / {r.budget.toLocaleString()}</span>}</span>
+                  </div>
+                  <div className="rv-bar"><div className="rv-bar-fill" style={{width:`${r.budget>0?Math.min(100,(r.total/r.budget)*100):100}%`,background:barColor(r)}}/></div>
+                  {r.avg!=null&&<div className="rv-cat-sub">เฉลี่ย 3 เดือนก่อน ฿{Math.round(r.avg).toLocaleString()} · {r.total>r.avg?`สูงกว่า ${Math.round(((r.total-r.avg)/r.avg)*100)}%`:`ต่ำกว่า ${Math.round(((r.avg-r.total)/r.avg)*100)}%`}</div>}
+                </div>
+              </React.Fragment>
+            );
+          })}
+          <ShowMoreRow rl={rlVar} total={R.variable.length}/>
+        </DashCollapse>
+
+        {/* ── การ์ด 4: รายจ่ายคงที่ ── */}
+        {R.fixed.length>0&&(
+          <DashCollapse span="db-span2" title="รายจ่ายคงที่" note={`฿${Math.round(R.fixedTotal).toLocaleString()}`} defaultOpen={true}>
+            <div className="rv-fixed-list">
+              {R.fixed.slice(0,rlFix.limit).map(r=>(
+                <div key={r.cat} className="rv-fixed-item"><span>{r.cat}</span><span className="rv-fixed-amt">฿{Math.round(r.total).toLocaleString()}</span></div>
+              ))}
+            </div>
+            <ShowMoreRow rl={rlFix} total={R.fixed.length}/>
+          </DashCollapse>
+        )}
+
+        {/* ── การ์ด 5: สรุปเดือนนี้ด้วยตัวเอง (ให้คะแนน + เขียนโน้ต) ── */}
+        <div className="db-card db-span2">
+          <div className="db-head"><div><div className="db-title">สรุปเดือนนี้ด้วยตัวเอง</div></div></div>
+          <div className="rv-rate-row">
+            <span className="rv-rate-label">ให้คะแนนเดือนนี้</span>
+            {[1,2,3,4,5].map(n=>(
+              <button key={n} className={`rv-star ${rating>=n?"on":""}`} onClick={()=>{setRating(n);setDirty(true);}}>★</button>
+            ))}
+            {rating>0&&<span className="rv-rate-word">{["","แย่มาก","ต้องปรับ","พอใช้","ดี","ดีมาก"][rating]}</span>}
+          </div>
+          <textarea className="modal-input" rows={5} placeholder="เดือนนี้เป็นยังไงบ้าง? อะไรทำได้ดี อะไรพลาด เดือนหน้าจะแก้ยังไง..." value={notes} onChange={e=>{setNotes(e.target.value);setDirty(true);}}/>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>
+            <button className="modal-btn-save" onClick={saveReview} disabled={!dirty}>{dirty?"บันทึกรีวิว":"บันทึกแล้ว ✓"}</button>
+            {saved.updatedAt&&!dirty&&<span className="db-note" style={{marginTop:0}}>แก้ไขล่าสุด {relativeTime(saved.updatedAt)}</span>}
+          </div>
         </div>
-        <textarea className="modal-input" rows={5} placeholder="เดือนนี้เป็นยังไงบ้าง? อะไรทำได้ดี อะไรพลาด เดือนหน้าจะแก้ยังไง..." value={notes} onChange={e=>{setNotes(e.target.value);setDirty(true);}}/>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>
-          <button className="modal-btn-save" onClick={saveReview} disabled={!dirty}>{dirty?"บันทึกรีวิว":"บันทึกแล้ว ✓"}</button>
-          {saved.updatedAt&&!dirty&&<span style={{fontSize:11,color:"var(--ink-6)"}}>แก้ไขล่าสุด {relativeTime(saved.updatedAt)}</span>}
-        </div>
+
+        {/* ── การ์ด 6: ตั้งงบ (ข้อ 32/3 พับได้ ปิดเป็นค่าเริ่มต้นเหมือนเดิม) ── */}
+        <BudgetPanel data={finance} persist={persist} cats={cats}/>
       </div>
-      <BudgetPanel data={finance} persist={persist} cats={cats}/>
     </div>
   );
 }

@@ -264,6 +264,78 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',false,'ไม่เจอปุ่มแก้ไข');
 
+  console.log('\n[ข้อ 24/7] หน้า Finance Review รีดีไซน์ตามธรรมนูญข้อ 32');
+  await p.locator('button:has-text("Review")').first().click(); await p.waitForTimeout(2000);
+  const rvw=await p.evaluate(()=>{
+    const sec=document.querySelector('.fin-section');
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className)))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const h=document.querySelector('.fin-page .db-hero-title');
+    return {
+      page:!!document.querySelector('.fin-section.fin-page'),
+      heroFs:h?getComputedStyle(h).fontSize:'',
+      heroMargin:h?getComputedStyle(h).marginTop:'',
+      cards:document.querySelectorAll('.fin-page .db-bento > .db-card').length,
+      bignums:document.querySelectorAll('.fin-page .db-bignum .n').length,
+      collapses:document.querySelectorAll('.fin-page .db-bento > .db-card .db-head[role="button"]').length,
+      monthSelect:!!document.querySelector('.fin-page .fin-range-select'),
+      addBtns:[...document.querySelectorAll('.fin-page button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      recatBtn:[...document.querySelectorAll('.fin-page button')].filter(b=>/จัดหมวดใหม่/.test(b.textContent||'')).length,
+      legacy:document.querySelectorAll('.fin-page .card, .fin-page .empty, .fin-page .fin-stat-card, .fin-page table').length,
+      anomRows:document.querySelectorAll('.fin-page .rv-anom').length,
+      catRows:document.querySelectorAll('.fin-page .rv-cat-row').length,
+      inlineFs,
+    };
+  });
+  check('หน้าใช้โครง .fin-page + db-bento',rvw.page&&rvw.cards>=5,`การ์ด ${rvw.cards} ใบ`);
+  check('ฮีโร่ 38px และมี margin:0 (ข้อ 31)',rvw.heroFs==='38px'&&rvw.heroMargin==='0px',`${rvw.heroFs} / margin-top ${rvw.heroMargin}`);
+  check('ตัวเลขใหญ่สรุป 3 ตัว (รับ/จ่าย/คงเหลือ)',rvw.bignums===3,`${rvw.bignums} ตัว`);
+  check('ตัวเลือกเดือนยังอยู่ในฮีโร่',rvw.monthSelect);
+  check('การ์ดพับได้อย่างน้อย 3 ใบ (ข้อ 32/3)',rvw.collapses>=3,`${rvw.collapses} ใบ`);
+  check('หน้านี้ไม่มีปุ่ม "เพิ่มข้อมูล" ปลอม มีแค่ปุ่ม "จัดหมวดใหม่" ปุ่มเดียว (ข้อ 32/2)',rvw.addBtns.length===0&&rvw.recatBtn===1,`เพิ่มข้อมูล ${rvw.addBtns.length} · จัดหมวดใหม่ ${rvw.recatBtn}`);
+  check('ไม่เหลือคลาสธีมเก่า/ตารางในหน้านี้',rvw.legacy===0,`เจอ ${rvw.legacy}`);
+  check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',rvw.inlineFs.length===0,rvw.inlineFs.slice(0,5).join(' | '));
+  check('ตรรกะ anomaly detection ยังทำงาน (seed มี 2 หมวดใหม่ใน ก.ค.)',rvw.anomRows>0,`${rvw.anomRows} รายการ`);
+  check('ตรรกะ buildMonthReview ยังจัดหมวดที่คุมได้ถูก',rvw.catRows>0,`${rvw.catRows} แถว`);
+  // การ์ดพับได้: กดหัวการ์ด "รายจ่ายคงที่" แล้วต้องย่อ/กางสลับได้จริง
+  const fixHead=p.locator('.fin-page .db-head:has(.db-title:text-is("รายจ่ายคงที่"))').first();
+  if(await fixHead.count()){
+    const before=await p.evaluate(()=>document.querySelectorAll('.fin-page .rv-fixed-item').length);
+    await fixHead.click(); await p.waitForTimeout(500);
+    const after=await p.evaluate(()=>document.querySelectorAll('.fin-page .rv-fixed-item').length);
+    check('การ์ดพับได้ย่อ/กางสลับได้จริง (ข้อ 32/3)',after!==before,`${before} → ${after} แถว`);
+    if(after!==before){ await fixHead.click(); await p.waitForTimeout(400); } // เปิดกลับที่เดิมไว้เผื่อเทสต์ถัดไปอ้างอิง
+  } else check('การ์ดพับได้ย่อ/กางสลับได้จริง (ข้อ 32/3)',false,'ไม่เจอหัวการ์ด');
+  // ให้คะแนน + เขียนโน้ต แล้วบันทึกได้จริง (ตรรกะเดิม saveReview ไม่ได้แตะ)
+  const starBtns=p.locator('.fin-page .rv-star');
+  if(await starBtns.count()>=4){
+    await starBtns.nth(3).click(); // ให้ 4 ดาว
+    await p.locator('.fin-page textarea.modal-input').fill('ทดสอบสรุปเดือนนี้');
+    await p.locator('.fin-page .modal-btn-save').click(); await p.waitForTimeout(1200);
+    const savedReview=await p.evaluate(()=>{
+      const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1'));
+      const m=Object.keys(d.reviews||{})[0];
+      return m?d.reviews[m]:null;
+    });
+    check('บันทึกรีวิว (คะแนน+โน้ต) ลง localStorage จริง',!!savedReview&&savedReview.rating===4&&savedReview.notes==='ทดสอบสรุปเดือนนี้',JSON.stringify(savedReview));
+  } else check('บันทึกรีวิว (คะแนน+โน้ต) ลง localStorage จริง',false,'ไม่เจอดาวให้กด');
+  // ปุ่มจัดหมวดใหม่ยังเปิด RecategorizeModal ได้ (ตรรกะเดิมไม่ได้แตะ)
+  const recatBtnLoc=p.locator('.fin-page .inv-add-btn:has-text("จัดหมวดใหม่")').first();
+  if(await recatBtnLoc.count()){
+    await recatBtnLoc.click(); await p.waitForTimeout(800);
+    const hasModal=await p.evaluate(()=>!!document.querySelector('.modal-backdrop .recat-modal'));
+    check('ปุ่มจัดหมวดใหม่เปิด RecategorizeModal ได้',hasModal);
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
+  } else check('ปุ่มจัดหมวดใหม่เปิด RecategorizeModal ได้',false,'ไม่เจอปุ่ม');
+  // Budget Settings พับได้ + ยังแสดงรายการหมวด (ตรรกะเดิม getBudget/setBudget ไม่ได้แตะ)
+  const budgetHead=p.locator('.fin-page .db-head:has(.db-title:text-is("Budget Settings"))').first();
+  if(await budgetHead.count()){
+    await budgetHead.click(); await p.waitForTimeout(600);
+    const rows=await p.evaluate(()=>document.querySelectorAll('.fin-page .budget-row').length);
+    check('Budget Settings กางออกมาแสดงรายการหมวดได้ (ปิดเป็นค่าเริ่มต้น)',rows>0,`${rows} หมวด`);
+  } else check('Budget Settings กางออกมาแสดงรายการหมวดได้ (ปิดเป็นค่าเริ่มต้น)',false,'ไม่เจอหัวการ์ด');
+
   console.log('\n[ข้อ 24/3] หน้า Investments รีดีไซน์ตามธรรมนูญข้อ 32');
   await p.locator('button:has-text("Investments")').first().click(); await p.waitForTimeout(2000);
   const inv=await p.evaluate(()=>{
@@ -544,7 +616,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   console.log('\n[จอมือถือ 390px] ห้ามล้นแนวนอน');
   await p.setViewportSize({width:390,height:844}); await p.waitForTimeout(1200);
   await p.locator('button:has-text("Finance")').first().click().catch(()=>{}); await p.waitForTimeout(1200);
-  for(const t of ['Overview','Investments','Debts']){
+  for(const t of ['Overview','Review','Investments','Debts']){
     await p.locator(`button:has-text("${t}")`).first().click().catch(()=>{});
     await p.waitForTimeout(1500);
     const o=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
