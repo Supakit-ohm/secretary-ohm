@@ -336,6 +336,60 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('Budget Settings กางออกมาแสดงรายการหมวดได้ (ปิดเป็นค่าเริ่มต้น)',rows>0,`${rows} หมวด`);
   } else check('Budget Settings กางออกมาแสดงรายการหมวดได้ (ปิดเป็นค่าเริ่มต้น)',false,'ไม่เจอหัวการ์ด');
 
+  console.log('\n[ข้อ 24/8] หน้า Income + Expenses — reskin เท่านั้น (ห้ามรื้อเป็น bento)');
+  const finListScan=async()=>await p.evaluate(()=>{
+    const sec=document.querySelector('.fin-section');
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className)))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    return {
+      page:!!document.querySelector('.fin-section.fin-page'),
+      bento:document.querySelectorAll('.fin-page .db-bento').length, // ต้อง = 0 (ห้ามรื้อเป็น bento)
+      table:document.querySelectorAll('.fin-page .exp-table').length, // ต้องยังอยู่ (คงความหนาแน่นไว้)
+      showMore:document.querySelectorAll('.fin-page .exp-table-wrap').length,
+      donuts:document.querySelectorAll('.fin-page .db-donut').length,
+      recharts:document.querySelectorAll('.fin-page .recharts-wrapper').length,
+      legacy:document.querySelectorAll('.fin-page .card, .fin-page .empty, .fin-page .fin-pie-split, .fin-page .fin-pie-card').length,
+      dbCards:document.querySelectorAll('.fin-page .db-card').length,
+      donutW:(()=>{const d=document.querySelector('.fin-page .db-donut');return d?Math.round(d.getBoundingClientRect().width):0;})(),
+      inlineFs,
+    };
+  });
+  await p.locator('button:has-text("Income")').first().click(); await p.waitForTimeout(1800);
+  const inc8=await finListScan();
+  check('Income: ใช้ .fin-page แต่ไม่ใช่ bento (ยังเป็นรายการ/ตาราง)',inc8.page&&inc8.bento===0&&inc8.table>=1,`bento ${inc8.bento} · table ${inc8.table}`);
+  check('Income: โดนัท DashDonut แทน CategoryPieCard เดิม (ไม่ใช่ Recharts)',inc8.donuts>=1&&inc8.recharts===0,`${inc8.donuts} วง · recharts ${inc8.recharts}`);
+  check('Income: วงโดนัทขยายใหญ่ขึ้นตามที่ ohm ขอ (140-340px แทน 104px เดิม)',inc8.donutW>=140&&inc8.donutW<=340,`${inc8.donutW}px`);
+  check('Income: ไม่เหลือคลาสธีมเก่า (.card/.empty/.fin-pie-*)',inc8.legacy===0,`เจอ ${inc8.legacy}`);
+  check('Income: การ์ดใช้ธีม db-card (โดนัท + Add Income + by Source + All Income)',inc8.dbCards===4,`${inc8.dbCards} การ์ด`);
+  check('Income: ไม่เหลือ fontSize inline',inc8.inlineFs.length===0,inc8.inlineFs.slice(0,5).join(' | '));
+  check('Income: ปุ่ม Import Payslip ยังอยู่ (สโคป CSS-only ไม่รวบปุ่ม)',await p.locator('.fin-page .slip-btn:has-text("Import Payslip")').count()>0);
+  // เพิ่มรายรับจริงผ่านฟอร์ม แล้วต้องขึ้นในตารางทันที (ตรรกะ addIncome เดิมไม่ได้แตะ)
+  await p.locator('.fin-page input[type=date]').first().fill('2026-07-20');
+  await p.locator('.fin-page input[type=number]').first().fill('999');
+  await p.locator('.fin-page input[placeholder*="เงินเดือน"]').fill('ทดสอบ 24/8');
+  await p.locator('.fin-page .icon-btn').first().click(); await p.waitForTimeout(1000);
+  const incAdded=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).finance.income.some(i=>i.source==='ทดสอบ 24/8'&&i.amount===999));
+  check('Income: เพิ่มรายรับจากฟอร์มยังทำงานปกติ',incAdded);
+
+  await p.locator('button:has-text("Expenses")').first().click(); await p.waitForTimeout(1800);
+  const exp8=await finListScan();
+  check('Expenses: ใช้ .fin-page แต่ไม่ใช่ bento (ยังเป็นรายการ/ตาราง)',exp8.page&&exp8.bento===0&&exp8.table>=1,`bento ${exp8.bento} · table ${exp8.table}`);
+  check('Expenses: โดนัท DashDonut แทน CategoryPieCard เดิม (ไม่ใช่ Recharts)',exp8.donuts>=1&&exp8.recharts===0,`${exp8.donuts} วง · recharts ${exp8.recharts}`);
+  check('Expenses: วงโดนัทขยายใหญ่ขึ้นตามที่ ohm ขอ (140-340px แทน 104px เดิม)',exp8.donutW>=140&&exp8.donutW<=340,`${exp8.donutW}px`);
+  check('Expenses: ไม่เหลือคลาสธีมเก่า (.card/.empty/.fin-pie-*)',exp8.legacy===0,`เจอ ${exp8.legacy}`);
+  check('Expenses: การ์ดใช้ธีม db-card (โดนัท + Add Expense + by Category + All Expenses)',exp8.dbCards===4,`${exp8.dbCards} การ์ด`);
+  check('Expenses: ไม่เหลือ fontSize inline',exp8.inlineFs.length===0,exp8.inlineFs.slice(0,5).join(' | '));
+  check('Expenses: ปุ่ม Import CSV ยังอยู่ (สโคป CSS-only ไม่รวบปุ่ม)',await p.locator('.fin-page button:has-text("Import CSV")').count()>0);
+  check('Expenses: แบนเนอร์เตือน "อื่นๆ" ใช้คลาส .fin-banner ใหม่ (ไม่ใช่ inline style เดิม)',await p.evaluate(()=>{const b=document.querySelector('.fin-page .fin-banner.info');return !b||!b.getAttribute('style');}));
+  // เพิ่มรายจ่ายจริงผ่านฟอร์ม แล้วต้องขึ้นในตารางทันที (ตรรกะ addExpense เดิมไม่ได้แตะ)
+  await p.locator('.fin-page input[type=date]').first().fill('2026-07-21');
+  await p.locator('.fin-page input[type=number]').first().fill('321');
+  await p.locator('.fin-page input[placeholder*="อาหาร"]').fill('ทดสอบหมวด 24/8');
+  await p.locator('.fin-page .icon-btn').first().click(); await p.waitForTimeout(1000);
+  const expAdded=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).finance.expenses.some(e=>e.category==='ทดสอบหมวด 24/8'&&e.amount===-321));
+  check('Expenses: เพิ่มรายจ่ายจากฟอร์มยังทำงานปกติ',expAdded);
+
   console.log('\n[ข้อ 24/3] หน้า Investments รีดีไซน์ตามธรรมนูญข้อ 32');
   await p.locator('button:has-text("Investments")').first().click(); await p.waitForTimeout(2000);
   const inv=await p.evaluate(()=>{

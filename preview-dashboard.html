@@ -1541,23 +1541,9 @@ function TxnFilterBar({months,cats,catLabel,fMonth,setFMonth,fCat,setFCat,origin
     </div>
   );
 }
-function renderPieLabel({cx,cy,midAngle,outerRadius,percent,name,fill}){
-  if(percent<0.03) return null;
-  const RAD=Math.PI/180;
-  const r=outerRadius+22;
-  const x=cx+r*Math.cos(-midAngle*RAD);
-  const y=cy+r*Math.sin(-midAngle*RAD);
-  const anchor=x>cx?"start":"end";
-  return (
-    <text x={x} y={y} fill={fill} textAnchor={anchor} dominantBaseline="central" style={{fontSize:11,fontFamily:"'Noto Sans Thai',sans-serif",fontWeight:600}}>
-      {name} {(percent*100).toFixed(1)}%
-    </text>
-  );
-}
-/* ═══ ข้อ 24/4: การ์ดโดนัทหมวดหมู่แบบ bento (ใช้ในหน้า Finance Overview) ═══
-   *** อย่าเอาไปแทน CategoryPieCard ด้านล่าง *** — ตัวนั้นยังถูกใช้ในแท็บ Income/Expenses
-   ที่ยังไม่ถึงคิว (ข้อ 24/8) และแท็บนั้นห้ามรื้อเป็น bento ตามข้อ 24
-   กดที่ legend เพื่อกางรายการของหมวดนั้น (แทนการคลิกชิ้นพายแบบเดิม — โดนัท SVG ไม่มี hit area รายชิ้น) */
+/* ═══ ข้อ 24/4: การ์ดโดนัทหมวดหมู่แบบ bento (ใช้ในหน้า Finance Overview)
+   ข้อ 24/8: ใช้การ์ดนี้แทน CategoryPieCard เดิมในแท็บ Income/Expenses ด้วยแล้ว (เรียกแบบไม่มี span จะได้เป็นการ์ดเดี่ยวเต็มความกว้าง ไม่ต้องอยู่ใน .db-bento)
+   กดที่ legend เพื่อกางรายการของหมวดนั้น (แทนการคลิกชิ้นพายแบบเดิม — โดนัท SVG ไม่มี hit area รายชิ้น) ═══ */
 function FinDonutCard({title,note,data,getItems,accent,sign,emptyText,span}){
   const [active,setActive]=useState(null);
   const total=data.reduce((a,c)=>a+c.value,0);
@@ -1626,89 +1612,6 @@ function FinDonutCard({title,note,data,getItems,accent,sign,emptyText,span}){
             )}
           </>
         )}
-    </div>
-  );
-}
-function CategoryPieCard({title,subtitle,data,getItems,accent,sign,emptyText}){
-  const [active,setActive]=useState(null);
-  const total=data.reduce((a,c)=>a+c.value,0);
-  const activeIdx=data.findIndex(d=>d.name===active);
-  const activeEntry=activeIdx>=0?data[activeIdx]:null;
-  const activePct=activeEntry&&total>0?((activeEntry.value/total)*100).toFixed(1):null;
-  const items=activeEntry?getItems(activeEntry.name).slice().sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount)):[];
-  const toggle=(n)=>setActive(p=>p===n?null:n);
-  const renderLabel=(props)=>{
-    const {cx,cy,midAngle,outerRadius,percent,name,fill}=props;
-    if(percent<0.025) return null;
-    const RAD=Math.PI/180;
-    const r=outerRadius+20;
-    const x=cx+r*Math.cos(-midAngle*RAD);
-    const y=cy+r*Math.sin(-midAngle*RAD);
-    const isOn=active===name;
-    return (
-      <text x={x} y={y} fill={isOn?"#ffffff":fill} textAnchor={x>cx?"start":"end"} dominantBaseline="central"
-        onClick={()=>toggle(name)}
-        style={{fontSize:11,fontFamily:"'Noto Sans Thai',sans-serif",fontWeight:isOn?700:600,cursor:"pointer"}}>
-        {name} {(percent*100).toFixed(1)}%
-      </text>
-    );
-  };
-  return (
-    <div className="card fin-pie-card">
-      <div className="card-head" style={{marginBottom:6}}>{title}</div>
-      <div className="fin-pie-sub">{subtitle}{data.length>0&&<span className="fin-pie-hint"> · click a slice for details</span>}</div>
-      {data.length===0
-        ? <div className="empty" style={{textAlign:"center",padding:"48px 0"}}>{emptyText}</div>
-        : (
-        <div className="fin-pie-row">
-          <div className="fin-pie-chart-col">
-            <div className="fin-pie-frame">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart margin={{top:22,right:52,bottom:22,left:52}}>
-                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="46%" outerRadius="70%" paddingAngle={3}
-                    label={renderLabel} labelLine={{stroke:"#46685a",strokeWidth:1}} isAnimationActive={false}
-                    onClick={(e)=>toggle(e.name)} style={{cursor:"pointer",outline:"none"}}>
-                    {data.map((entry,i)=>(
-                      <Cell key={i} fill={COLORS[i%COLORS.length]} stroke={active===entry.name?"var(--ink)":"none"} strokeWidth={active===entry.name?3:0} opacity={active&&active!==entry.name?0.28:1}/>
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{background:"var(--surface-modal)",border:"1px solid var(--line)",borderRadius:10,color:"var(--ink)",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,""]}/>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pie-center-overlay">
-                <div className="pie-center-total" style={{color:accent,fontSize:15}}>฿{total.toLocaleString()}</div>
-                <div className="pie-center-label">Total</div>
-              </div>
-            </div>
-          </div>
-          <div className={`fin-pie-detail-col ${activeEntry?"open":""}`}>
-            {activeEntry&&(
-              <>
-                <div className="fin-pie-detail-head">
-                  <span className="pie-detail-dot" style={{background:COLORS[activeIdx%COLORS.length],marginBottom:0}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div className="fin-pie-detail-title">{activeEntry.name}</div>
-                    <div className="pie-detail-percent">{activePct}% · {items.length} items</div>
-                  </div>
-                  <button className="del-btn" onClick={()=>setActive(null)}><X size={13}/></button>
-                </div>
-                <div className="fin-pie-detail-amount" style={{color:accent}}>{sign}฿{activeEntry.value.toLocaleString()}</div>
-                <div className="pie-detail-bar" style={{marginTop:10}}><div className="pie-detail-bar-fill" style={{width:`${activePct}%`,background:COLORS[activeIdx%COLORS.length]}}/></div>
-                <div className="fin-pie-detail-list">
-                  {items.length===0&&<div className="empty" style={{fontSize:12.5}}>No transactions</div>}
-                  {items.map(it=>(
-                    <div key={it.id} className="fin-pie-item">
-                      <span className="fin-pie-item-date">{it.date}</span>
-                      <span className="fin-pie-item-amt" style={{color:(sign==="-"&&it.amount>0)?"#34d399":accent}}>{(sign==="-"&&it.amount>0)?"+":sign}฿{Math.abs(it.amount).toLocaleString()}</span>
-                      <span className="fin-pie-item-memo">{it.memo||"—"}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1893,25 +1796,23 @@ function FinanceIncomeTab({finance,persist}) {
     setEditRow(null);
   };
   return (
-    <div className="fin-section">
-      <div style={{padding:"0 20px",marginBottom:16}}>
-        <label style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4,display:"block"}}>Month</label>
-        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"var(--surface-sunken)",border:"1px solid var(--line)",borderRadius:8,color:"var(--ink)",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:13,cursor:"pointer"}}>
+    <div className="fin-section fin-page fin-list-page">
+      <div className="fin-month-picker">
+        <label className="field-label">Month</label>
+        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} className="fin-range-select">
           {monthOptions.map(m=>(
             <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
           ))}
         </select>
       </div>
-      <div style={{padding:"0 20px",marginBottom:20}}>
-        <CategoryPieCard
-          title="Income by Source" subtitle={monthLabel} data={sourceData} accent="#34d399" sign="+"
-          emptyText="No income recorded for this month"
-          getItems={(name)=>(finance.finance.income||[]).filter(i=>i.source===name&&(i.month||monthYearKey(i.date))===selectedMonth).map(i=>({id:i.id,date:i.date,memo:i.note,amount:i.amount}))}/>
-      </div>
+      <FinDonutCard
+        title="Income by Source" note={monthLabel} data={sourceData} accent="var(--accent-soft)" sign="+"
+        emptyText="No income recorded for this month"
+        getItems={(name)=>(finance.finance.income||[]).filter(i=>i.source===name&&(i.month||monthYearKey(i.date))===selectedMonth).map(i=>({id:i.id,date:i.date,memo:i.note,amount:i.amount}))}/>
       {showSlip&&<SlipImportModal data={finance} persist={persist} onClose={()=>setShowSlip(false)}/>}
-      <div className="card">
-        <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span>Add Income</span>
+      <div className="db-card">
+        <div className="db-head">
+          <div className="db-title">Add Income</div>
           <button className="quick-capture-btn slip-btn" onClick={()=>setShowSlip(true)}><Upload size={12}/> Import Payslip</button>
         </div>
         <div className="fin-add-income">
@@ -1936,24 +1837,24 @@ function FinanceIncomeTab({finance,persist}) {
           <button className="icon-btn" onClick={addIncome} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
         </div>
       </div>
-      <div className="card">
-        <div className="card-head">Income by Source (all time)</div>
-        {sortedSourcesAll.length===0&&<div className="empty">ยังไม่มีรายรับ</div>}
+      <div className="db-card">
+        <div className="db-head"><div className="db-title">Income by Source (all time)</div></div>
+        {sortedSourcesAll.length===0&&<div className="db-empty">ยังไม่มีรายรับ</div>}
         {sortedSourcesAll.map(([src,total],i)=>(
-          <div key={src} style={{paddingBottom:10,borderBottom:"1px solid var(--chip-bg)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:13}}>{src}</span>
-              <span style={{color:"#34d399",fontFamily:"'IBM Plex Mono',monospace",fontSize:13}}>+฿{total.toLocaleString()}</span>
+          <div key={src} className="fin-agg-row">
+            <div className="fin-agg-row-top">
+              <span className="fin-agg-name">{src}</span>
+              <span className="fin-agg-amt db-mono" style={{color:"var(--accent-soft)"}}>+฿{total.toLocaleString()}</span>
             </div>
-            <div style={{background:"var(--surface-sunken)",height:4,borderRadius:2,overflow:"hidden"}}>
-              <div style={{height:"100%",background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedSourcesAll.map(x=>x[1]))||1))*100}%`}}/>
+            <div className="fin-agg-bar">
+              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedSourcesAll.map(x=>x[1]))||1))*100}%`}}/>
             </div>
           </div>
         ))}
       </div>
-      <div className="card">
-        <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span>All Income</span>
+      <div className="db-card">
+        <div className="db-head">
+          <div className="db-title">All Income</div>
           {selectedIds.size>0&&(
             <button className="del-selected-btn" onClick={removeSelectedIncome}>
               <Trash2 size={13}/> ลบที่เลือก ({selectedIds.size})
@@ -1963,11 +1864,11 @@ function FinanceIncomeTab({finance,persist}) {
         <TxnFilterBar months={listMonths} cats={listCats} catLabel="sources" fMonth={fMonth} setFMonth={setFMonth} fCat={fCat} setFCat={setFCat}
           origins={listOrigins} fSrc={fSrc} setFSrc={setFSrc}
           shown={sortedIncome.length} total={allIncome.length} onReset={()=>{setFMonth("all");setFCat("all");setFSrc("all");}}/>
-        {allIncome.length===0&&<div className="empty">ยังไม่มีรายการ</div>}
-        {allIncome.length>0&&sortedIncome.length===0&&<div className="empty">ไม่พบรายการตามตัวกรองนี้</div>}
+        {allIncome.length===0&&<div className="db-empty">ยังไม่มีรายการ</div>}
+        {allIncome.length>0&&sortedIncome.length===0&&<div className="db-empty">ไม่พบรายการตามตัวกรองนี้</div>}
         {sortedIncome.length>0&&(
           <>
-          <div className="txn-filter-total">รวม <b style={{color:"#34d399"}}>+฿{sortedIncome.reduce((a,i)=>a+i.amount,0).toLocaleString()}</b></div>
+          <div className="txn-filter-total">รวม <b style={{color:"var(--accent-soft)"}}>+฿{sortedIncome.reduce((a,i)=>a+i.amount,0).toLocaleString()}</b></div>
           <div className="exp-table-wrap">
             <table className="exp-table">
               <thead>
@@ -1986,7 +1887,7 @@ function FinanceIncomeTab({finance,persist}) {
                     <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(inc.id)} onChange={()=>toggleSelectId(inc.id)}/></td>
                     <td className="exp-col-date">{inc.date}</td>
                     <td>{inc.source}</td>
-                    <td className="exp-col-amount exp-amount-value" style={{color:"#34d399"}}>+฿{inc.amount.toLocaleString()}</td>
+                    <td className="exp-col-amount exp-amount-value" style={{color:"var(--accent-soft)"}}>+฿{inc.amount.toLocaleString()}</td>
                     <td className="exp-col-memo">{inc.note||"—"}</td>
                     <td className="exp-col-actions">
                       <div className="txn-row-actions">
@@ -2527,11 +2428,11 @@ function FinanceExpensesTab({finance,persist}) {
   const dismissVague=()=>{ try{ localStorage.setItem(VAGUE_DISMISS_KEY,String(vagueRows.length)); }catch(e){} setVagueDismissed(vagueRows.length); };
   const showVague=vagueRows.length>vagueDismissed;
   return (
-    <div className="fin-section">
+    <div className="fin-section fin-page fin-list-page">
       {showRecatExp&&<RecategorizeModal finance={finance} persist={persist} startCat="อื่นๆ" onClose={()=>setShowRecatExp(false)}/>}
       {showVague&&(
-        <div style={{margin:"0 20px 16px",padding:"12px 16px",background:"var(--accent-dim)",border:"1px solid var(--accent)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span style={{fontSize:11.5,color:"var(--ink-3)"}}>รายจ่ายหมวด "อื่นๆ" {vagueRows.length} รายการ · ฿{Math.round(vagueTotal).toLocaleString()}{vagueDismissed>0?` (เพิ่มขึ้น ${vagueRows.length-vagueDismissed} รายการจากครั้งก่อน)`:""}</span>
+        <div className="fin-banner info">
+          <span>รายจ่ายหมวด "อื่นๆ" {vagueRows.length} รายการ · ฿{Math.round(vagueTotal).toLocaleString()}{vagueDismissed>0?` (เพิ่มขึ้น ${vagueRows.length-vagueDismissed} รายการจากครั้งก่อน)`:""}</span>
           <div style={{display:"flex",gap:8}}>
             <button className="text-btn" onClick={()=>setShowRecatExp(true)}>จัดหมวด</button>
             <button className="text-btn" style={{color:"var(--ink-2)"}} onClick={dismissVague}>ที่เหลือคืออื่นๆ จริง</button>
@@ -2539,34 +2440,32 @@ function FinanceExpensesTab({finance,persist}) {
         </div>
       )}
       {strayInvestExpenses.length>0&&(
-        <div style={{margin:"0 20px 16px",padding:"12px 16px",background:"var(--gold-dim)",border:"1px solid var(--gold)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span style={{fontSize:11.5,color:"#fbbf24"}}>พบรายการ "ออม ลงทุน" {strayInvestExpenses.length} รายการ ที่หลุดเข้ามาเป็นรายจ่าย (บั๊กเว้นวรรค 2 ช่องที่แก้แล้ว) รวม ฿{strayInvestExpenses.reduce((a,e)=>a+Math.abs(e.amount),0).toLocaleString()}</span>
+        <div className="fin-banner warn">
+          <span>พบรายการ "ออม ลงทุน" {strayInvestExpenses.length} รายการ ที่หลุดเข้ามาเป็นรายจ่าย (บั๊กเว้นวรรค 2 ช่องที่แก้แล้ว) รวม ฿{strayInvestExpenses.reduce((a,e)=>a+Math.abs(e.amount),0).toLocaleString()}</span>
           <button className="text-btn" onClick={fixStrayInvestments}>ย้ายไปเป็นเงินลงทุน</button>
         </div>
       )}
-      <div style={{padding:"0 20px",marginBottom:16}}>
-        <label style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4,display:"block"}}>Month</label>
-        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} style={{background:"var(--surface-sunken)",border:"1px solid var(--line)",borderRadius:8,color:"var(--ink)",padding:"6px 10px",fontFamily:"'Noto Sans Thai',sans-serif",fontSize:13,cursor:"pointer"}}>
+      <div className="fin-month-picker">
+        <label className="field-label">Month</label>
+        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} className="fin-range-select">
           {monthOptions.map(m=>(
             <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
           ))}
         </select>
       </div>
-      <div style={{padding:"0 20px",marginBottom:20}}>
-        <CategoryPieCard
-          title="Expenses by Category" subtitle={monthLabel} data={categoryData} accent="#fb923c" sign="-"
-          emptyText="No expenses recorded for this month"
-          getItems={(name)=>(finance.finance.expenses||[]).filter(e=>e.category===name&&monthYearKey(e.date)===selectedMonth).map(e=>({id:e.id,date:e.date,memo:e.memo,amount:e.amount}))}/>
-      </div>
-      <div className="card">
-        <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          Add Expense
+      <FinDonutCard
+        title="Expenses by Category" note={monthLabel} data={categoryData} accent="var(--orange-soft)" sign="-"
+        emptyText="No expenses recorded for this month"
+        getItems={(name)=>(finance.finance.expenses||[]).filter(e=>e.category===name&&monthYearKey(e.date)===selectedMonth).map(e=>({id:e.id,date:e.date,memo:e.memo,amount:e.amount}))}/>
+      <div className="db-card">
+        <div className="db-head">
+          <div className="db-title">Add Expense</div>
           <button className="text-btn" onClick={()=>setShowCSVImport(!showCSVImport)}><Upload size={13}/> Import CSV</button>
         </div>
         {showCSVImport&&(
-          <div style={{padding:"12px",background:"var(--surface-sunken)",borderRadius:8,marginBottom:12,border:"1px dashed var(--line)"}}>
-            <label style={{fontSize:12.5,color:"var(--ink-2)",display:"block",marginBottom:6}}>Upload CSV exported from your banking app</label>
-            <input type="file" accept=".csv,.xlsx" onChange={handleCSVUpload} style={{fontSize:12.5}}/>
+          <div className="fin-csv-box">
+            <label className="field-label">Upload CSV exported from your banking app</label>
+            <input type="file" accept=".csv,.xlsx" onChange={handleCSVUpload}/>
           </div>
         )}
         <div className="fin-row-2">
@@ -2589,24 +2488,24 @@ function FinanceExpensesTab({finance,persist}) {
         </div>
         <button className="icon-btn" onClick={addExpense} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
       </div>
-      <div className="card">
-        <div className="card-head">Expenses by Category (all time)</div>
-        {sortedCategories.length===0&&<div className="empty">ยังไม่มีรายจ่าย</div>}
+      <div className="db-card">
+        <div className="db-head"><div className="db-title">Expenses by Category (all time)</div></div>
+        {sortedCategories.length===0&&<div className="db-empty">ยังไม่มีรายจ่าย</div>}
         {sortedCategories.map(([cat,total],i)=>(
-          <div key={cat} style={{paddingBottom:10,borderBottom:"1px solid var(--chip-bg)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:13}}>{cat}</span>
-              <span style={{color:"#fb923c",fontFamily:"'IBM Plex Mono',monospace",fontSize:13}}>-฿{total.toLocaleString()}</span>
+          <div key={cat} className="fin-agg-row">
+            <div className="fin-agg-row-top">
+              <span className="fin-agg-name">{cat}</span>
+              <span className="fin-agg-amt db-mono" style={{color:"var(--orange-soft)"}}>-฿{total.toLocaleString()}</span>
             </div>
-            <div style={{background:"var(--surface-sunken)",height:4,borderRadius:2,overflow:"hidden"}}>
-              <div style={{height:"100%",background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedCategories.map(x=>x[1]))||1))*100}%`}}/>
+            <div className="fin-agg-bar">
+              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedCategories.map(x=>x[1]))||1))*100}%`}}/>
             </div>
           </div>
         ))}
       </div>
-      <div className="card">
-        <div className="card-head" style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <span>All Expenses</span>
+      <div className="db-card">
+        <div className="db-head">
+          <div className="db-title">All Expenses</div>
           {selectedIds.size>0&&(
             <button className="del-selected-btn" onClick={removeSelectedExpenses}>
               <Trash2 size={13}/> ลบที่เลือก ({selectedIds.size})
@@ -2616,11 +2515,11 @@ function FinanceExpensesTab({finance,persist}) {
         <TxnFilterBar months={listMonths} cats={listCats} catLabel="categories" fMonth={fMonth} setFMonth={setFMonth} fCat={fCat} setFCat={setFCat}
           origins={listOrigins} fSrc={fSrc} setFSrc={setFSrc}
           shown={sortedExpenses.length} total={allExpenses.length} onReset={()=>{setFMonth("all");setFCat("all");setFSrc("all");}}/>
-        {allExpenses.length===0&&<div className="empty">ยังไม่มีรายการ</div>}
-        {allExpenses.length>0&&sortedExpenses.length===0&&<div className="empty">ไม่พบรายการตามตัวกรองนี้</div>}
+        {allExpenses.length===0&&<div className="db-empty">ยังไม่มีรายการ</div>}
+        {allExpenses.length>0&&sortedExpenses.length===0&&<div className="db-empty">ไม่พบรายการตามตัวกรองนี้</div>}
         {sortedExpenses.length>0&&(
           <>
-          <div className="txn-filter-total">รวม <b style={{color:"#fb923c"}}>-฿{sortedExpenses.reduce((a,e)=>a+expOut(e),0).toLocaleString()}</b></div>
+          <div className="txn-filter-total">รวม <b style={{color:"var(--orange-soft)"}}>-฿{sortedExpenses.reduce((a,e)=>a+expOut(e),0).toLocaleString()}</b></div>
           <div className="exp-table-wrap">
             <table className="exp-table">
               <thead>
@@ -2638,8 +2537,8 @@ function FinanceExpensesTab({finance,persist}) {
                   <tr key={exp.id} className={selectedIds.has(exp.id)?"row-selected":""}>
                     <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(exp.id)} onChange={()=>toggleSelectId(exp.id)}/></td>
                     <td className="exp-col-date">{exp.date}</td>
-                    <td>{exp.category} {exp.source==="kbank-csv"&&<span className="exp-csv-badge">CSV</span>}{exp.source==="payslip"&&<span className="exp-csv-badge" style={{color:"#6ee7b7",borderColor:"#2a5a48",background:"#16302a"}}>SLIP</span>}{exp.source==="csv-refund"&&<span className="exp-csv-badge" style={{color:"#34d399",borderColor:"#2a5a48",background:"#16302a"}}>คืนเงิน</span>}</td>
-                    <td className="exp-col-amount exp-amount-value" style={exp.amount>0?{color:"#34d399"}:undefined}>{exp.amount>0?"+":"-"}฿{Math.abs(exp.amount).toLocaleString()}</td>
+                    <td>{exp.category} {exp.source==="kbank-csv"&&<span className="exp-csv-badge">CSV</span>}{exp.source==="payslip"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>SLIP</span>}{exp.source==="csv-refund"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>คืนเงิน</span>}</td>
+                    <td className="exp-col-amount exp-amount-value" style={exp.amount>0?{color:"var(--accent-soft)"}:undefined}>{exp.amount>0?"+":"-"}฿{Math.abs(exp.amount).toLocaleString()}</td>
                     <td className="exp-col-memo">{exp.memo||"—"}</td>
                     <td className="exp-col-actions">
                       <div className="txn-row-actions">
