@@ -593,6 +593,26 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',!!ed&&/แก้ไข/.test(ed.head||'')&&!!ed.title,ed?`${ed.head} · ${ed.title}`:'');
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',false,'ไม่เจอปุ่มแก้ไข');
+  // ข้อ 24/9e: อัปโหลดปกเอง — เปิดแก้ไขเล่มเดิม ใส่รูปเทส เช็คว่า preview ขึ้น + บันทึกลง localStorage จริง
+  const bqEditForCover=p.locator('.book-page .book-shelf-item .db-chip[title="แก้ไข"]').first();
+  if(await bqEditForCover.count()){
+    await bqEditForCover.click(); await p.waitForTimeout(800);
+    const TEST_PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64');
+    await p.locator('.modal-backdrop input[type="file"]').setInputFiles({name:'cover.png',mimeType:'image/png',buffer:TEST_PNG});
+    await p.waitForTimeout(600);
+    const hasPreview=await p.evaluate(()=>{
+      const img=document.querySelector('.modal-backdrop .book-cover-picker-preview img');
+      return !!img&&img.src.startsWith('data:image');
+    });
+    const hasResetBtn=await p.evaluate(()=>[...document.querySelectorAll('.modal-backdrop button')].some(b=>/กลับไปดึงอัตโนมัติ/.test(b.textContent||'')));
+    check('อัปโหลดปกเองแล้วขึ้น preview ทันที',hasPreview,hasPreview?'มี preview data:image':'ไม่มี');
+    check('มีปุ่ม "กลับไปดึงอัตโนมัติ" โผล่มาหลังอัปโหลด',hasResetBtn);
+    await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(1000);
+    const savedBook=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.find(b=>b.coverManual===true));
+    check('บันทึกปกที่อัปโหลดเองลง localStorage จริง (coverManual+coverUrl เป็น data URI)',
+      !!savedBook&&typeof savedBook.coverUrl==='string'&&savedBook.coverUrl.startsWith('data:image'),
+      savedBook?`coverManual=${savedBook.coverManual} coverUrl เริ่มด้วย ${(savedBook.coverUrl||'').slice(0,20)}...`:'ไม่เจอ');
+  } else { check('อัปโหลดปกเองแล้วขึ้น preview ทันที',false,'ไม่เจอปุ่มแก้ไข'); check('มีปุ่ม "กลับไปดึงอัตโนมัติ" โผล่มาหลังอัปโหลด',false); check('บันทึกปกที่อัปโหลดเองลง localStorage จริง (coverManual+coverUrl เป็น data URI)',false); }
   // ลบเล่มหนึ่งออกจากรายการทั้งหมด → หายจริงใน localStorage
   const beforeDel=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.length);
   const bqDel=p.locator('.book-page .book-shelf-item .db-chip[title="ลบ"]').first();

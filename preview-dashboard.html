@@ -5593,10 +5593,38 @@ async function fetchBookCover(title,author){
 }
 /* ── ข้อ 24/9 (Book Queue): เพิ่ม/แก้ไขผ่านโมดัลตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) เดิม = ฟอร์มค้างหน้าจอ + ไม่มีปุ่มแก้ไข ── */
 function BookFormModal({initial,onClose,onSave}) {
-  const blankForm={title:"",author:"",status:"to-read",priority:3};
-  const [form,setForm]=useState(initial||blankForm);
+  const blankForm={title:"",author:"",status:"to-read",priority:3,coverUrl:"",coverManual:false};
+  const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ready=String(form.title||"").trim().length>0;
+  const [coverBusy,setCoverBusy]=useState(false);
+  const fileInputRef=useRef(null);
+  /* ── ข้อ 24/9e: อัปโหลดปกเอง (ทางเลือกเสริมของข้อ 24/9d ที่ดึงอัตโนมัติจาก Open Library)
+     ย่อรูปด้วย canvas ก่อนเก็บ (กว้างสุด 300px, JPEG q.82) แล้วฝังเป็น data URI ใน coverUrl ตรงๆ
+     ซิงก์ผ่าน Drive JSON เดิมได้เลยเหมือน field อื่น — coverManual:true กันไม่ให้ระบบดึงอัตโนมัติมาทับ ── */
+  const handleCoverFile=(file)=>{
+    if(!file) return;
+    setCoverBusy(true);
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX_W=300;
+        const scale=Math.min(1,MAX_W/img.width);
+        const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        setF('coverUrl',canvas.toDataURL('image/jpeg',0.82));
+        setF('coverManual',true);
+        setCoverBusy(false);
+      };
+      img.onerror=()=>setCoverBusy(false);
+      img.src=e.target.result;
+    };
+    reader.onerror=()=>setCoverBusy(false);
+    reader.readAsDataURL(file);
+  };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -5612,6 +5640,26 @@ function BookFormModal({initial,onClose,onSave}) {
           <div>
             <label className="field-label">ผู้เขียน</label>
             <input className="modal-input" placeholder="James Clear" value={form.author} onChange={e=>setF("author",e.target.value)}/>
+          </div>
+          <div>
+            <label className="field-label">ปกหนังสือ</label>
+            <div className="book-cover-picker">
+              <div className="book-cover-picker-preview">
+                {form.coverUrl?<img src={form.coverUrl} alt=""/>:<BookOpen size={18}/>}
+              </div>
+              <div className="book-cover-picker-actions">
+                <input ref={fileInputRef} type="file" accept="image/*" style={{display:"none"}}
+                  onChange={e=>handleCoverFile(e.target.files&&e.target.files[0])}/>
+                <button type="button" className="pill-btn" disabled={coverBusy}
+                  onClick={()=>fileInputRef.current&&fileInputRef.current.click()}>
+                  {coverBusy?"กำลังย่อรูป...":"อัปโหลดปกเอง"}
+                </button>
+                {form.coverManual&&
+                  <button type="button" className="pill-btn" onClick={()=>{setF('coverUrl',"");setF('coverManual',false);}}>
+                    กลับไปดึงอัตโนมัติ
+                  </button>}
+              </div>
+            </div>
           </div>
           <div className="fin-row-2">
             <div>
@@ -5654,18 +5702,32 @@ function BookQueuePage({data,persist}) {
   const openAdd=()=>setModal({mode:"add"});
   const openEdit=(b)=>setModal({mode:"edit",id:b.id,initial:{
     title:b.title||"",author:b.author||"",status:b.status||"to-read",priority:b.priority||3,
+    coverUrl:b.coverUrl||"",coverManual:!!b.coverManual,
   }});
+  /* ── ข้อ 24/9e: บันทึกปก — ถ้าอัปโหลดเอง (coverManual) เก็บตามที่กรอก, ถ้ากด "กลับไปดึงอัตโนมัติ"
+     (coverManual กลับเป็น false + coverUrl ว่าง) ให้ล้าง coverCheckedAt ด้วย จะได้ให้ระบบไล่ดึงใหม่ทันทีตอนเปิดหน้าครั้งหน้า ── */
   const saveBook=(f)=>{
-    const row={title:String(f.title||"").trim(),author:String(f.author||"").trim(),status:f.status,priority:Number(f.priority)||3};
+    const row={
+      title:String(f.title||"").trim(),author:String(f.author||"").trim(),
+      status:f.status,priority:Number(f.priority)||3,
+      coverUrl:f.coverUrl||null,coverManual:!!f.coverManual,
+    };
     if(!row.title) return;
-    if(modal&&modal.mode==="edit") setBooks(books.map(b=>b.id===modal.id?{...b,...row}:b));
-    else setBooks([...books,{id:uid(),...row}]);
+    if(modal&&modal.mode==="edit"){
+      setBooks(books.map(b=>{
+        if(b.id!==modal.id) return b;
+        const next={...b,...row};
+        if(!row.coverManual&&!row.coverUrl) next.coverCheckedAt=null;
+        return next;
+      }));
+    } else setBooks([...books,{id:uid(),...row}]);
     setModal(null);
   };
 
-  /* ── ข้อ 24/9c: ไล่ดึงปกหนังสือทีละเล่ม เว้นจังหวะกัน rate limit + retry อัตโนมัติถ้าเช็คแล้วไม่เจอปก (ดู comment ที่ fetchBookCover) ── */
+  /* ── ข้อ 24/9c: ไล่ดึงปกหนังสือทีละเล่ม เว้นจังหวะกัน rate limit + retry อัตโนมัติถ้าเช็คแล้วไม่เจอปก (ดู comment ที่ fetchBookCover)
+     ข้อ 24/9e: ข้ามเล่มที่อัปโหลดปกเอง (coverManual) ไม่ให้ระบบไปทับ ── */
   const COVER_RETRY_MS=24*60*60*1000;
-  const needsCover=(b)=>!b.coverUrl&&(!b.coverCheckedAt||Date.now()-b.coverCheckedAt>COVER_RETRY_MS);
+  const needsCover=(b)=>!b.coverManual&&!b.coverUrl&&(!b.coverCheckedAt||Date.now()-b.coverCheckedAt>COVER_RETRY_MS);
   const dataRef=useRef(data); dataRef.current=data;
   const persistRef=useRef(persist); persistRef.current=persist;
   useEffect(()=>{
@@ -5692,6 +5754,7 @@ function BookQueuePage({data,persist}) {
     return ()=>{ cancelled=true; };
   },[]);
   const retryCover=(b)=>{
+    if(b.coverManual) return; // เล่มนี้อัปโหลดปกเองไว้ ไม่ต้องไปยุ่ง
     if(Date.now()<bookCoverBackoffUntil) return; // ยังอยู่ช่วงพักจาก rate limit
     fetchBookCover(b.title,b.author).then(result=>{
       if(result.status!=='done') return;
