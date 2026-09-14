@@ -5571,26 +5571,24 @@ function DocumentPage({data,persist}) {
     </div>
   );
 }
-/* ── ข้อ 24/9c (Book Queue shelf — แก้บั๊ก): ดึงปกหนังสืออัตโนมัติจาก Google Books API (public, ไม่ต้องใช้ API key)
-   บั๊กเดิม: Google Books ไม่มี key มี quota ต่ำมาก โดนโดน 429 (rate limit) ตั้งแต่เล่มแรกๆ แล้วโค้ดเดิม mark ว่า "เช็คแล้ว" ถาวร
-   ทำให้เล่มนั้นไม่มีปกไปตลอดกาล (เจอจริงกับ ohm: Atomic Habits/The Lean Startup ค้างเป็น null ถาวรตั้งแต่ครั้งแรก) —
-   แก้โดย: (1) แยก status 'rate-limited' ออกจาก 'done'(สำเร็จ, อาจไม่เจอปกจริงๆ) — เฉพาะ 'done' เท่านั้นที่บันทึก coverCheckedAt
-   (2) ใช้ coverCheckedAt (เวลา) แทน coverChecked(boolean) — ถ้าเช็คแล้วไม่เจอปกจริง จะ auto-retry ใหม่ทุก 24 ชม. เผื่อ Google index เพิ่มทีหลัง
-   (3) เจอ 429 → พักการยิงทั้งแอป 10 นาที (bookCoverBackoffUntil) กันยิงรัวซ้ำจนโดน block ต่อเนื่อง
-   (4) เว้นจังหวะ 2.5 วิ/เล่มตอนไล่เช็คทีละเล่ม (กันโดน rate limit ตั้งแต่ต้นถ้ามีหลายเล่มพร้อมกัน) ── */
+/* ── ข้อ 24/9d (Book Queue shelf — เปลี่ยนแหล่งปก): ทดสอบสดกับ ohm แล้ว Google Books API (ไม่มี key) โดน 429 ค้างยาวมาก
+   (ยิงตรงจาก network ของ ohm เอง หลังพัก 10+ นาทีก็ยังเจอ 429 — เป็น IP-level quota ที่ตึงเกินจะใช้งานจริงได้)
+   → เปลี่ยนไปใช้ **Open Library** แทนทั้งหมด (openlibrary.org/search.json + covers.openlibrary.org — public, ไม่ต้องมี key เหมือนกัน
+   แต่ quota กว้างกว่ามาก ทดสอบสดกับ network เดียวกันนี้แล้วได้ปกจริงทันที ทั้ง Atomic Habits และ The Lean Startup)
+   โครงสร้าง status ('done'/'rate-limited'/'error') + coverCheckedAt + backoff/retry ทั้งหมดจากข้อ 24/9c ยังใช้เหมือนเดิมทุกอย่าง
+   เผื่อ Open Library เองก็มีเพดานเช่นกัน (ไม่ได้ประกาศต่อสาธารณะ) ── */
 let bookCoverBackoffUntil=0;
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function fetchBookCover(title,author){
   try{
-    const q=`intitle:${title}${author?` inauthor:${author}`:""}`;
-    const res=await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`);
+    const params=new URLSearchParams({title:title,limit:"1",fields:"cover_i"});
+    if(author) params.set("author",author);
+    const res=await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
     if(res.status===429){ bookCoverBackoffUntil=Date.now()+10*60*1000; return {status:'rate-limited'}; }
     if(!res.ok) return {status:'error'};
     const json=await res.json();
-    const info=json.items&&json.items[0]&&json.items[0].volumeInfo;
-    const links=info&&info.imageLinks;
-    const thumb=links&&(links.thumbnail||links.smallThumbnail);
-    return {status:'done',url:thumb?thumb.replace(/^http:\/\//,'https://'):null}; // กัน mixed-content บนหน้า https (GitHub Pages)
+    const coverId=json.docs&&json.docs[0]&&json.docs[0].cover_i;
+    return {status:'done',url:coverId?`https://covers.openlibrary.org/b/id/${coverId}-M.jpg`:null};
   }catch(e){ return {status:'error'}; }
 }
 /* ── ข้อ 24/9 (Book Queue): เพิ่ม/แก้ไขผ่านโมดัลตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) เดิม = ฟอร์มค้างหน้าจอ + ไม่มีปุ่มแก้ไข ── */
