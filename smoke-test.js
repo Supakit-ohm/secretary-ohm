@@ -36,6 +36,7 @@ const SEED={
    {"id":"d2","kind":"self","name":"ยืมเงินเก็บซ่อมบ้าน","type":"other","principal":null,"currentBalance":30000,"updatedAt":"2026-08-01","interestRate":null,"minPayment":null,"dueDay":null,"linkedExpenseCategory":null,"note":"","startDate":"2026-05-01","source":"manual"}]},
  "goals":[],"habits":[],"health":[],"documents":[],
  "bookQueue":[{"id":"bk1","title":"หนังสือทดสอบ","status":"reading"},{"id":"bk2","title":"อ่านจบแล้ว","status":"done"}],
+ "mediaReviews":[{"id":"mr1","title":"รีวิวทดสอบ","type":"book","rating":9,"reviewText":"ทดสอบระบบรีวิว","date":"2026-07-01","link":""}],
  "journal":[],"activity":[],
  "projects":[
   {"id":"p1","title":"โปรเจกต์กำหนดเอง","description":"ทดสอบหมุด + toast","category":"personal","priority":"medium","color":"#8b5cf6","status":"active","measureType":"manual","targetValue":100,"baselineValue":0,"unit":"","manualValue":40,"startDate":"2026-06-01","targetDate":"2026-12-31",
@@ -622,6 +623,56 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('ลบหนังสือออกจากรายการได้จริง',afterDel===beforeDel-1,`${beforeDel} → ${afterDel}`);
   } else check('ลบหนังสือออกจากรายการได้จริง',false,'ไม่เจอปุ่มลบ');
 
+  console.log('\n[ข้อ 45] หน้า Reviews (Book/Video/Podcast รวมรายการเดียว)');
+  // ปุ่มเมนูชื่อ "Media" ไม่ใช่ "Reviews" — กันชนกับปุ่มแท็บ "Review" ของ Finance (has-text จับซับสตริง)
+  await p.locator('button:has-text("Media")').first().click(); await p.waitForTimeout(1800);
+  const rv=await p.evaluate(()=>{
+    const h=document.querySelector('.review-page .db-hero-title');
+    return {
+      page:!!document.querySelector('.review-page'),
+      hero:h?h.textContent.trim():'',
+      bignums:document.querySelectorAll('.review-page .db-bignum .n').length,
+      addBtns:[...document.querySelectorAll('.review-page button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      rows:document.querySelectorAll('.review-page .db-row').length,
+    };
+  });
+  check('หน้า Reviews แสดงฮีโร่ถูกต้อง',rv.page&&/Reviews/.test(rv.hero),rv.hero);
+  check('ตัวเลขใหญ่สรุป 3 ตัว (หนังสือ/วิดีโอ/พอดแคสต์)',rv.bignums===3,`${rv.bignums} ตัว`);
+  check('ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',rv.addBtns.length===1,rv.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('รายการรีวิวจาก seed แสดงเป็นแถว db-row',rv.rows>=1,`${rv.rows} แถว`);
+  // ปุ่มเดียว → ReviewFormModal เปิด แล้วเพิ่มรีวิวใหม่ได้จริง
+  const rvAddBtn=p.locator('.review-page .inv-add-btn').first();
+  if(await rvAddBtn.count()){
+    await rvAddBtn.click(); await p.waitForTimeout(800);
+    const hasModal=await p.evaluate(()=>!!document.querySelector('.modal-backdrop .modal-head'));
+    check('ปุ่มเพิ่มข้อมูลเปิด ReviewFormModal ได้',hasModal);
+    if(hasModal){
+      await p.locator('.modal-backdrop input').first().fill('เพิ่มรีวิวทดสอบ 45');
+      await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(1000);
+      const added=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.some(r=>r.title==='เพิ่มรีวิวทดสอบ 45'));
+      check('เพิ่มรีวิวใหม่จากโมดัลได้จริง',added);
+    } else check('เพิ่มรีวิวใหม่จากโมดัลได้จริง',false,'ไม่มีโมดัล');
+  } else check('ปุ่มเพิ่มข้อมูลเปิด ReviewFormModal ได้',false,'ไม่เจอปุ่ม');
+  // ปุ่มแก้ไข → โมดัลเดิมพร้อมค่าเก่า
+  const rvEdit=p.locator('.review-page .db-chip[title="แก้ไข"]').first();
+  if(await rvEdit.count()){
+    await rvEdit.click(); await p.waitForTimeout(800);
+    const ed=await p.evaluate(()=>{
+      const m=document.querySelector('.modal-backdrop .modal');
+      return m?{head:m.querySelector('.modal-head span')?.textContent.trim(),title:m.querySelector('input')?.value}:null;
+    });
+    check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม (Reviews)',!!ed&&/แก้ไข/.test(ed.head||'')&&!!ed.title,ed?`${ed.head} · ${ed.title}`:'');
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
+  } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม (Reviews)',false,'ไม่เจอปุ่มแก้ไข');
+  // ลบรีวิวออกจากรายการ → หายจริงใน localStorage
+  const beforeDelRv=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.length);
+  const rvDel=p.locator('.review-page .db-chip[title="ลบ"]').first();
+  if(await rvDel.count()){
+    await rvDel.click(); await p.waitForTimeout(1000);
+    const afterDelRv=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.length);
+    check('ลบรีวิวออกจากรายการได้จริง',afterDelRv===beforeDelRv-1,`${beforeDelRv} → ${afterDelRv}`);
+  } else check('ลบรีวิวออกจากรายการได้จริง',false,'ไม่เจอปุ่มลบ');
+
   /* ───────── รอบ 21: หมุดโปรเจกต์ + toast ───────── */
   console.log('\n[ข้อ 21] หมุดโปรเจกต์ + toast');
   await p.locator('button:has-text("Tracker")').first().click().catch(async()=>{
@@ -744,7 +795,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     }
     return {badFs:[...new Set(badFs)],badColor:[...new Set(badColor)]};
   },allowed=ALLOWED_BIG);
-  for(const [label,click] of [['Home','Home'],['Tracker','Tracker'],['Books','Books']]){
+  for(const [label,click] of [['Home','Home'],['Tracker','Tracker'],['Books','Books'],['Media','Media']]){
     await p.locator(`.nav-pill button:has-text("${click}")`).first().click().catch(()=>{});
     await p.waitForTimeout(1500);
     const r=await scanPage(label);

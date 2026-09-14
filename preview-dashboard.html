@@ -455,6 +455,7 @@ const Heart = makeIcon("fa-heart");
 const FileText = makeIcon("fa-file-lines");
 const BookOpen = makeIcon("fa-book");
 const BookMark = makeIcon("fa-bookmark");
+const LinkIcon = makeIcon("fa-link");
 const PenTool = makeIcon("fa-pen");
 const Home = makeIcon("fa-house");
 const Search = makeIcon("fa-magnifying-glass");
@@ -563,7 +564,9 @@ const DEFAULT_EVENTS = [
   { id:"e2", title:"พบแพทย์", startDate:tomorrowISO(), startTime:"14:00", endDate:tomorrowISO(), endTime:"15:00", note:"โรงพยาบาลใกล้บ้าน" },
 ];
 const NOTE_COLORS = ["amber","teal","rose","violet","slate"];
-const PAGE_TITLES = ["Home","Finance","Tracker","Health","Documents","Books","Journal"];
+/* ข้อ 45: ปุ่มเมนูตั้งชื่อ "Media" (ไม่ใช่ "Reviews") เพราะ Playwright `has-text` จับซับสตริง
+   — ถ้าใช้ "Reviews" ปุ่มนี้จะดันไปโดนจับคู่กับปุ่มแท็บ "Review" ของ Finance ด้วย (เจอบั๊กจริงตอนรัน smoke test) */
+const PAGE_TITLES = ["Home","Finance","Tracker","Health","Documents","Books","Journal","Media"];
 const GOAL_COLORS = ["#10b981","#34d399","#d9b26a","#60a5fa","#6ee7b7","#fbbf24","#f87171","#6f9e8d"];
 const GOAL_CATEGORIES = [
   {key:"finance",label:"การเงิน",icon:Wallet},
@@ -980,6 +983,10 @@ const DEFAULT_DATA = {
     {id:"j1",date:todayISO(),entry:"วันนี้ขยันได้ประมาณนี้ เก็บเงินได้เยอะหน่อย"},
     {id:"j2",date:tomorrowISO(),entry:""},
   ],
+  mediaReviews:[
+    {id:"mr1",title:"Atomic Habits",type:"book",rating:9,reviewText:"เปลี่ยนมุมมองเรื่องนิสัยได้เยอะ อ่านซ้ำได้เรื่อยๆ",date:todayISO(),link:""},
+    {id:"mr2",title:"Huberman Lab",type:"podcast",rating:8,reviewText:"เนื้อหาแน่น อิงงานวิจัยเยอะ บางตอนยาวไปหน่อย",date:todayISO(),link:""},
+  ],
   activity:[],
   projects:null,
   tasks:[],
@@ -1140,7 +1147,7 @@ function useSecretaryData() {
       try {
         const res=await window.storage.get(STORAGE_KEY);
         const parsed=res?JSON.parse(res.value):DEFAULT_DATA;
-        const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{}};
+        const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,mediaReviews:parsed.mediaReviews||DEFAULT_DATA.mediaReviews,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{}};
         // migration: แก้ format วันที่รายจ่ายที่นำเข้าจาก CSV ให้เป็น ISO (YYYY-MM-DD) เพื่อให้ตัวกรองเดือนทำงานถูกต้อง
         let dateFixed=false;
         const fixedExpenses=(withTodos.finance.expenses||[]).map(exp=>{
@@ -1393,7 +1400,7 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
   );
 }
 function PageNav({page,setPage}) {
-  const pages=["Home","Finance","Tracker","Health","Docs","Books","Journal"];
+  const pages=["Home","Finance","Tracker","Health","Docs","Books","Journal","Media"];
   return (
     <div className="page-nav">
       {pages.map((label,i)=>(
@@ -5894,6 +5901,156 @@ function JournalPage({data,persist}) {
     </div>
   );
 }
+/* ═══ ข้อ 45: หน้ารีวิว+ให้คะแนน Book/Video/Podcast รวมรายการเดียว (สเปกในโปรเจกต์ claude.ai "secretory" ไฟล์ spec-review-page.md)
+   ตัดสินใจแล้ว: 1 หน้า รายการเดียว ไม่แยก 3 section — ใช้ field `type` คัดแยกทีหลังได้ · คะแนนสเกล 1-10
+   สโคปรอบนี้ทำแค่หน้ารีวิว+ให้คะแนนก่อน — ไอเดียเสริม (สถิติ, คำคม, แท็ก+ตัวกรอง) ยังไม่ทำ ── */
+const REVIEW_TYPE_META={
+  book:{label:"หนังสือ",color:"var(--blue)"},
+  video:{label:"วิดีโอ",color:"var(--orange)"},
+  podcast:{label:"พอดแคสต์",color:"var(--gold)"},
+};
+function ReviewFormModal({initial,onClose,onSave}) {
+  const blankForm={title:"",type:"book",rating:8,reviewText:"",date:todayISO(),link:""};
+  const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
+  const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const ready=String(form.title||"").trim().length>0;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head">
+          <span>{initial?"แก้ไขรีวิว":"➕ เพิ่มรีวิว"}</span>
+          <button className="modal-close" onClick={onClose}><X size={15}/></button>
+        </div>
+        <div className="modal-body">
+          <div>
+            <label className="field-label">ชื่อเรื่อง *</label>
+            <input className="modal-input" placeholder="Atomic Habits" value={form.title} onChange={e=>setF("title",e.target.value)}/>
+          </div>
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">ประเภท</label>
+              <select className="modal-input" value={form.type} onChange={e=>setF("type",e.target.value)}>
+                <option value="book">หนังสือ</option>
+                <option value="video">วิดีโอ</option>
+                <option value="podcast">พอดแคสต์</option>
+              </select>
+            </div>
+            <div>
+              <label className="field-label">วันที่</label>
+              <input type="date" className="modal-input" value={form.date} onChange={e=>setF("date",e.target.value)}/>
+            </div>
+          </div>
+          <div>
+            <label className="field-label">คะแนน (1-10)</label>
+            <input type="range" min="1" max="10" value={form.rating} onChange={e=>setF("rating",parseInt(e.target.value))} style={{width:"100%"}}/>
+            <div className="db-note" style={{textAlign:"center"}}>★ {form.rating}/10</div>
+          </div>
+          <div>
+            <label className="field-label">รีวิว</label>
+            <textarea className="modal-input" rows={4} placeholder="เขียนความเห็นสั้นๆ..." value={form.reviewText} onChange={e=>setF("reviewText",e.target.value)} style={{resize:"vertical"}}/>
+          </div>
+          <div>
+            <label className="field-label">ลิงก์ (ไม่บังคับ)</label>
+            <input className="modal-input" placeholder="https://..." value={form.link} onChange={e=>setF("link",e.target.value)}/>
+          </div>
+          <button className="modal-btn-save" disabled={!ready} onClick={()=>ready&&onSave(form)}>
+            {initial?"บันทึกการแก้ไข":"บันทึกรีวิว"}
+          </button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
+function ReviewsPage({data,persist}) {
+  const reviews=data.mediaReviews||[];
+  const setReviews=(next)=>persist({...data,mediaReviews:next});
+  const removeReview=(id)=>setReviews(reviews.filter(r=>r.id!==id));
+
+  const counts={book:0,video:0,podcast:0};
+  reviews.forEach(r=>{ if(counts[r.type]!=null) counts[r.type]++; });
+  const sorted=reviews.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+
+  /* ข้อ 32/2: ปุ่มเพิ่มข้อมูลปุ่มเดียวต่อหน้า — เพิ่ม/แก้ไขผ่าน ReviewFormModal ตัวเดียว (เหมือน BookFormModal) */
+  const [modal,setModal]=useState(null); // null | {mode:"add"} | {mode:"edit",id,initial}
+  const openAdd=()=>setModal({mode:"add"});
+  const openEdit=(r)=>setModal({mode:"edit",id:r.id,initial:{
+    title:r.title||"",type:r.type||"book",rating:Number(r.rating)||8,
+    reviewText:r.reviewText||"",date:r.date||todayISO(),link:r.link||"",
+  }});
+  const saveReview=(f)=>{
+    const row={
+      title:String(f.title||"").trim(),type:f.type||"book",
+      rating:Math.max(1,Math.min(10,Number(f.rating)||1)),
+      reviewText:String(f.reviewText||"").trim(),
+      date:f.date||todayISO(),link:String(f.link||"").trim(),
+    };
+    if(!row.title) return;
+    if(modal&&modal.mode==="edit") setReviews(reviews.map(r=>r.id===modal.id?{...r,...row}:r));
+    else setReviews([...reviews,{id:uid(),...row}]);
+    setModal(null);
+  };
+
+  return (
+    <div className="page-content review-page">
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Reviews <span>· รีวิวหนังสือ/วิดีโอ/พอดแคสต์</span></h1>
+          <div className="db-hero-line">
+            {reviews.length} รายการ · หนังสือ {counts.book} · วิดีโอ {counts.video} · พอดแคสต์ {counts.podcast}
+          </div>
+          <button className="db-btn primary inv-add-btn" onClick={openAdd}><Plus size={14}/> เพิ่มข้อมูล</button>
+        </div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--blue)"}}>{counts.book}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--blue)"}}/> หนังสือ</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>{counts.video}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> วิดีโอ</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--gold)"}}>{counts.podcast}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--gold)"}}/> พอดแคสต์</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="db-bento">
+        {/* ── ข้อ 28/32: รายการยาวใช้ DashCollapse กดกาง/ย่อได้ ── */}
+        <DashCollapse span="db-span4" title="รายการรีวิวทั้งหมด"
+          note={reviews.length?`${reviews.length} รายการ`:"ยังไม่มีรายการ"}
+          defaultOpen={true}>
+          {sorted.length===0
+            ? <div className="db-empty">ยังไม่มีรีวิว — กด “เพิ่มข้อมูล” ด้านบน</div>
+            : sorted.map(r=>{
+              const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.book;
+              return (
+                <div key={r.id} className="db-row">
+                  <div className="db-tmain">
+                    <div className="db-tname" title={r.title}>{r.title}</div>
+                    <div className="db-tsub">
+                      <span className="db-dot" style={{background:meta.color,marginRight:4}}/>{meta.label} · ★ {r.rating}/10 · {r.date}
+                    </div>
+                    {r.reviewText&&<div className="db-note" style={{marginTop:4,whiteSpace:"pre-wrap"}}>{r.reviewText}</div>}
+                  </div>
+                  <div className="inv-item-actions">
+                    {r.link&&<button className="db-chip" title="เปิดลิงก์" onClick={()=>window.open(r.link,"_blank","noopener,noreferrer")}><LinkIcon size={12}/></button>}
+                    <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(r)}><Edit3 size={12}/></button>
+                    <button className="db-chip" title="ลบ" onClick={()=>removeReview(r.id)}><Trash2 size={12}/></button>
+                  </div>
+                </div>
+              );
+            })}
+        </DashCollapse>
+      </div>
+
+      {modal&&<ReviewFormModal initial={modal.initial} onClose={()=>setModal(null)} onSave={saveReview}/>}
+    </div>
+  );
+}
 const QUICK_TYPES=[
   {key:"note",label:"โน้ต",icon:StickyNote},
   {key:"task",label:"งาน",icon:ListTodo},
@@ -6651,6 +6808,7 @@ function SecretaryDashboard() {
     (data.projects||[]).forEach(p=>{ if((p.title||"").toLowerCase().includes(q)) out.push({id:p.id,kind:"project",label:"โปรเจกต์",text:p.title,page:2}); });
     (data.documents||[]).forEach(d=>{ if((d.title||"").toLowerCase().includes(q)) out.push({id:d.id,kind:"doc",label:"เอกสาร",text:d.title,page:4}); });
     (data.bookQueue||[]).forEach(b=>{ if((b.title||"").toLowerCase().includes(q)) out.push({id:b.id,kind:"book",label:"หนังสือ",text:b.title,page:5}); });
+    (data.mediaReviews||[]).forEach(r=>{ if((r.title||"").toLowerCase().includes(q)) out.push({id:r.id,kind:"review",label:"รีวิว",text:r.title,page:7}); });
     (data.finance.expenses||[]).forEach(e=>{ if(`${e.category} ${e.memo||""}`.toLowerCase().includes(q)) out.push({id:e.id,kind:"expense",label:"รายจ่าย",text:`${e.category} · ${e.memo||e.date}`,page:1}); });
     return out.slice(0,8);
   })();
@@ -6723,6 +6881,7 @@ function SecretaryDashboard() {
             {page===4&&<DocumentPage data={data} persist={persist}/>}
             {page===5&&<BookQueuePage data={data} persist={persist}/>}
             {page===6&&<JournalPage data={data} persist={persist}/>}
+            {page===7&&<ReviewsPage data={data} persist={persist}/>}
           </div>
         </div>
       </div>
