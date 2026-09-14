@@ -5571,21 +5571,27 @@ function DocumentPage({data,persist}) {
     </div>
   );
 }
-/* ── ข้อ 24/9b (Book Queue shelf): ดึงปกหนังสืออัตโนมัติจาก Google Books API (public, ไม่ต้องใช้ API key)
-   ดึงครั้งเดียวต่อเล่ม แล้ว cache ผลไว้ใน record (coverUrl/coverChecked) ซิงก์ผ่าน Drive เดิมได้เลย — ไม่ต้องสร้างระบบไฟล์แนบใหม่
-   ถ้าดึงไม่เจอ/ออฟไลน์/เน็ตล่ม → coverUrl:null (ยังถือว่า checked แล้ว ไม่ยิงซ้ำ) แสดงปกสำรอง (ไอคอนหนังสือ) แทน ── */
+/* ── ข้อ 24/9c (Book Queue shelf — แก้บั๊ก): ดึงปกหนังสืออัตโนมัติจาก Google Books API (public, ไม่ต้องใช้ API key)
+   บั๊กเดิม: Google Books ไม่มี key มี quota ต่ำมาก โดนโดน 429 (rate limit) ตั้งแต่เล่มแรกๆ แล้วโค้ดเดิม mark ว่า "เช็คแล้ว" ถาวร
+   ทำให้เล่มนั้นไม่มีปกไปตลอดกาล (เจอจริงกับ ohm: Atomic Habits/The Lean Startup ค้างเป็น null ถาวรตั้งแต่ครั้งแรก) —
+   แก้โดย: (1) แยก status 'rate-limited' ออกจาก 'done'(สำเร็จ, อาจไม่เจอปกจริงๆ) — เฉพาะ 'done' เท่านั้นที่บันทึก coverCheckedAt
+   (2) ใช้ coverCheckedAt (เวลา) แทน coverChecked(boolean) — ถ้าเช็คแล้วไม่เจอปกจริง จะ auto-retry ใหม่ทุก 24 ชม. เผื่อ Google index เพิ่มทีหลัง
+   (3) เจอ 429 → พักการยิงทั้งแอป 10 นาที (bookCoverBackoffUntil) กันยิงรัวซ้ำจนโดน block ต่อเนื่อง
+   (4) เว้นจังหวะ 2.5 วิ/เล่มตอนไล่เช็คทีละเล่ม (กันโดน rate limit ตั้งแต่ต้นถ้ามีหลายเล่มพร้อมกัน) ── */
+let bookCoverBackoffUntil=0;
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function fetchBookCover(title,author){
   try{
     const q=`intitle:${title}${author?` inauthor:${author}`:""}`;
     const res=await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`);
-    if(!res.ok) return null;
+    if(res.status===429){ bookCoverBackoffUntil=Date.now()+10*60*1000; return {status:'rate-limited'}; }
+    if(!res.ok) return {status:'error'};
     const json=await res.json();
     const info=json.items&&json.items[0]&&json.items[0].volumeInfo;
     const links=info&&info.imageLinks;
     const thumb=links&&(links.thumbnail||links.smallThumbnail);
-    if(!thumb) return null;
-    return thumb.replace(/^http:\/\//,'https://'); // กัน mixed-content บนหน้า https (GitHub Pages)
-  }catch(e){ return null; }
+    return {status:'done',url:thumb?thumb.replace(/^http:\/\//,'https://'):null}; // กัน mixed-content บนหน้า https (GitHub Pages)
+  }catch(e){ return {status:'error'}; }
 }
 /* ── ข้อ 24/9 (Book Queue): เพิ่ม/แก้ไขผ่านโมดัลตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) เดิม = ฟอร์มค้างหน้าจอ + ไม่มีปุ่มแก้ไข ── */
 function BookFormModal({initial,onClose,onSave}) {
@@ -5659,18 +5665,42 @@ function BookQueuePage({data,persist}) {
     setModal(null);
   };
 
-  /* ── ข้อ 24/9b: ไล่ดึงปกหนังสือทีละเล่มสำหรับเล่มที่ยังไม่เคยเช็ค (coverChecked) แล้ว persist ผลไว้ ── */
-  const uncoveredCount=books.filter(b=>!b.coverChecked).length;
-  const coverFetchingRef=useRef(false);
+  /* ── ข้อ 24/9c: ไล่ดึงปกหนังสือทีละเล่ม เว้นจังหวะกัน rate limit + retry อัตโนมัติถ้าเช็คแล้วไม่เจอปก (ดู comment ที่ fetchBookCover) ── */
+  const COVER_RETRY_MS=24*60*60*1000;
+  const needsCover=(b)=>!b.coverUrl&&(!b.coverCheckedAt||Date.now()-b.coverCheckedAt>COVER_RETRY_MS);
+  const dataRef=useRef(data); dataRef.current=data;
+  const persistRef=useRef(persist); persistRef.current=persist;
   useEffect(()=>{
-    if(uncoveredCount===0||coverFetchingRef.current) return;
-    const target=books.find(b=>!b.coverChecked);
-    if(!target) return;
-    coverFetchingRef.current=true;
-    fetchBookCover(target.title,target.author).then(url=>{
-      persist({...data,bookQueue:(data.bookQueue||[]).map(b=>b.id===target.id?{...b,coverUrl:url||null,coverChecked:true}:b)});
-    }).finally(()=>{ coverFetchingRef.current=false; });
-  },[uncoveredCount]);
+    let cancelled=false;
+    (async()=>{
+      const attempted=new Set();
+      while(!cancelled){
+        if(Date.now()<bookCoverBackoffUntil) break; // เพิ่งโดน 429 มา พักไว้ก่อน ลองใหม่ตอนเปิดหน้าครั้งหน้า
+        const list=dataRef.current.bookQueue||[];
+        const target=list.find(b=>needsCover(b)&&!attempted.has(b.id));
+        if(!target) break;
+        attempted.add(target.id);
+        const result=await fetchBookCover(target.title,target.author);
+        if(cancelled) return;
+        if(result.status==='rate-limited') break; // หยุดทั้งชุดตอนนี้ ไม่ทำเล่มอื่นพัง
+        if(result.status==='done'){
+          const latest=dataRef.current;
+          persistRef.current({...latest,bookQueue:(latest.bookQueue||[]).map(b=>b.id===target.id?{...b,coverUrl:result.url||null,coverCheckedAt:Date.now()}:b)});
+        }
+        // status==='error' (ชั่วคราว เช่นเน็ตสะดุด): ข้ามเล่มนี้ไปก่อน ไม่บันทึกเวลา จะลองใหม่ตอนเปิดหน้าครั้งหน้า
+        await sleep(2500);
+      }
+    })();
+    return ()=>{ cancelled=true; };
+  },[]);
+  const retryCover=(b)=>{
+    if(Date.now()<bookCoverBackoffUntil) return; // ยังอยู่ช่วงพักจาก rate limit
+    fetchBookCover(b.title,b.author).then(result=>{
+      if(result.status!=='done') return;
+      const latest=dataRef.current;
+      persistRef.current({...latest,bookQueue:(latest.bookQueue||[]).map(x=>x.id===b.id?{...x,coverUrl:result.url||null,coverCheckedAt:Date.now()}:x)});
+    });
+  };
 
   return (
     <div className="page-content book-page">
@@ -5746,7 +5776,7 @@ function BookQueuePage({data,persist}) {
                   <div className="book-shelf-cover">
                     {b.coverUrl
                       ? <img src={b.coverUrl} alt={b.title} loading="lazy"/>
-                      : <div className="book-shelf-fallback"><BookOpen size={18}/><div className="db-tname">{b.title}</div></div>}
+                      : <div className="book-shelf-fallback" title="กดเพื่อลองดึงปกใหม่" onClick={()=>retryCover(b)}><BookOpen size={18}/><div className="db-tname">{b.title}</div></div>}
                     <span className={`book-shelf-dot ${b.status}`} title={statusLabels[b.status]||b.status}/>
                   </div>
                   <div className="book-shelf-info">
