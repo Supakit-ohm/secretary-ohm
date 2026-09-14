@@ -529,6 +529,77 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   } else check('ProjectDetail · ประวัติ check-in เป็นแถวการ์ด ไม่ใช่ตาราง',false,'ไม่เจอการ์ด');
   await p.locator('.trk-back').first().click(); await p.waitForTimeout(1200);
 
+  console.log('\n[ข้อ 24/9 Book Queue] หน้า Book Queue รีดีไซน์ตามธรรมนูญข้อ 32');
+  await p.locator('button:has-text("Books")').first().click(); await p.waitForTimeout(1800);
+  const bq=await p.evaluate(()=>{
+    const sec=document.querySelector('.book-page');
+    const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
+      .filter(e=>e.style.fontSize&&!(e.tagName==='I'&&/\bfa-/.test(e.className)))
+      .map(e=>`${e.className}:${e.style.fontSize}`);
+    const h=document.querySelector('.book-page .db-hero-title');
+    return {
+      page:!!document.querySelector('.book-page'),
+      heroFs:h?getComputedStyle(h).fontSize:'',
+      heroMargin:h?getComputedStyle(h).marginTop:'',
+      heroText:h?h.textContent.trim():'',
+      cards:document.querySelectorAll('.book-page .db-bento > .db-card').length,
+      bignums:document.querySelectorAll('.book-page .db-bignum .n').length,
+      addBtns:[...document.querySelectorAll('.book-page button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
+      legacy:document.querySelectorAll('.book-page .card, .book-page .empty, .book-page .text-btn').length,
+      bookItems:document.querySelectorAll('.book-page .book-item').length,
+      badges:document.querySelectorAll('.book-page .book-status-badge').length,
+      readingRows:document.querySelectorAll('.book-page .db-row').length,
+      inlineFs,
+    };
+  });
+  check('หน้าใช้โครง .book-page + db-hero + db-bento',bq.page&&bq.cards>=3,`การ์ด ${bq.cards} ใบ`);
+  check('ฮีโร่ 38px และมี margin:0 (ข้อ 31) + ชื่อถูกต้อง',bq.heroFs==='38px'&&bq.heroMargin==='0px'&&/Book Queue/.test(bq.heroText),`${bq.heroFs} / margin-top ${bq.heroMargin} / "${bq.heroText}"`);
+  check('ตัวเลขใหญ่สรุป 3 ตัว (ต้องอ่าน/กำลังอ่าน/อ่านแล้ว)',bq.bignums===3,`${bq.bignums} ตัว`);
+  check('ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',bq.addBtns.length===1,bq.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
+  check('ไม่เหลือคลาสธีมเก่า (.card/.empty/.text-btn เดิม) ในหน้านี้',bq.legacy===0,`เจอ ${bq.legacy}`);
+  check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',bq.inlineFs.length===0,bq.inlineFs.slice(0,5).join(' | '));
+  check('การ์ด "กำลังอ่าน" แสดงเล่ม seed (bk1) เป็นแถว db-row',bq.readingRows>=1,`${bq.readingRows} แถว`);
+  check('รายการหนังสือทั้งหมด (DashCollapse) แสดงครบ 2 เล่มจาก seed พร้อมป้ายสถานะ',bq.bookItems===2&&bq.badges===2,`การ์ด ${bq.bookItems} ใบ · ป้าย ${bq.badges}`);
+  // กด "อ่านจบแล้ว" บนเล่มที่กำลังอ่าน (bk1) → ต้องเลื่อนสถานะเป็น done จริงใน localStorage
+  const advanceBtn=p.locator('.book-page .db-row .pill-btn.primary').first();
+  if(await advanceBtn.count()){
+    await advanceBtn.click(); await p.waitForTimeout(1000);
+    const st=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.find(b=>b.id==='bk1')?.status);
+    check('กด "อ่านจบแล้ว" แล้วสถานะเลื่อนเป็น done จริง',st==='done',`status=${st}`);
+  } else check('กด "อ่านจบแล้ว" แล้วสถานะเลื่อนเป็น done จริง',false,'ไม่เจอปุ่ม');
+  // ปุ่มเดียว → BookFormModal เปิด แล้วเพิ่มหนังสือใหม่ได้จริง
+  const bqAdd=p.locator('.book-page .inv-add-btn').first();
+  if(await bqAdd.count()){
+    await bqAdd.click(); await p.waitForTimeout(800);
+    const hasModal=await p.evaluate(()=>!!document.querySelector('.modal-backdrop .modal-head'));
+    check('ปุ่มเพิ่มข้อมูลเปิด BookFormModal ได้',hasModal);
+    if(hasModal){
+      await p.locator('.modal-backdrop input').first().fill('เพิ่มหนังสือทดสอบ 24/9');
+      await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(1000);
+      const added=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.some(b=>b.title==='เพิ่มหนังสือทดสอบ 24/9'));
+      check('เพิ่มหนังสือใหม่จากโมดัลได้จริง',added);
+    } else check('เพิ่มหนังสือใหม่จากโมดัลได้จริง',false,'ไม่มีโมดัล');
+  } else check('ปุ่มเพิ่มข้อมูลเปิด BookFormModal ได้',false,'ไม่เจอปุ่ม');
+  // ปุ่มแก้ไขบนการ์ดในรายการทั้งหมด → โมดัลเดิมพร้อมค่าเก่า
+  const bqEdit=p.locator('.book-page .book-item .db-chip[title="แก้ไข"]').first();
+  if(await bqEdit.count()){
+    await bqEdit.click(); await p.waitForTimeout(800);
+    const ed=await p.evaluate(()=>{
+      const m=document.querySelector('.modal-backdrop .modal');
+      return m?{head:m.querySelector('.modal-head span')?.textContent.trim(),title:m.querySelector('input')?.value}:null;
+    });
+    check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',!!ed&&/แก้ไข/.test(ed.head||'')&&!!ed.title,ed?`${ed.head} · ${ed.title}`:'');
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
+  } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',false,'ไม่เจอปุ่มแก้ไข');
+  // ลบเล่มหนึ่งออกจากรายการทั้งหมด → หายจริงใน localStorage
+  const beforeDel=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.length);
+  const bqDel=p.locator('.book-page .book-item .db-chip[title="ลบ"]').first();
+  if(await bqDel.count()){
+    await bqDel.click(); await p.waitForTimeout(1000);
+    const afterDel=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.length);
+    check('ลบหนังสือออกจากรายการได้จริง',afterDel===beforeDel-1,`${beforeDel} → ${afterDel}`);
+  } else check('ลบหนังสือออกจากรายการได้จริง',false,'ไม่เจอปุ่มลบ');
+
   /* ───────── รอบ 21: หมุดโปรเจกต์ + toast ───────── */
   console.log('\n[ข้อ 21] หมุดโปรเจกต์ + toast');
   await p.locator('button:has-text("Tracker")').first().click().catch(async()=>{

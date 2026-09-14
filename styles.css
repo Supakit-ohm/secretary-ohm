@@ -1115,6 +1115,19 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
    มันจะยืดสูงเต็มการ์ด ต้องปิด flex ทิ้ง (เคยได้แถบหมุดสูง 78px แทน 10px) */
 .db-card .ms-track{flex:none;}
 
+/* ── ข้อ 24/9: หน้า Book Queue ── */
+.book-page{padding:0 20px 20px;}
+.book-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+.book-item{display:flex;flex-direction:column;background:rgba(255,255,255,.032);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:12px 14px;}
+.book-item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.book-item-name{min-width:0;}
+.book-meta{display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
+.book-status-badge{font-size:10.5px;font-weight:600;border-radius:999px;padding:3px 9px;white-space:nowrap;}
+.book-status-badge.to-read{background:rgba(96,165,250,.16);color:var(--blue);}
+.book-status-badge.reading{background:rgba(251,146,60,.16);color:var(--orange-soft);}
+.book-status-badge.done{background:var(--accent-dim);color:var(--accent-soft);}
+.book-stars{font-size:11px;color:var(--ink-5);}
+
 @media(max-width:1200px){
   .crypto-platform-grid{grid-template-columns:1fr;}
 }
@@ -1130,4 +1143,6 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .trk-page{padding:0 0 20px;}
   .db-card .prj-grid{grid-template-columns:1fr;}
   .trk-ring-side{min-width:0;}
+  .book-page{padding:0 0 20px;}
+  .book-grid{grid-template-columns:1fr;}
 }

@@ -5571,70 +5571,171 @@ function DocumentPage({data,persist}) {
     </div>
   );
 }
-function BookQueuePage({data,persist}) {
-  const [books,setBooks]=useState(data.bookQueue||[]);
-  const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({title:"",author:"",status:"to-read",priority:3});
-  const addBook=()=>{ if(!form.title) return; persist({...data,bookQueue:[...books,{id:uid(),...form}]}); setForm({title:"",author:"",status:"to-read",priority:3}); setShowForm(false); };
-  const updateBook=(id,update)=>persist({...data,bookQueue:books.map(b=>b.id===id?{...b,...update}:b)});
-  const removeBook=(id)=>persist({...data,bookQueue:books.filter(b=>b.id!==id)});
-  const groups={['to-read']:[],'reading':[],'done':[]};
-  books.forEach(b=>groups[b.status]?.push(b));
-  const statusLabels={'to-read':'ต้องอ่าน','reading':'กำลังอ่าน','done':'อ่านแล้ว'};
-  const statusColors={'to-read':'#60a5fa','reading':'#fb923c','done':'#34d399'};
+/* ── ข้อ 24/9 (Book Queue): เพิ่ม/แก้ไขผ่านโมดัลตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) เดิม = ฟอร์มค้างหน้าจอ + ไม่มีปุ่มแก้ไข ── */
+function BookFormModal({initial,onClose,onSave}) {
+  const blankForm={title:"",author:"",status:"to-read",priority:3};
+  const [form,setForm]=useState(initial||blankForm);
+  const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const ready=String(form.title||"").trim().length>0;
   return (
-    <div className="page-content">
-      <div className="card">
-        <div className="card-head"><BookOpen size={15}/> Book Queue</div>
-        {books.length===0&&<div className="empty">ไม่มีหนังสืออยู่ในรายการ</div>}
-        {Object.entries(groups).map(([status,items])=>(
-          <div key={status} style={{marginBottom:14}}>
-            <div style={{fontSize:13,fontWeight:600,color:statusColors[status],marginBottom:8}}>{statusLabels[status]} ({items.length})</div>
-            {items.length===0&&<div className="empty" style={{fontSize:12.5}}>ว่างเปล่า</div>}
-            {items.map(b=>(
-              <div key={b.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,border:`1px solid ${statusColors[status]}33`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:600}}>{b.title}</div>
-                    <div style={{fontSize:12.5,color:"var(--ink-2)",marginTop:4}}>โดย {b.author}</div>
-                    <div style={{fontSize:12.5,color:"#fb923c",marginTop:4}}>ความสำคัญ {"⭐".repeat(b.priority)}</div>
-                  </div>
-                  <div style={{display:"flex",gap:6}}>
-                    {status!=='done'&&(
-                      <button onClick={()=>updateBook(b.id,{status:status==='to-read'?'reading':'done'})} style={{fontSize:12.5,padding:"4px 8px",borderRadius:6,border:"1px solid var(--line)",background:"transparent",color:"var(--ink-2)",cursor:"pointer"}}>
-                        {status==='to-read'?"อ่านเลย":"ใจตัดสินแล้ว"}
-                      </button>
-                    )}
-                    <button className="del-btn" onClick={()=>removeBook(b.id)}><Trash2 size={13}/></button>
-                  </div>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head">
+          <span>{initial?"แก้ไขหนังสือ":"➕ เพิ่มหนังสือ"}</span>
+          <button className="modal-close" onClick={onClose}><X size={15}/></button>
+        </div>
+        <div className="modal-body">
+          <div>
+            <label className="field-label">ชื่อหนังสือ *</label>
+            <input className="modal-input" placeholder="Atomic Habits" value={form.title} onChange={e=>setF("title",e.target.value)}/>
+          </div>
+          <div>
+            <label className="field-label">ผู้เขียน</label>
+            <input className="modal-input" placeholder="James Clear" value={form.author} onChange={e=>setF("author",e.target.value)}/>
+          </div>
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">สถานะ</label>
+              <select className="modal-input" value={form.status} onChange={e=>setF("status",e.target.value)}>
+                <option value="to-read">ต้องอ่าน</option>
+                <option value="reading">กำลังอ่าน</option>
+                <option value="done">อ่านแล้ว</option>
+              </select>
+            </div>
+            <div>
+              <label className="field-label">ความสำคัญ</label>
+              <input type="range" min="1" max="5" value={form.priority} onChange={e=>setF("priority",parseInt(e.target.value))} style={{width:"100%"}}/>
+              <div className="db-note" style={{textAlign:"center"}}>{"⭐".repeat(form.priority)}</div>
+            </div>
+          </div>
+          <button className="modal-btn-save" disabled={!ready} onClick={()=>ready&&onSave(form)}>
+            {initial?"บันทึกการแก้ไข":"บันทึกหนังสือ"}
+          </button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
+function BookQueuePage({data,persist}) {
+  const books=data.bookQueue||[];
+  const setBooks=(next)=>persist({...data,bookQueue:next});
+  const removeBook=(id)=>setBooks(books.filter(b=>b.id!==id));
+  const advance=(b)=>setBooks(books.map(x=>x.id===b.id?{...x,status:x.status==='to-read'?'reading':'done'}:x));
+
+  const groups={'to-read':[],'reading':[],'done':[]};
+  books.forEach(b=>groups[b.status]?.push(b));
+  groups['to-read'].sort((a,b)=>(Number(b.priority)||0)-(Number(a.priority)||0));
+  groups['reading'].sort((a,b)=>(Number(b.priority)||0)-(Number(a.priority)||0));
+  const statusLabels={'to-read':'ต้องอ่าน','reading':'กำลังอ่าน','done':'อ่านแล้ว'};
+
+  /* ข้อ 24/9: เพิ่ม/แก้ไขผ่าน BookFormModal ตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) */
+  const [modal,setModal]=useState(null); // null | {mode:"add"} | {mode:"edit",id,initial}
+  const openAdd=()=>setModal({mode:"add"});
+  const openEdit=(b)=>setModal({mode:"edit",id:b.id,initial:{
+    title:b.title||"",author:b.author||"",status:b.status||"to-read",priority:b.priority||3,
+  }});
+  const saveBook=(f)=>{
+    const row={title:String(f.title||"").trim(),author:String(f.author||"").trim(),status:f.status,priority:Number(f.priority)||3};
+    if(!row.title) return;
+    if(modal&&modal.mode==="edit") setBooks(books.map(b=>b.id===modal.id?{...b,...row}:b));
+    else setBooks([...books,{id:uid(),...row}]);
+    setModal(null);
+  };
+
+  return (
+    <div className="page-content book-page">
+      {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 (38px + margin:0) ── */}
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Book Queue <span>· คิวหนังสือ</span></h1>
+          <div className="db-hero-line">
+            {books.length} เล่มในคิว · ต้องอ่าน {groups['to-read'].length} · กำลังอ่าน {groups.reading.length} · อ่านแล้ว {groups.done.length}
+          </div>
+          {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว */}
+          <button className="db-btn primary inv-add-btn" onClick={openAdd}><Plus size={14}/> เพิ่มข้อมูล</button>
+        </div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--blue)"}}>{groups['to-read'].length}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--blue)"}}/> ต้องอ่าน</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>{groups.reading.length}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> กำลังอ่าน</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n acc db-mono">{groups.done.length}</div>
+            <div className="l"><span className="db-dot a"/> อ่านแล้ว</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="db-bento">
+        {/* ── การ์ด 1: กำลังอ่านตอนนี้ ── */}
+        <div className="db-card db-span2">
+          <div className="db-head"><div><div className="db-title">กำลังอ่าน</div><div className="db-note">เล่มที่หยิบมาอ่านอยู่ตอนนี้</div></div></div>
+          {groups.reading.length===0
+            ? <div className="db-empty">ยังไม่มีเล่มที่กำลังอ่าน — กด “เริ่มอ่าน” จากรายการต้องอ่าน</div>
+            : groups.reading.map(b=>(
+              <div key={b.id} className="db-row">
+                <div className="db-tmain">
+                  <div className="db-tname">{b.title}</div>
+                  <div className="db-tsub">{b.author||"—"} · {"⭐".repeat(b.priority||0)}</div>
                 </div>
+                <button className="pill-btn primary" onClick={()=>advance(b)}>อ่านจบแล้ว</button>
               </div>
             ))}
-          </div>
-        ))}
-        {showForm&&(
-          <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8,marginBottom:12}}>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">ชื่อหนังสือ *</label>
-              <input className="modal-input" placeholder="Atomic Habits" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+        </div>
+
+        {/* ── การ์ด 2: คิวต้องอ่าน เรียงตามความสำคัญ ── */}
+        <div className="db-card db-span2">
+          <div className="db-head"><div><div className="db-title">ต้องอ่าน</div><div className="db-note">เรียงตามความสำคัญ มากไปน้อย</div></div></div>
+          {groups['to-read'].length===0
+            ? <div className="db-empty">คิวว่าง — กด “เพิ่มข้อมูล” เพื่อเพิ่มเล่มถัดไป</div>
+            : groups['to-read'].map(b=>(
+              <div key={b.id} className="db-row">
+                <div className="db-tmain">
+                  <div className="db-tname">{b.title}</div>
+                  <div className="db-tsub">{b.author||"—"} · {"⭐".repeat(b.priority||0)}</div>
+                </div>
+                <button className="pill-btn" onClick={()=>advance(b)}>เริ่มอ่าน</button>
+              </div>
+            ))}
+        </div>
+
+        {/* ── การ์ด 3: รายการหนังสือทั้งหมด — การ์ดต่อเล่ม พับได้ (ข้อ 32/3) ── */}
+        <DashCollapse span="db-span4" title="รายการหนังสือทั้งหมด"
+          note={books.length?`${books.length} เล่ม`:"ยังไม่มีรายการ"}
+          defaultOpen={books.length<=6}>
+          {books.length===0
+            ? <div className="db-empty">ยังไม่มีหนังสือในระบบ — กด “เพิ่มข้อมูล” ด้านบน</div>
+            : (
+            <div className="book-grid">
+              {books.map(b=>(
+                <div key={b.id} className="book-item">
+                  <div className="book-item-head">
+                    <div className="book-item-name">
+                      <div className="db-tname">{b.title}</div>
+                      {b.author&&<div className="db-tsub">โดย {b.author}</div>}
+                    </div>
+                    <div className="inv-item-actions">
+                      <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(b)}><Edit3 size={12}/></button>
+                      <button className="db-chip" title="ลบ" onClick={()=>removeBook(b.id)}><Trash2 size={12}/></button>
+                    </div>
+                  </div>
+                  <div className="book-meta">
+                    <span className={`book-status-badge ${b.status}`}>{statusLabels[b.status]||b.status}</span>
+                    <span className="book-stars">{"⭐".repeat(b.priority||0)}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">ผู้เขียน</label>
-              <input className="modal-input" placeholder="James Clear" value={form.author} onChange={e=>setForm({...form,author:e.target.value})}/>
-            </div>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">ความสำคัญ</label>
-              <input type="range" min="1" max="5" value={form.priority} onChange={e=>setForm({...form,priority:parseInt(e.target.value)})} style={{width:"100%"}}/>
-              <div style={{textAlign:"center",color:"#fb923c"}}>{"⭐".repeat(form.priority)}</div>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <button className="modal-btn-cancel" onClick={()=>setShowForm(false)}>ยกเลิก</button>
-              <button className="modal-btn-save" onClick={addBook} disabled={!form.title}>เพิ่ม</button>
-            </div>
-          </div>
-        )}
-        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={13}/> หนังสือใหม่</button>}
+          )}
+        </DashCollapse>
       </div>
+
+      {modal&&<BookFormModal initial={modal.initial} onClose={()=>setModal(null)} onSave={saveBook}/>}
     </div>
   );
 }
