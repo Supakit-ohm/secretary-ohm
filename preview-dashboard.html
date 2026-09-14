@@ -457,6 +457,8 @@ const BookOpen = makeIcon("fa-book");
 const BookMark = makeIcon("fa-bookmark");
 const LinkIcon = makeIcon("fa-link");
 const PlayIcon = makeIcon("fa-play");
+const VideoIcon = makeIcon("fa-video");
+const PodcastIcon = makeIcon("fa-podcast");
 const PenTool = makeIcon("fa-pen");
 const Home = makeIcon("fa-house");
 const Search = makeIcon("fa-magnifying-glass");
@@ -5926,10 +5928,36 @@ const REVIEW_TYPE_META={
   podcast:{label:"พอดแคสต์",color:"var(--gold)"},
 };
 function PlaybackFormModal({initial,onClose,onSave}) {
-  const blankForm={title:"",type:"video",rating:8,reviewText:"",date:todayISO(),link:""};
+  const blankForm={title:"",type:"video",rating:8,reviewText:"",date:todayISO(),link:"",coverUrl:""};
   const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ready=String(form.title||"").trim().length>0;
+  const [coverBusy,setCoverBusy]=useState(false);
+  const fileInputRef=useRef(null);
+  /* ข้อ 45/3: ปกวิดีโอ/พอดแคสต์ — อัปโหลดเองอย่างเดียว (ไม่มี auto-fetch แบบหนังสือ เพราะไม่มี API ฟรีที่เชื่อถือได้)
+     ย่อรูปด้วย canvas ก่อนเก็บ (กว้างสุด 300px, JPEG q.82) แล้วฝังเป็น data URI ใน coverUrl — โค้ดเดียวกับ BookFormModal */
+  const handleCoverFile=(file)=>{
+    if(!file) return;
+    setCoverBusy(true);
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX_W=300;
+        const scale=Math.min(1,MAX_W/img.width);
+        const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        setF('coverUrl',canvas.toDataURL('image/jpeg',0.82));
+        setCoverBusy(false);
+      };
+      img.onerror=()=>setCoverBusy(false);
+      img.src=e.target.result;
+    };
+    reader.onerror=()=>setCoverBusy(false);
+    reader.readAsDataURL(file);
+  };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -5941,6 +5969,26 @@ function PlaybackFormModal({initial,onClose,onSave}) {
           <div>
             <label className="field-label">ชื่อเรื่อง *</label>
             <input className="modal-input" placeholder="ชื่อวิดีโอ/พอดแคสต์" value={form.title} onChange={e=>setF("title",e.target.value)}/>
+          </div>
+          <div>
+            <label className="field-label">ปก (ไม่บังคับ)</label>
+            <div className="book-cover-picker pb-cover-picker">
+              <div className="book-cover-picker-preview pb-cover-picker-preview">
+                {form.coverUrl?<img src={form.coverUrl} alt=""/>:(form.type==="podcast"?<PodcastIcon size={18}/>:<VideoIcon size={18}/>)}
+              </div>
+              <div className="book-cover-picker-actions">
+                <input ref={fileInputRef} type="file" accept="image/*" style={{display:"none"}}
+                  onChange={e=>handleCoverFile(e.target.files&&e.target.files[0])}/>
+                <button type="button" className="pill-btn" disabled={coverBusy}
+                  onClick={()=>fileInputRef.current&&fileInputRef.current.click()}>
+                  {coverBusy?"กำลังย่อรูป...":"อัปโหลดปก"}
+                </button>
+                {form.coverUrl&&
+                  <button type="button" className="pill-btn" onClick={()=>setF('coverUrl',"")}>
+                    ลบปก
+                  </button>}
+              </div>
+            </div>
           </div>
           <div className="fin-row-2">
             <div>
@@ -5991,7 +6039,7 @@ function PlaybackTab({data,persist}) {
   const openAdd=()=>setModal({mode:"add"});
   const openEdit=(r)=>setModal({mode:"edit",id:r.id,initial:{
     title:r.title||"",type:r.type||"video",rating:Number(r.rating)||8,
-    reviewText:r.reviewText||"",date:r.date||todayISO(),link:r.link||"",
+    reviewText:r.reviewText||"",date:r.date||todayISO(),link:r.link||"",coverUrl:r.coverUrl||"",
   }});
   const saveReview=(f)=>{
     const row={
@@ -5999,6 +6047,7 @@ function PlaybackTab({data,persist}) {
       rating:Math.max(1,Math.min(10,Number(f.rating)||1)),
       reviewText:String(f.reviewText||"").trim(),
       date:f.date||todayISO(),link:String(f.link||"").trim(),
+      coverUrl:f.coverUrl||null,
     };
     if(!row.title) return;
     if(modal&&modal.mode==="edit") setReviews(reviews.map(r=>r.id===modal.id?{...r,...row}:r));
@@ -6038,8 +6087,12 @@ function PlaybackTab({data,persist}) {
             ? <div className="db-empty">ยังไม่มีรีวิว — กด “เพิ่มข้อมูล” ด้านบน</div>
             : sorted.map(r=>{
               const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.video;
+              const TypeIcon=r.type==="podcast"?PodcastIcon:VideoIcon;
               return (
-                <div key={r.id} className="db-row">
+                <div key={r.id} className="db-row pb-row">
+                  <div className="pb-thumb">
+                    {r.coverUrl?<img src={r.coverUrl} alt=""/>:<TypeIcon size={14}/>}
+                  </div>
                   <div className="db-tmain">
                     <div className="db-tname" title={r.title}>{r.title}</div>
                     <div className="db-tsub">

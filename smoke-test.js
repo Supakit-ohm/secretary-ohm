@@ -687,6 +687,24 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม (Playback)',!!ed&&/แก้ไข/.test(ed.head||'')&&!!ed.title,ed?`${ed.head} · ${ed.title}`:'');
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม (Playback)',false,'ไม่เจอปุ่มแก้ไข');
+  // ข้อ 45/3: อัปโหลดปกวิดีโอ/พอดแคสต์เอง (ไม่มี auto-fetch) — เปิดแก้ไข ใส่รูปเทส เช็ค preview + บันทึกลง localStorage จริง
+  const pbEditForCover=p.locator('.playback-page .db-chip[title="แก้ไข"]').first();
+  if(await pbEditForCover.count()){
+    await pbEditForCover.click(); await p.waitForTimeout(800);
+    const TEST_PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64');
+    await p.locator('.modal-backdrop input[type="file"]').setInputFiles({name:'cover.png',mimeType:'image/png',buffer:TEST_PNG});
+    await p.waitForTimeout(600);
+    const hasPreview=await p.evaluate(()=>{
+      const img=document.querySelector('.modal-backdrop .pb-cover-picker-preview img');
+      return !!img&&img.src.startsWith('data:image');
+    });
+    check('อัปโหลดปกวิดีโอ/พอดแคสต์แล้วขึ้น preview ทันที',hasPreview,hasPreview?'มี preview data:image':'ไม่มี');
+    await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(1000);
+    const savedReview=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.find(r=>typeof r.coverUrl==='string'&&r.coverUrl.startsWith('data:image')));
+    check('บันทึกปกที่อัปโหลดเองลง localStorage จริง',!!savedReview,savedReview?`coverUrl เริ่มด้วย ${(savedReview.coverUrl||'').slice(0,20)}...`:'ไม่เจอ');
+    const thumbShows=await p.evaluate(()=>!!document.querySelector('.playback-page .pb-thumb img'));
+    check('ชั้นรายการ Playback โชว์รูปปกที่อัปโหลด',thumbShows);
+  } else { check('อัปโหลดปกวิดีโอ/พอดแคสต์แล้วขึ้น preview ทันที',false,'ไม่เจอปุ่มแก้ไข'); check('บันทึกปกที่อัปโหลดเองลง localStorage จริง',false); check('ชั้นรายการ Playback โชว์รูปปกที่อัปโหลด',false); }
   // ลบรีวิวออกจากรายการ → หายจริงใน localStorage
   const beforeDelRv=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.length);
   const pbDel=p.locator('.playback-page .db-chip[title="ลบ"]').first();

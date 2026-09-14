@@ -1135,6 +1135,11 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .book-cover-picker-preview{width:52px;height:78px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;flex:none;color:var(--ink-5);}
 .book-cover-picker-preview img{width:100%;height:100%;object-fit:cover;display:block;}
 .book-cover-picker-actions{display:flex;flex-direction:column;gap:6px;}
+/* ── ข้อ 45/3: ปกวิดีโอ/พอดแคสต์ในแท็บ Playback — สี่เหลี่ยมจัตุรัส (ไม่ใช่ทรงหนังสือ 2:3) ── */
+.pb-cover-picker-preview{width:64px;height:64px;border-radius:8px;}
+.pb-row{gap:10px;}
+.pb-thumb{width:40px;height:40px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;flex:none;color:var(--ink-5);}
+.pb-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 
 @media(max-width:1200px){
   .crypto-platform-grid{grid-template-columns:1fr;}
