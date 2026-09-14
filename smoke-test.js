@@ -546,8 +546,9 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
       bignums:document.querySelectorAll('.book-page .db-bignum .n').length,
       addBtns:[...document.querySelectorAll('.book-page button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
       legacy:document.querySelectorAll('.book-page .card, .book-page .empty, .book-page .text-btn').length,
-      bookItems:document.querySelectorAll('.book-page .book-item').length,
-      badges:document.querySelectorAll('.book-page .book-status-badge').length,
+      shelfItems:document.querySelectorAll('.book-page .book-shelf-item').length,
+      covers:document.querySelectorAll('.book-page .book-shelf-cover').length,
+      dots:[...document.querySelectorAll('.book-page .book-shelf-dot')].map(d=>d.className.replace('book-shelf-dot','').trim()),
       readingRows:document.querySelectorAll('.book-page .db-row').length,
       inlineFs,
     };
@@ -559,7 +560,8 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('ไม่เหลือคลาสธีมเก่า (.card/.empty/.text-btn เดิม) ในหน้านี้',bq.legacy===0,`เจอ ${bq.legacy}`);
   check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',bq.inlineFs.length===0,bq.inlineFs.slice(0,5).join(' | '));
   check('การ์ด "กำลังอ่าน" แสดงเล่ม seed (bk1) เป็นแถว db-row',bq.readingRows>=1,`${bq.readingRows} แถว`);
-  check('รายการหนังสือทั้งหมด (DashCollapse) แสดงครบ 2 เล่มจาก seed พร้อมป้ายสถานะ',bq.bookItems===2&&bq.badges===2,`การ์ด ${bq.bookItems} ใบ · ป้าย ${bq.badges}`);
+  check('รายการหนังสือทั้งหมด (ข้อ 24/9b: shelf) แสดงครบ 2 เล่มจาก seed พร้อมปก+จุดสถานะ',bq.shelfItems===2&&bq.covers===2&&bq.dots.length===2,`shelf ${bq.shelfItems} ใบ · ปก ${bq.covers} · จุด ${bq.dots.length}`);
+  check('จุดสถานะสีตรงกับ seed (bk1=reading, bk2=done)',bq.dots[0]==='reading'&&bq.dots[1]==='done',bq.dots.join(', '));
   // กด "อ่านจบแล้ว" บนเล่มที่กำลังอ่าน (bk1) → ต้องเลื่อนสถานะเป็น done จริงใน localStorage
   const advanceBtn=p.locator('.book-page .db-row .pill-btn.primary').first();
   if(await advanceBtn.count()){
@@ -581,7 +583,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     } else check('เพิ่มหนังสือใหม่จากโมดัลได้จริง',false,'ไม่มีโมดัล');
   } else check('ปุ่มเพิ่มข้อมูลเปิด BookFormModal ได้',false,'ไม่เจอปุ่ม');
   // ปุ่มแก้ไขบนการ์ดในรายการทั้งหมด → โมดัลเดิมพร้อมค่าเก่า
-  const bqEdit=p.locator('.book-page .book-item .db-chip[title="แก้ไข"]').first();
+  const bqEdit=p.locator('.book-page .book-shelf-item .db-chip[title="แก้ไข"]').first();
   if(await bqEdit.count()){
     await bqEdit.click(); await p.waitForTimeout(800);
     const ed=await p.evaluate(()=>{
@@ -593,7 +595,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',false,'ไม่เจอปุ่มแก้ไข');
   // ลบเล่มหนึ่งออกจากรายการทั้งหมด → หายจริงใน localStorage
   const beforeDel=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.length);
-  const bqDel=p.locator('.book-page .book-item .db-chip[title="ลบ"]').first();
+  const bqDel=p.locator('.book-page .book-shelf-item .db-chip[title="ลบ"]').first();
   if(await bqDel.count()){
     await bqDel.click(); await p.waitForTimeout(1000);
     const afterDel=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.length);

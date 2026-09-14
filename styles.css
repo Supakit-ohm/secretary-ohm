@@ -1117,16 +1117,19 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 
 /* ── ข้อ 24/9: หน้า Book Queue ── */
 .book-page{padding:0 20px 20px;}
-.book-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
-.book-item{display:flex;flex-direction:column;background:rgba(255,255,255,.032);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:12px 14px;}
-.book-item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
-.book-item-name{min-width:0;}
-.book-meta{display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
-.book-status-badge{font-size:10.5px;font-weight:600;border-radius:999px;padding:3px 9px;white-space:nowrap;}
-.book-status-badge.to-read{background:rgba(96,165,250,.16);color:var(--blue);}
-.book-status-badge.reading{background:rgba(251,146,60,.16);color:var(--orange-soft);}
-.book-status-badge.done{background:var(--accent-dim);color:var(--accent-soft);}
-.book-stars{font-size:11px;color:var(--ink-5);}
+/* ── ข้อ 24/9b: ชั้นหนังสือ (shelf) — ปกจริงจาก Google Books + จุดสถานะ ขาว/เหลือง/เขียว ── */
+.book-shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px;}
+.book-shelf-item{display:flex;flex-direction:column;}
+.book-shelf-cover{position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;background:linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;}
+.book-shelf-cover img{width:100%;height:100%;object-fit:cover;display:block;}
+.book-shelf-fallback{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink-5);padding:8px;text-align:center;}
+.book-shelf-fallback .db-tname{white-space:normal;text-align:center;color:var(--ink-5);}
+.book-shelf-dot{position:absolute;top:7px;right:7px;width:11px;height:11px;border-radius:999px;border:2px solid rgba(8,12,10,.9);}
+.book-shelf-dot.to-read{background:#f4f4f5;}
+.book-shelf-dot.reading{background:#fbbf24;}
+.book-shelf-dot.done{background:#34d399;}
+.book-shelf-info{padding-top:8px;min-width:0;}
+.book-shelf-actions{display:flex;gap:4px;margin-top:6px;}
 
 @media(max-width:1200px){
   .crypto-platform-grid{grid-template-columns:1fr;}
@@ -1144,5 +1147,5 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .db-card .prj-grid{grid-template-columns:1fr;}
   .trk-ring-side{min-width:0;}
   .book-page{padding:0 0 20px;}
-  .book-grid{grid-template-columns:1fr;}
+  .book-shelf{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;}
 }

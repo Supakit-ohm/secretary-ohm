@@ -416,7 +416,7 @@
 </script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, ReferenceLine } = Recharts;
 
 // ---- placeholder icons (Font Awesome) ใช้แทน lucide-react เฉพาะไฟล์พรีวิวนี้ ----
@@ -5571,6 +5571,22 @@ function DocumentPage({data,persist}) {
     </div>
   );
 }
+/* ── ข้อ 24/9b (Book Queue shelf): ดึงปกหนังสืออัตโนมัติจาก Google Books API (public, ไม่ต้องใช้ API key)
+   ดึงครั้งเดียวต่อเล่ม แล้ว cache ผลไว้ใน record (coverUrl/coverChecked) ซิงก์ผ่าน Drive เดิมได้เลย — ไม่ต้องสร้างระบบไฟล์แนบใหม่
+   ถ้าดึงไม่เจอ/ออฟไลน์/เน็ตล่ม → coverUrl:null (ยังถือว่า checked แล้ว ไม่ยิงซ้ำ) แสดงปกสำรอง (ไอคอนหนังสือ) แทน ── */
+async function fetchBookCover(title,author){
+  try{
+    const q=`intitle:${title}${author?` inauthor:${author}`:""}`;
+    const res=await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`);
+    if(!res.ok) return null;
+    const json=await res.json();
+    const info=json.items&&json.items[0]&&json.items[0].volumeInfo;
+    const links=info&&info.imageLinks;
+    const thumb=links&&(links.thumbnail||links.smallThumbnail);
+    if(!thumb) return null;
+    return thumb.replace(/^http:\/\//,'https://'); // กัน mixed-content บนหน้า https (GitHub Pages)
+  }catch(e){ return null; }
+}
 /* ── ข้อ 24/9 (Book Queue): เพิ่ม/แก้ไขผ่านโมดัลตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) เดิม = ฟอร์มค้างหน้าจอ + ไม่มีปุ่มแก้ไข ── */
 function BookFormModal({initial,onClose,onSave}) {
   const blankForm={title:"",author:"",status:"to-read",priority:3};
@@ -5643,6 +5659,19 @@ function BookQueuePage({data,persist}) {
     setModal(null);
   };
 
+  /* ── ข้อ 24/9b: ไล่ดึงปกหนังสือทีละเล่มสำหรับเล่มที่ยังไม่เคยเช็ค (coverChecked) แล้ว persist ผลไว้ ── */
+  const uncoveredCount=books.filter(b=>!b.coverChecked).length;
+  const coverFetchingRef=useRef(false);
+  useEffect(()=>{
+    if(uncoveredCount===0||coverFetchingRef.current) return;
+    const target=books.find(b=>!b.coverChecked);
+    if(!target) return;
+    coverFetchingRef.current=true;
+    fetchBookCover(target.title,target.author).then(url=>{
+      persist({...data,bookQueue:(data.bookQueue||[]).map(b=>b.id===target.id?{...b,coverUrl:url||null,coverChecked:true}:b)});
+    }).finally(()=>{ coverFetchingRef.current=false; });
+  },[uncoveredCount]);
+
   return (
     <div className="page-content book-page">
       {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 (38px + margin:0) ── */}
@@ -5704,29 +5733,29 @@ function BookQueuePage({data,persist}) {
             ))}
         </div>
 
-        {/* ── การ์ด 3: รายการหนังสือทั้งหมด — การ์ดต่อเล่ม พับได้ (ข้อ 32/3) ── */}
+        {/* ── การ์ด 3: รายการหนังสือทั้งหมด — โชว์เป็นชั้นหนังสือ (shelf) พร้อมปกจริง + จุดสถานะ ── */}
         <DashCollapse span="db-span4" title="รายการหนังสือทั้งหมด"
           note={books.length?`${books.length} เล่ม`:"ยังไม่มีรายการ"}
-          defaultOpen={books.length<=6}>
+          defaultOpen={true}>
           {books.length===0
             ? <div className="db-empty">ยังไม่มีหนังสือในระบบ — กด “เพิ่มข้อมูล” ด้านบน</div>
             : (
-            <div className="book-grid">
+            <div className="book-shelf">
               {books.map(b=>(
-                <div key={b.id} className="book-item">
-                  <div className="book-item-head">
-                    <div className="book-item-name">
-                      <div className="db-tname">{b.title}</div>
-                      {b.author&&<div className="db-tsub">โดย {b.author}</div>}
-                    </div>
-                    <div className="inv-item-actions">
-                      <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(b)}><Edit3 size={12}/></button>
-                      <button className="db-chip" title="ลบ" onClick={()=>removeBook(b.id)}><Trash2 size={12}/></button>
-                    </div>
+                <div key={b.id} className="book-shelf-item">
+                  <div className="book-shelf-cover">
+                    {b.coverUrl
+                      ? <img src={b.coverUrl} alt={b.title} loading="lazy"/>
+                      : <div className="book-shelf-fallback"><BookOpen size={18}/><div className="db-tname">{b.title}</div></div>}
+                    <span className={`book-shelf-dot ${b.status}`} title={statusLabels[b.status]||b.status}/>
                   </div>
-                  <div className="book-meta">
-                    <span className={`book-status-badge ${b.status}`}>{statusLabels[b.status]||b.status}</span>
-                    <span className="book-stars">{"⭐".repeat(b.priority||0)}</span>
+                  <div className="book-shelf-info">
+                    <div className="db-tname" title={b.title}>{b.title}</div>
+                    {b.author&&<div className="db-tsub" title={b.author}>{b.author}</div>}
+                  </div>
+                  <div className="inv-item-actions book-shelf-actions">
+                    <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(b)}><Edit3 size={12}/></button>
+                    <button className="db-chip" title="ลบ" onClick={()=>removeBook(b.id)}><Trash2 size={12}/></button>
                   </div>
                 </div>
               ))}
