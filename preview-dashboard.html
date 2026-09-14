@@ -456,6 +456,7 @@ const FileText = makeIcon("fa-file-lines");
 const BookOpen = makeIcon("fa-book");
 const BookMark = makeIcon("fa-bookmark");
 const LinkIcon = makeIcon("fa-link");
+const PlayIcon = makeIcon("fa-play");
 const PenTool = makeIcon("fa-pen");
 const Home = makeIcon("fa-house");
 const Search = makeIcon("fa-magnifying-glass");
@@ -564,9 +565,7 @@ const DEFAULT_EVENTS = [
   { id:"e2", title:"พบแพทย์", startDate:tomorrowISO(), startTime:"14:00", endDate:tomorrowISO(), endTime:"15:00", note:"โรงพยาบาลใกล้บ้าน" },
 ];
 const NOTE_COLORS = ["amber","teal","rose","violet","slate"];
-/* ข้อ 45: ปุ่มเมนูตั้งชื่อ "Media" (ไม่ใช่ "Reviews") เพราะ Playwright `has-text` จับซับสตริง
-   — ถ้าใช้ "Reviews" ปุ่มนี้จะดันไปโดนจับคู่กับปุ่มแท็บ "Review" ของ Finance ด้วย (เจอบั๊กจริงตอนรัน smoke test) */
-const PAGE_TITLES = ["Home","Finance","Tracker","Health","Documents","Books","Journal","Media"];
+const PAGE_TITLES = ["Home","Finance","Tracker","Health","Documents","Books","Journal"];
 const GOAL_COLORS = ["#10b981","#34d399","#d9b26a","#60a5fa","#6ee7b7","#fbbf24","#f87171","#6f9e8d"];
 const GOAL_CATEGORIES = [
   {key:"finance",label:"การเงิน",icon:Wallet},
@@ -978,14 +977,16 @@ const DEFAULT_DATA = {
   bookQueue:[
     {id:"b1",title:"Atomic Habits",author:"James Clear",status:"reading",priority:5},
     {id:"b2",title:"The Lean Startup",author:"Eric Ries",status:"to-read",priority:3},
+    {id:"b3",title:"Deep Work",author:"Cal Newport",status:"done",priority:4,rating:9,reviewText:"เปลี่ยนวิธีโฟกัสทำงานได้เยอะ อ่านซ้ำได้เรื่อยๆ"},
   ],
   journal:[
     {id:"j1",date:todayISO(),entry:"วันนี้ขยันได้ประมาณนี้ เก็บเงินได้เยอะหน่อย"},
     {id:"j2",date:tomorrowISO(),entry:""},
   ],
+  /* ข้อ 45/2: mediaReviews เก็บเฉพาะ video/podcast (รีวิวหนังสือย้ายไปติดกับ record หนังสือเองใน bookQueue แล้ว) */
   mediaReviews:[
-    {id:"mr1",title:"Atomic Habits",type:"book",rating:9,reviewText:"เปลี่ยนมุมมองเรื่องนิสัยได้เยอะ อ่านซ้ำได้เรื่อยๆ",date:todayISO(),link:""},
-    {id:"mr2",title:"Huberman Lab",type:"podcast",rating:8,reviewText:"เนื้อหาแน่น อิงงานวิจัยเยอะ บางตอนยาวไปหน่อย",date:todayISO(),link:""},
+    {id:"mr1",title:"Huberman Lab",type:"podcast",rating:8,reviewText:"เนื้อหาแน่น อิงงานวิจัยเยอะ บางตอนยาวไปหน่อย",date:todayISO(),link:""},
+    {id:"mr2",title:"The Social Dilemma",type:"video",rating:7,reviewText:"เปิดมุมมองเรื่องโซเชียลมีเดียได้ดี",date:todayISO(),link:""},
   ],
   activity:[],
   projects:null,
@@ -1400,7 +1401,7 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
   );
 }
 function PageNav({page,setPage}) {
-  const pages=["Home","Finance","Tracker","Health","Docs","Books","Journal","Media"];
+  const pages=["Home","Finance","Tracker","Health","Docs","Books","Journal"];
   return (
     <div className="page-nav">
       {pages.map((label,i)=>(
@@ -5600,7 +5601,7 @@ async function fetchBookCover(title,author){
 }
 /* ── ข้อ 24/9 (Book Queue): เพิ่ม/แก้ไขผ่านโมดัลตัวเดียว (ข้อ 32/2 ปุ่มเดียวต่อหน้า) เดิม = ฟอร์มค้างหน้าจอ + ไม่มีปุ่มแก้ไข ── */
 function BookFormModal({initial,onClose,onSave}) {
-  const blankForm={title:"",author:"",status:"to-read",priority:3,coverUrl:"",coverManual:false};
+  const blankForm={title:"",author:"",status:"to-read",priority:3,coverUrl:"",coverManual:false,rating:"",reviewText:""};
   const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ready=String(form.title||"").trim().length>0;
@@ -5683,6 +5684,17 @@ function BookFormModal({initial,onClose,onSave}) {
               <div className="db-note" style={{textAlign:"center"}}>{"⭐".repeat(form.priority)}</div>
             </div>
           </div>
+          {/* ข้อ 45/2: รีวิว+คะแนนติดอยู่กับหนังสือเล่มนั้นตรงๆ (ไม่แยกไปหน้ารวม) — ไม่บังคับกรอก เผื่อยังอ่านไม่จบ */}
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">คะแนน (ไม่บังคับ)</label>
+              <input type="number" min="1" max="10" className="modal-input" placeholder="1-10" value={form.rating} onChange={e=>setF("rating",e.target.value)}/>
+            </div>
+          </div>
+          <div>
+            <label className="field-label">รีวิวสั้นๆ (ไม่บังคับ)</label>
+            <textarea className="modal-input" rows={3} placeholder="เขียนความเห็นหลังอ่านจบ..." value={form.reviewText} onChange={e=>setF("reviewText",e.target.value)} style={{resize:"vertical"}}/>
+          </div>
           <button className="modal-btn-save" disabled={!ready} onClick={()=>ready&&onSave(form)}>
             {initial?"บันทึกการแก้ไข":"บันทึกหนังสือ"}
           </button>
@@ -5692,7 +5704,7 @@ function BookFormModal({initial,onClose,onSave}) {
     </div>
   );
 }
-function BookQueuePage({data,persist}) {
+function BookQueueTab({data,persist}) {
   const books=data.bookQueue||[];
   const setBooks=(next)=>persist({...data,bookQueue:next});
   const removeBook=(id)=>setBooks(books.filter(b=>b.id!==id));
@@ -5710,14 +5722,18 @@ function BookQueuePage({data,persist}) {
   const openEdit=(b)=>setModal({mode:"edit",id:b.id,initial:{
     title:b.title||"",author:b.author||"",status:b.status||"to-read",priority:b.priority||3,
     coverUrl:b.coverUrl||"",coverManual:!!b.coverManual,
+    rating:b.rating?String(b.rating):"",reviewText:b.reviewText||"",
   }});
   /* ── ข้อ 24/9e: บันทึกปก — ถ้าอัปโหลดเอง (coverManual) เก็บตามที่กรอก, ถ้ากด "กลับไปดึงอัตโนมัติ"
-     (coverManual กลับเป็น false + coverUrl ว่าง) ให้ล้าง coverCheckedAt ด้วย จะได้ให้ระบบไล่ดึงใหม่ทันทีตอนเปิดหน้าครั้งหน้า ── */
+     (coverManual กลับเป็น false + coverUrl ว่าง) ให้ล้าง coverCheckedAt ด้วย จะได้ให้ระบบไล่ดึงใหม่ทันทีตอนเปิดหน้าครั้งหน้า
+     ข้อ 45/2: รีวิว+คะแนนติดกับหนังสือเล่มนั้นตรงๆ ไม่บังคับกรอก (rating="" = ยังไม่ให้คะแนน) ── */
   const saveBook=(f)=>{
     const row={
       title:String(f.title||"").trim(),author:String(f.author||"").trim(),
       status:f.status,priority:Number(f.priority)||3,
       coverUrl:f.coverUrl||null,coverManual:!!f.coverManual,
+      rating:f.rating?Math.max(1,Math.min(10,Number(f.rating))):null,
+      reviewText:String(f.reviewText||"").trim(),
     };
     if(!row.title) return;
     if(modal&&modal.mode==="edit"){
@@ -5771,7 +5787,7 @@ function BookQueuePage({data,persist}) {
   };
 
   return (
-    <div className="page-content book-page">
+    <div className="book-page">
       {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 (38px + margin:0) ── */}
       <div className="db-hero">
         <div>
@@ -5849,7 +5865,7 @@ function BookQueuePage({data,persist}) {
                   </div>
                   <div className="book-shelf-info">
                     <div className="db-tname" title={b.title}>{b.title}</div>
-                    {b.author&&<div className="db-tsub" title={b.author}>{b.author}</div>}
+                    {(b.author||b.rating)&&<div className="db-tsub" title={b.author}>{b.author||"—"}{b.rating?` · ★ ${b.rating}/10`:""}</div>}
                   </div>
                   <div className="inv-item-actions book-shelf-actions">
                     <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(b)}><Edit3 size={12}/></button>
@@ -5901,16 +5917,16 @@ function JournalPage({data,persist}) {
     </div>
   );
 }
-/* ═══ ข้อ 45: หน้ารีวิว+ให้คะแนน Book/Video/Podcast รวมรายการเดียว (สเปกในโปรเจกต์ claude.ai "secretory" ไฟล์ spec-review-page.md)
-   ตัดสินใจแล้ว: 1 หน้า รายการเดียว ไม่แยก 3 section — ใช้ field `type` คัดแยกทีหลังได้ · คะแนนสเกล 1-10
-   สโคปรอบนี้ทำแค่หน้ารีวิว+ให้คะแนนก่อน — ไอเดียเสริม (สถิติ, คำคม, แท็ก+ตัวกรอง) ยังไม่ทำ ── */
+/* ═══ ข้อ 45: หน้ารีวิว+ให้คะแนน (สเปกในโปรเจกต์ claude.ai "secretory" ไฟล์ spec-review-page.md)
+   ปรับตามที่ ohm ขอ (2026-09-14 รอบ 2): ไม่เอาแท็บเมนูใหม่แยก (เมนูบนเยอะเกินไปแล้ว) — รีวิวหนังสือติดอยู่กับ
+   record หนังสือใน bookQueue ตรงๆ (ดู BookFormModal/BookQueueTab), ส่วนนี้เหลือแค่ video/podcast เป็นแท็บย่อย
+   "Playback" อยู่ในหน้า Books (ดู BooksPage) แทนการเป็นเมนูบนแยกต่างหาก ── */
 const REVIEW_TYPE_META={
-  book:{label:"หนังสือ",color:"var(--blue)"},
   video:{label:"วิดีโอ",color:"var(--orange)"},
   podcast:{label:"พอดแคสต์",color:"var(--gold)"},
 };
-function ReviewFormModal({initial,onClose,onSave}) {
-  const blankForm={title:"",type:"book",rating:8,reviewText:"",date:todayISO(),link:""};
+function PlaybackFormModal({initial,onClose,onSave}) {
+  const blankForm={title:"",type:"video",rating:8,reviewText:"",date:todayISO(),link:""};
   const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ready=String(form.title||"").trim().length>0;
@@ -5924,13 +5940,12 @@ function ReviewFormModal({initial,onClose,onSave}) {
         <div className="modal-body">
           <div>
             <label className="field-label">ชื่อเรื่อง *</label>
-            <input className="modal-input" placeholder="Atomic Habits" value={form.title} onChange={e=>setF("title",e.target.value)}/>
+            <input className="modal-input" placeholder="ชื่อวิดีโอ/พอดแคสต์" value={form.title} onChange={e=>setF("title",e.target.value)}/>
           </div>
           <div className="fin-row-2">
             <div>
               <label className="field-label">ประเภท</label>
               <select className="modal-input" value={form.type} onChange={e=>setF("type",e.target.value)}>
-                <option value="book">หนังสือ</option>
                 <option value="video">วิดีโอ</option>
                 <option value="podcast">พอดแคสต์</option>
               </select>
@@ -5962,25 +5977,25 @@ function ReviewFormModal({initial,onClose,onSave}) {
     </div>
   );
 }
-function ReviewsPage({data,persist}) {
+function PlaybackTab({data,persist}) {
   const reviews=data.mediaReviews||[];
   const setReviews=(next)=>persist({...data,mediaReviews:next});
   const removeReview=(id)=>setReviews(reviews.filter(r=>r.id!==id));
 
-  const counts={book:0,video:0,podcast:0};
+  const counts={video:0,podcast:0};
   reviews.forEach(r=>{ if(counts[r.type]!=null) counts[r.type]++; });
   const sorted=reviews.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
 
-  /* ข้อ 32/2: ปุ่มเพิ่มข้อมูลปุ่มเดียวต่อหน้า — เพิ่ม/แก้ไขผ่าน ReviewFormModal ตัวเดียว (เหมือน BookFormModal) */
+  /* ข้อ 32/2: ปุ่มเพิ่มข้อมูลปุ่มเดียวต่อหน้า — เพิ่ม/แก้ไขผ่าน PlaybackFormModal ตัวเดียว (เหมือน BookFormModal) */
   const [modal,setModal]=useState(null); // null | {mode:"add"} | {mode:"edit",id,initial}
   const openAdd=()=>setModal({mode:"add"});
   const openEdit=(r)=>setModal({mode:"edit",id:r.id,initial:{
-    title:r.title||"",type:r.type||"book",rating:Number(r.rating)||8,
+    title:r.title||"",type:r.type||"video",rating:Number(r.rating)||8,
     reviewText:r.reviewText||"",date:r.date||todayISO(),link:r.link||"",
   }});
   const saveReview=(f)=>{
     const row={
-      title:String(f.title||"").trim(),type:f.type||"book",
+      title:String(f.title||"").trim(),type:f.type||"video",
       rating:Math.max(1,Math.min(10,Number(f.rating)||1)),
       reviewText:String(f.reviewText||"").trim(),
       date:f.date||todayISO(),link:String(f.link||"").trim(),
@@ -5992,21 +6007,17 @@ function ReviewsPage({data,persist}) {
   };
 
   return (
-    <div className="page-content review-page">
+    <div className="playback-page fin-page">
       {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
       <div className="db-hero">
         <div>
-          <h1 className="db-hero-title">Reviews <span>· รีวิวหนังสือ/วิดีโอ/พอดแคสต์</span></h1>
+          <h1 className="db-hero-title">Playback <span>· รีวิววิดีโอ/พอดแคสต์</span></h1>
           <div className="db-hero-line">
-            {reviews.length} รายการ · หนังสือ {counts.book} · วิดีโอ {counts.video} · พอดแคสต์ {counts.podcast}
+            {reviews.length} รายการ · วิดีโอ {counts.video} · พอดแคสต์ {counts.podcast}
           </div>
           <button className="db-btn primary inv-add-btn" onClick={openAdd}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
         <div className="db-bignums">
-          <div className="db-bignum">
-            <div className="n db-mono" style={{color:"var(--blue)"}}>{counts.book}</div>
-            <div className="l"><span className="db-dot" style={{background:"var(--blue)"}}/> หนังสือ</div>
-          </div>
           <div className="db-bignum">
             <div className="n db-mono" style={{color:"var(--orange-soft)"}}>{counts.video}</div>
             <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> วิดีโอ</div>
@@ -6026,7 +6037,7 @@ function ReviewsPage({data,persist}) {
           {sorted.length===0
             ? <div className="db-empty">ยังไม่มีรีวิว — กด “เพิ่มข้อมูล” ด้านบน</div>
             : sorted.map(r=>{
-              const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.book;
+              const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.video;
               return (
                 <div key={r.id} className="db-row">
                   <div className="db-tmain">
@@ -6047,7 +6058,32 @@ function ReviewsPage({data,persist}) {
         </DashCollapse>
       </div>
 
-      {modal&&<ReviewFormModal initial={modal.initial} onClose={()=>setModal(null)} onSave={saveReview}/>}
+      {modal&&<PlaybackFormModal initial={modal.initial} onClose={()=>setModal(null)} onSave={saveReview}/>}
+    </div>
+  );
+}
+/* ข้อ 45: หน้า Books มี 2 แท็บย่อย — "Book Queue" (เดิม) กับ "Playback" (วิดีโอ/พอดแคสต์ ใหม่)
+   ไม่เพิ่มเป็นเมนูบนแยก เพราะ ohm บอกเมนูบนเยอะเกินไปแล้ว — ใช้แพทเทิร์นแท็บย่อยเดียวกับ FinancePage */
+function BooksPage({data,persist}) {
+  const [tab,setTab]=useState("queue");
+  const tabs=[
+    {key:"queue",label:"Book Queue",icon:BookOpen},
+    {key:"playback",label:"Playback",icon:PlayIcon},
+  ];
+  return (
+    <div className="page-content">
+      <div className="fin-tab-nav">
+        {tabs.map(t=>{
+          const Icon=t.icon;
+          return (
+            <button key={t.key} className={`fin-tab-btn ${tab===t.key?"active":""}`} onClick={()=>setTab(t.key)}>
+              <Icon size={13}/> {t.label}
+            </button>
+          );
+        })}
+      </div>
+      {tab==="queue"&&<BookQueueTab data={data} persist={persist}/>}
+      {tab==="playback"&&<PlaybackTab data={data} persist={persist}/>}
     </div>
   );
 }
@@ -6808,7 +6844,7 @@ function SecretaryDashboard() {
     (data.projects||[]).forEach(p=>{ if((p.title||"").toLowerCase().includes(q)) out.push({id:p.id,kind:"project",label:"โปรเจกต์",text:p.title,page:2}); });
     (data.documents||[]).forEach(d=>{ if((d.title||"").toLowerCase().includes(q)) out.push({id:d.id,kind:"doc",label:"เอกสาร",text:d.title,page:4}); });
     (data.bookQueue||[]).forEach(b=>{ if((b.title||"").toLowerCase().includes(q)) out.push({id:b.id,kind:"book",label:"หนังสือ",text:b.title,page:5}); });
-    (data.mediaReviews||[]).forEach(r=>{ if((r.title||"").toLowerCase().includes(q)) out.push({id:r.id,kind:"review",label:"รีวิว",text:r.title,page:7}); });
+    (data.mediaReviews||[]).forEach(r=>{ if((r.title||"").toLowerCase().includes(q)) out.push({id:r.id,kind:"review",label:"รีวิว",text:r.title,page:5}); });
     (data.finance.expenses||[]).forEach(e=>{ if(`${e.category} ${e.memo||""}`.toLowerCase().includes(q)) out.push({id:e.id,kind:"expense",label:"รายจ่าย",text:`${e.category} · ${e.memo||e.date}`,page:1}); });
     return out.slice(0,8);
   })();
@@ -6879,9 +6915,8 @@ function SecretaryDashboard() {
             {page===2&&<TrackerPage data={data} persist={persist}/>}
             {page===3&&<HealthPage data={data} persist={persist}/>}
             {page===4&&<DocumentPage data={data} persist={persist}/>}
-            {page===5&&<BookQueuePage data={data} persist={persist}/>}
+            {page===5&&<BooksPage data={data} persist={persist}/>}
             {page===6&&<JournalPage data={data} persist={persist}/>}
-            {page===7&&<ReviewsPage data={data} persist={persist}/>}
           </div>
         </div>
       </div>
