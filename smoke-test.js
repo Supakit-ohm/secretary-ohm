@@ -665,7 +665,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const pbAddBtn=p.locator('.playback-page .inv-add-btn').first();
   if(await pbAddBtn.count()){
     await pbAddBtn.click(); await p.waitForTimeout(800);
-    const typeOptions=await p.evaluate(()=>[...document.querySelectorAll('.modal-backdrop select option')].map(o=>o.value));
+    const typeOptions=await p.evaluate(()=>[...document.querySelectorAll('.modal-backdrop #pb-type-select option')].map(o=>o.value));
     check('ตัวเลือกประเภทเหลือแค่ video/podcast (ไม่มี book)',typeOptions.length===2&&typeOptions.includes('video')&&typeOptions.includes('podcast')&&!typeOptions.includes('book'),typeOptions.join(','));
     const hasModal=await p.evaluate(()=>!!document.querySelector('.modal-backdrop .modal-head'));
     check('ปุ่มเพิ่มข้อมูลเปิด PlaybackFormModal ได้',hasModal);
@@ -716,10 +716,17 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
 
   console.log('\n[ข้อ 48] ชั้นวาง Playback แบบโฟลเดอร์ (ช่อง/เพลย์ลิสต์) — ตามที่ ohm ขอให้ทำเหมือน shelf หนังสือ');
   // เพิ่ม 2 ตอนที่กรอกชื่อ "ช่อง/เพลย์ลิสต์" ตรงกัน → ต้องถูกรวมเป็นการ์ดโฟลเดอร์ใบเดียวในชั้นวาง
+  // ข้อ 49: เลือกช่องผ่าน dropdown #pb-channel-select — ถ้ายังไม่มีตัวเลือกนี้ ใช้ "+ สร้างช่องใหม่..." แล้วพิมพ์ชื่อ, ถ้ามีแล้วเลือกจากลิสต์ตรงๆ
   const addPbWithChannel=async(title,channel)=>{
     await p.locator('.playback-page .inv-add-btn').first().click(); await p.waitForTimeout(600);
     await p.locator('.modal-backdrop input').first().fill(title);
-    await p.locator('.modal-backdrop input[list="pb-channel-options"]').fill(channel);
+    const select=p.locator('.modal-backdrop #pb-channel-select');
+    const hasOption=await select.locator(`option[value="${channel}"]`).count();
+    if(hasOption) await select.selectOption(channel);
+    else {
+      await select.selectOption('__new__');
+      await p.locator('.modal-backdrop input[placeholder="ตั้งชื่อช่อง/เพลย์ลิสต์ใหม่"]').fill(channel);
+    }
     await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(800);
   };
   await addPbWithChannel('EP.10 ทดสอบ A','ช่องทดสอบ 48');
@@ -744,11 +751,11 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   });
   check('กดการ์ดโฟลเดอร์แล้วขยายลงมาแสดงรายการครบ 2 ตอน',panelRows===2,`${panelRows} แถว`);
 
-  // ปุ่ม "เพิ่มตอนในช่องนี้" ในแผงที่ขยาย ต้อง prefill ชื่อช่องให้อัตโนมัติ
+  // ปุ่ม "เพิ่มตอนในช่องนี้" ในแผงที่ขยาย ต้อง prefill ชื่อช่องให้อัตโนมัติ (ข้อ 49: prefill เป็นค่าที่เลือกไว้ใน dropdown)
   const addInPanel=p.locator('.pb-folder-panel',{hasText:'ช่องทดสอบ 48'}).locator('button',{hasText:'เพิ่มตอนในช่องนี้'}).first();
   if(await addInPanel.count()){
     await addInPanel.click(); await p.waitForTimeout(600);
-    const prefilled=await p.evaluate(()=>document.querySelector('.modal-backdrop input[list="pb-channel-options"]')?.value||'');
+    const prefilled=await p.evaluate(()=>document.querySelector('.modal-backdrop #pb-channel-select')?.value||'');
     check('ปุ่ม "เพิ่มตอนในช่องนี้" ตั้งชื่อช่องให้อัตโนมัติ',prefilled==='ช่องทดสอบ 48',prefilled||'ว่างเปล่า');
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(400);
   } else check('ปุ่ม "เพิ่มตอนในช่องนี้" ตั้งชื่อช่องให้อัตโนมัติ',false,'ไม่เจอปุ่ม');
@@ -757,6 +764,35 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const standaloneTexts=await p.evaluate(()=>[...document.querySelectorAll('.playback-page .pb-shelf-item:not(.pb-folder)')].map(x=>x.textContent));
   const standaloneOk=standaloneTexts.some(t=>/รีวิวทดสอบ/.test(t||''));
   check('รายการที่ไม่มีช่อง/เพลย์ลิสต์ยังแสดงเป็นการ์ดเดี่ยวตามปกติ',standaloneOk,`${standaloneTexts.length} การ์ดเดี่ยว`);
+
+  console.log('\n[ข้อ 49] ช่อง/เพลย์ลิสต์เปลี่ยนเป็น dropdown บังคับเลือก กันพิมพ์ชื่อเพี้ยนแล้วแยกกลุ่มโดยไม่ตั้งใจ');
+  // dropdown ต้องมีตัวเลือก "ช่องทดสอบ 48" ที่เพิ่งสร้างไว้แล้ว ให้เลือกได้ตรงๆ ไม่ต้องพิมพ์ใหม่
+  await p.locator('.playback-page .inv-add-btn').first().click(); await p.waitForTimeout(600);
+  const channelSelectOptions=await p.evaluate(()=>[...document.querySelectorAll('.modal-backdrop #pb-channel-select option')].map(o=>o.value));
+  check('dropdown ช่อง/เพลย์ลิสต์มีตัวเลือกช่องที่เคยสร้างไว้ + ตัวเลือก "สร้างใหม่"',
+    channelSelectOptions.includes('ช่องทดสอบ 48')&&channelSelectOptions.includes('__new__')&&channelSelectOptions.includes(''),
+    channelSelectOptions.join(' | '));
+  await p.locator('.modal-backdrop #pb-channel-select').selectOption('ช่องทดสอบ 48');
+  const noFreeTextAfterSelect=await p.evaluate(()=>!document.querySelector('.modal-backdrop input[placeholder="ตั้งชื่อช่อง/เพลย์ลิสต์ใหม่"]'));
+  check('เลือกช่องที่มีอยู่แล้วจาก dropdown ไม่เด้งช่องพิมพ์ข้อความใหม่ขึ้นมา',noFreeTextAfterSelect);
+  await p.locator('.modal-backdrop input').first().fill('EP.12 ทดสอบเลือกจาก dropdown');
+  await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(800);
+  const groupAfterDropdownPick=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.filter(r=>r.channel==='ช่องทดสอบ 48').length);
+  check('บันทึกรายการที่เลือกช่องจาก dropdown แล้วเข้ากลุ่มเดียวกันจริง (3 ตอน)',groupAfterDropdownPick===3,`${groupAfterDropdownPick} ตอน`);
+
+  // กด "+ สร้างช่องใหม่..." ต้องโชว์ช่องพิมพ์ข้อความ พิมพ์ชื่อใหม่แล้วกด "ยกเลิก" ต้องกลับเป็น dropdown + ค่าว่าง
+  await p.locator('.playback-page .inv-add-btn').first().click(); await p.waitForTimeout(600);
+  await p.locator('.modal-backdrop #pb-channel-select').selectOption('__new__');
+  const newModeShown=await p.evaluate(()=>!!document.querySelector('.modal-backdrop input[placeholder="ตั้งชื่อช่อง/เพลย์ลิสต์ใหม่"]'));
+  check('เลือก "+ สร้างช่องใหม่..." แล้วโชว์ช่องพิมพ์ข้อความ',newModeShown);
+  await p.locator('.modal-backdrop input[placeholder="ตั้งชื่อช่อง/เพลย์ลิสต์ใหม่"]').fill('ช่องทดสอบ 49 ใหม่');
+  await p.locator('.modal-backdrop .pb-channel-new-cancel').click(); await p.waitForTimeout(300);
+  const backToSelect=await p.evaluate(()=>{
+    const sel=document.querySelector('.modal-backdrop #pb-channel-select');
+    return {shown:!!sel,value:sel?sel.value:null,freeTextGone:!document.querySelector('.modal-backdrop input[placeholder="ตั้งชื่อช่อง/เพลย์ลิสต์ใหม่"]')};
+  });
+  check('กด "ยกเลิก" ตอนสร้างช่องใหม่แล้วกลับเป็น dropdown ค่าว่าง',backToSelect.shown&&backToSelect.value===''&&backToSelect.freeTextGone,JSON.stringify(backToSelect));
+  await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(400);
 
   /* ───────── รอบ 21: หมุดโปรเจกต์ + toast ───────── */
   console.log('\n[ข้อ 21] หมุดโปรเจกต์ + toast');

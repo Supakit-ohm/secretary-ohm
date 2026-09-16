@@ -5933,6 +5933,10 @@ function PlaybackFormModal({mode,initial,channelOptions,onClose,onSave}) {
   const blankForm={title:"",type:"video",rating:8,reviewText:"",date:todayISO(),link:"",coverUrl:"",channel:""};
   const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
   const isEdit=mode==="edit";
+  /* ข้อ 49: เลือกช่อง/เพลย์ลิสต์จาก dropdown ของที่มีอยู่แล้วเป็นค่าเริ่มต้น กันพิมพ์เพี้ยนแล้วแยกกลุ่มโดยไม่ตั้งใจ
+     (ก่อนหน้านี้เป็นช่องพิมพ์อิสระ+datalist — ยังกดพิมพ์ผิดได้อยู่) — สร้างช่องใหม่ได้ผ่านตัวเลือก "+ สร้างช่องใหม่..."
+     ที่สลับไปโชว์ช่องพิมพ์ข้อความแทนชั่วคราว */
+  const [newChannelMode,setNewChannelMode]=useState(false);
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ready=String(form.title||"").trim().length>0;
   const [coverBusy,setCoverBusy]=useState(false);
@@ -5974,14 +5978,25 @@ function PlaybackFormModal({mode,initial,channelOptions,onClose,onSave}) {
             <input className="modal-input" placeholder="ชื่อวิดีโอ/พอดแคสต์" value={form.title} onChange={e=>setF("title",e.target.value)}/>
           </div>
           <div>
-            {/* ข้อ 48: ช่อง/เพลย์ลิสต์ — ฟิลด์ข้อความล้วน (เหมือน "ผู้แต่ง" ของหนังสือ) ไม่ใช่เอนทิตีแยก
-               รายการที่กรอกชื่อช่องเดียวกันจะถูกรวมเป็นการ์ดโฟลเดอร์เดียวกันในชั้นวางของ PlaybackTab */}
+            {/* ข้อ 48/49: ช่อง/เพลย์ลิสต์ — field ข้อความล้วนเก็บใน data (เหมือน "ผู้แต่ง" ของหนังสือ) ไม่ใช่เอนทิตีแยก
+               แต่ UI บังคับเลือกจาก dropdown ของชื่อที่มีอยู่แล้วเป็นหลัก (ข้อ 49) กันพิมพ์เพี้ยนแล้วแยกกลุ่มโดยไม่ตั้งใจ
+               รายการที่ channel ตรงกันเป๊ะจะถูกรวมเป็นการ์ดโฟลเดอร์เดียวกันในชั้นวางของ PlaybackTab */}
             <label className="field-label">ช่อง/เพลย์ลิสต์ (ไม่บังคับ)</label>
-            <input className="modal-input" list="pb-channel-options" placeholder="เช่น ชื่อช่อง YouTube หรือชื่อพอดแคสต์"
-              value={form.channel||""} onChange={e=>setF("channel",e.target.value)}/>
-            <datalist id="pb-channel-options">
-              {(channelOptions||[]).map(c=><option key={c} value={c}/>)}
-            </datalist>
+            {!newChannelMode ? (
+              <select id="pb-channel-select" className="modal-input" value={form.channel||""} onChange={e=>{
+                if(e.target.value==="__new__"){ setNewChannelMode(true); setF("channel",""); }
+                else setF("channel",e.target.value);
+              }}>
+                <option value="">— ไม่มีช่อง (รายการเดี่ยว) —</option>
+                {(channelOptions||[]).map(c=><option key={c} value={c}>{c}</option>)}
+                <option value="__new__">+ สร้างช่องใหม่...</option>
+              </select>
+            ) : (
+              <div style={{display:"flex",gap:8}}>
+                <input className="modal-input" placeholder="ตั้งชื่อช่อง/เพลย์ลิสต์ใหม่" value={form.channel||""} onChange={e=>setF("channel",e.target.value)} autoFocus/>
+                <button type="button" className="pill-btn pb-channel-new-cancel" onClick={()=>{setNewChannelMode(false); setF("channel","");}}>ยกเลิก</button>
+              </div>
+            )}
           </div>
           <div>
             <label className="field-label">ปก (ไม่บังคับ)</label>
@@ -6006,7 +6021,7 @@ function PlaybackFormModal({mode,initial,channelOptions,onClose,onSave}) {
           <div className="fin-row-2">
             <div>
               <label className="field-label">ประเภท</label>
-              <select className="modal-input" value={form.type} onChange={e=>setF("type",e.target.value)}>
+              <select id="pb-type-select" className="modal-input" value={form.type} onChange={e=>setF("type",e.target.value)}>
                 <option value="video">วิดีโอ</option>
                 <option value="podcast">พอดแคสต์</option>
               </select>
