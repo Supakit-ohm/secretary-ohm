@@ -654,13 +654,13 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
       hero:h?h.textContent.trim():'',
       bignums:document.querySelectorAll('.playback-page .db-bignum .n').length,
       addBtns:[...document.querySelectorAll('.playback-page button')].filter(b=>/เพิ่มข้อมูล/.test(b.textContent||'')).map(b=>b.textContent.trim()),
-      rows:document.querySelectorAll('.playback-page .db-row').length,
+      shelfItems:document.querySelectorAll('.playback-page .pb-shelf-item').length, // ข้อ 48: เปลี่ยนจาก db-row เป็นชั้นวาง .pb-shelf-item
     };
   });
   check('แท็บ Playback แสดงฮีโร่ถูกต้อง',pb.page&&/Playback/.test(pb.hero),pb.hero);
   check('ตัวเลขใหญ่สรุป 2 ตัว (วิดีโอ/พอดแคสต์ เท่านั้น ไม่มีหนังสือ)',pb.bignums===2,`${pb.bignums} ตัว`);
   check('ปุ่มเพิ่มข้อมูลเหลือปุ่มเดียว (ข้อ 32/2)',pb.addBtns.length===1,pb.addBtns.join(' | ')||'ไม่เจอปุ่มเลย');
-  check('รายการรีวิวจาก seed แสดงเป็นแถว db-row',pb.rows>=1,`${pb.rows} แถว`);
+  check('รายการรีวิวจาก seed แสดงเป็นการ์ดในชั้นวาง (ข้อ 48)',pb.shelfItems>=1,`${pb.shelfItems} การ์ด`);
   // ปุ่มเดียว → PlaybackFormModal เปิด แล้วเพิ่มรีวิวใหม่ได้จริง (type เหลือแค่วิดีโอ/พอดแคสต์)
   const pbAddBtn=p.locator('.playback-page .inv-add-btn').first();
   if(await pbAddBtn.count()){
@@ -702,7 +702,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(1000);
     const savedReview=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.find(r=>typeof r.coverUrl==='string'&&r.coverUrl.startsWith('data:image')));
     check('บันทึกปกที่อัปโหลดเองลง localStorage จริง',!!savedReview,savedReview?`coverUrl เริ่มด้วย ${(savedReview.coverUrl||'').slice(0,20)}...`:'ไม่เจอ');
-    const thumbShows=await p.evaluate(()=>!!document.querySelector('.playback-page .pb-thumb img'));
+    const thumbShows=await p.evaluate(()=>!!document.querySelector('.playback-page .pb-shelf-cover img'));
     check('ชั้นรายการ Playback โชว์รูปปกที่อัปโหลด',thumbShows);
   } else { check('อัปโหลดปกวิดีโอ/พอดแคสต์แล้วขึ้น preview ทันที',false,'ไม่เจอปุ่มแก้ไข'); check('บันทึกปกที่อัปโหลดเองลง localStorage จริง',false); check('ชั้นรายการ Playback โชว์รูปปกที่อัปโหลด',false); }
   // ลบรีวิวออกจากรายการ → หายจริงใน localStorage
@@ -713,6 +713,50 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     const afterDelRv=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.length);
     check('ลบรีวิวออกจากรายการได้จริง',afterDelRv===beforeDelRv-1,`${beforeDelRv} → ${afterDelRv}`);
   } else check('ลบรีวิวออกจากรายการได้จริง',false,'ไม่เจอปุ่มลบ');
+
+  console.log('\n[ข้อ 48] ชั้นวาง Playback แบบโฟลเดอร์ (ช่อง/เพลย์ลิสต์) — ตามที่ ohm ขอให้ทำเหมือน shelf หนังสือ');
+  // เพิ่ม 2 ตอนที่กรอกชื่อ "ช่อง/เพลย์ลิสต์" ตรงกัน → ต้องถูกรวมเป็นการ์ดโฟลเดอร์ใบเดียวในชั้นวาง
+  const addPbWithChannel=async(title,channel)=>{
+    await p.locator('.playback-page .inv-add-btn').first().click(); await p.waitForTimeout(600);
+    await p.locator('.modal-backdrop input').first().fill(title);
+    await p.locator('.modal-backdrop input[list="pb-channel-options"]').fill(channel);
+    await p.locator('.modal-backdrop .modal-btn-save').click(); await p.waitForTimeout(800);
+  };
+  await addPbWithChannel('EP.10 ทดสอบ A','ช่องทดสอบ 48');
+  await addPbWithChannel('EP.11 ทดสอบ B','ช่องทดสอบ 48');
+  const afterAddChannel=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).mediaReviews.filter(r=>r.channel==='ช่องทดสอบ 48').length);
+  check('เพิ่มรายการพร้อมกรอกช่อง/เพลย์ลิสต์ได้จริง (2 ตอน)',afterAddChannel===2,`${afterAddChannel} ตอน`);
+
+  const folderState=await p.evaluate(()=>{
+    const cards=[...document.querySelectorAll('.playback-page .pb-shelf-item.pb-folder')];
+    const card=cards.find(c=>/ช่องทดสอบ 48/.test(c.textContent||''));
+    return card?{found:true,badge:card.querySelector('.pb-folder-badge')?.textContent.trim()}:{found:false};
+  });
+  check('การ์ดโฟลเดอร์ปรากฏในชั้นวางเมื่อชื่อช่องตรงกัน',folderState.found,JSON.stringify(folderState));
+  check('การ์ดโฟลเดอร์แสดง badge จำนวนตอนถูกต้อง (2)',folderState.badge==='2',folderState.badge||'ไม่มี badge');
+
+  // กดการ์ดโฟลเดอร์ → ต้องขยายลงมาเป็นแผง .pb-folder-panel แสดงครบ 2 แถว (ข้อ 48: ขยายในหน้าเดิม ไม่เปิด modal)
+  const folderCard=p.locator('.playback-page .pb-shelf-item.pb-folder',{hasText:'ช่องทดสอบ 48'}).first();
+  await folderCard.click(); await p.waitForTimeout(600);
+  const panelRows=await p.evaluate(()=>{
+    const panel=[...document.querySelectorAll('.pb-folder-panel')].find(x=>/ช่องทดสอบ 48/.test(x.textContent||''));
+    return panel?panel.querySelectorAll('.db-row').length:0;
+  });
+  check('กดการ์ดโฟลเดอร์แล้วขยายลงมาแสดงรายการครบ 2 ตอน',panelRows===2,`${panelRows} แถว`);
+
+  // ปุ่ม "เพิ่มตอนในช่องนี้" ในแผงที่ขยาย ต้อง prefill ชื่อช่องให้อัตโนมัติ
+  const addInPanel=p.locator('.pb-folder-panel',{hasText:'ช่องทดสอบ 48'}).locator('button',{hasText:'เพิ่มตอนในช่องนี้'}).first();
+  if(await addInPanel.count()){
+    await addInPanel.click(); await p.waitForTimeout(600);
+    const prefilled=await p.evaluate(()=>document.querySelector('.modal-backdrop input[list="pb-channel-options"]')?.value||'');
+    check('ปุ่ม "เพิ่มตอนในช่องนี้" ตั้งชื่อช่องให้อัตโนมัติ',prefilled==='ช่องทดสอบ 48',prefilled||'ว่างเปล่า');
+    await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(400);
+  } else check('ปุ่ม "เพิ่มตอนในช่องนี้" ตั้งชื่อช่องให้อัตโนมัติ',false,'ไม่เจอปุ่ม');
+
+  // รายการที่ไม่มีช่อง (เพิ่มรีวิวทดสอบ 45 จากรอบก่อนหน้า) ต้องยังเป็นการ์ดเดี่ยว ไม่ถูกจัดเข้าโฟลเดอร์ไหน
+  const standaloneTexts=await p.evaluate(()=>[...document.querySelectorAll('.playback-page .pb-shelf-item:not(.pb-folder)')].map(x=>x.textContent));
+  const standaloneOk=standaloneTexts.some(t=>/รีวิวทดสอบ/.test(t||''));
+  check('รายการที่ไม่มีช่อง/เพลย์ลิสต์ยังแสดงเป็นการ์ดเดี่ยวตามปกติ',standaloneOk,`${standaloneTexts.length} การ์ดเดี่ยว`);
 
   /* ───────── รอบ 21: หมุดโปรเจกต์ + toast ───────── */
   console.log('\n[ข้อ 21] หมุดโปรเจกต์ + toast');

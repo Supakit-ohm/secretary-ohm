@@ -987,8 +987,10 @@ const DEFAULT_DATA = {
   ],
   /* ข้อ 45/2: mediaReviews เก็บเฉพาะ video/podcast (รีวิวหนังสือย้ายไปติดกับ record หนังสือเองใน bookQueue แล้ว) */
   mediaReviews:[
-    {id:"mr1",title:"Huberman Lab",type:"podcast",rating:8,reviewText:"เนื้อหาแน่น อิงงานวิจัยเยอะ บางตอนยาวไปหน่อย",date:todayISO(),link:""},
-    {id:"mr2",title:"The Social Dilemma",type:"video",rating:7,reviewText:"เปิดมุมมองเรื่องโซเชียลมีเดียได้ดี",date:todayISO(),link:""},
+    /* ข้อ 48: channel ใช้จัดกลุ่มเป็นการ์ดโฟลเดอร์ในชั้นวาง — mr1/mr3 ช่องเดียวกัน (Huberman Lab) ตัวอย่างการรวมกลุ่ม */
+    {id:"mr1",title:"EP.1 พื้นฐานการนอน",type:"podcast",rating:8,reviewText:"เนื้อหาแน่น อิงงานวิจัยเยอะ บางตอนยาวไปหน่อย",date:todayISO(),link:"",channel:"Huberman Lab"},
+    {id:"mr3",title:"EP.2 โฟกัสกับโดปามีน",type:"podcast",rating:9,reviewText:"",date:todayISO(),link:"",channel:"Huberman Lab"},
+    {id:"mr2",title:"The Social Dilemma",type:"video",rating:7,reviewText:"เปิดมุมมองเรื่องโซเชียลมีเดียได้ดี",date:todayISO(),link:"",channel:""},
   ],
   activity:[],
   projects:null,
@@ -5927,9 +5929,10 @@ const REVIEW_TYPE_META={
   video:{label:"วิดีโอ",color:"var(--orange)"},
   podcast:{label:"พอดแคสต์",color:"var(--gold)"},
 };
-function PlaybackFormModal({initial,onClose,onSave}) {
-  const blankForm={title:"",type:"video",rating:8,reviewText:"",date:todayISO(),link:"",coverUrl:""};
+function PlaybackFormModal({mode,initial,channelOptions,onClose,onSave}) {
+  const blankForm={title:"",type:"video",rating:8,reviewText:"",date:todayISO(),link:"",coverUrl:"",channel:""};
   const [form,setForm]=useState(initial?{...blankForm,...initial}:blankForm);
+  const isEdit=mode==="edit";
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ready=String(form.title||"").trim().length>0;
   const [coverBusy,setCoverBusy]=useState(false);
@@ -5962,13 +5965,23 @@ function PlaybackFormModal({initial,onClose,onSave}) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-head">
-          <span>{initial?"แก้ไขรีวิว":"➕ เพิ่มรีวิว"}</span>
+          <span>{isEdit?"แก้ไขรีวิว":"➕ เพิ่มรีวิว"}</span>
           <button className="modal-close" onClick={onClose}><X size={15}/></button>
         </div>
         <div className="modal-body">
           <div>
             <label className="field-label">ชื่อเรื่อง *</label>
             <input className="modal-input" placeholder="ชื่อวิดีโอ/พอดแคสต์" value={form.title} onChange={e=>setF("title",e.target.value)}/>
+          </div>
+          <div>
+            {/* ข้อ 48: ช่อง/เพลย์ลิสต์ — ฟิลด์ข้อความล้วน (เหมือน "ผู้แต่ง" ของหนังสือ) ไม่ใช่เอนทิตีแยก
+               รายการที่กรอกชื่อช่องเดียวกันจะถูกรวมเป็นการ์ดโฟลเดอร์เดียวกันในชั้นวางของ PlaybackTab */}
+            <label className="field-label">ช่อง/เพลย์ลิสต์ (ไม่บังคับ)</label>
+            <input className="modal-input" list="pb-channel-options" placeholder="เช่น ชื่อช่อง YouTube หรือชื่อพอดแคสต์"
+              value={form.channel||""} onChange={e=>setF("channel",e.target.value)}/>
+            <datalist id="pb-channel-options">
+              {(channelOptions||[]).map(c=><option key={c} value={c}/>)}
+            </datalist>
           </div>
           <div>
             <label className="field-label">ปก (ไม่บังคับ)</label>
@@ -6017,7 +6030,7 @@ function PlaybackFormModal({initial,onClose,onSave}) {
             <input className="modal-input" placeholder="https://..." value={form.link} onChange={e=>setF("link",e.target.value)}/>
           </div>
           <button className="modal-btn-save" disabled={!ready} onClick={()=>ready&&onSave(form)}>
-            {initial?"บันทึกการแก้ไข":"บันทึกรีวิว"}
+            {isEdit?"บันทึกการแก้ไข":"บันทึกรีวิว"}
           </button>
         </div>
         <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
@@ -6034,12 +6047,16 @@ function PlaybackTab({data,persist}) {
   reviews.forEach(r=>{ if(counts[r.type]!=null) counts[r.type]++; });
   const sorted=reviews.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
 
+  /* ข้อ 48: รายชื่อช่อง/เพลย์ลิสต์ที่เคยกรอกไว้ — ใช้ทำ autocomplete ในฟอร์ม กันพิมพ์ชื่อซ้ำเพี้ยน */
+  const channelOptions=Array.from(new Set(reviews.map(r=>String(r.channel||"").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'th'));
+
   /* ข้อ 32/2: ปุ่มเพิ่มข้อมูลปุ่มเดียวต่อหน้า — เพิ่ม/แก้ไขผ่าน PlaybackFormModal ตัวเดียว (เหมือน BookFormModal) */
-  const [modal,setModal]=useState(null); // null | {mode:"add"} | {mode:"edit",id,initial}
-  const openAdd=()=>setModal({mode:"add"});
+  const [modal,setModal]=useState(null); // null | {mode:"add",initial?} | {mode:"edit",id,initial}
+  const openAdd=(prefillChannel)=>setModal({mode:"add",initial:prefillChannel?{channel:prefillChannel}:undefined});
   const openEdit=(r)=>setModal({mode:"edit",id:r.id,initial:{
     title:r.title||"",type:r.type||"video",rating:Number(r.rating)||8,
     reviewText:r.reviewText||"",date:r.date||todayISO(),link:r.link||"",coverUrl:r.coverUrl||"",
+    channel:r.channel||"",
   }});
   const saveReview=(f)=>{
     const row={
@@ -6048,12 +6065,33 @@ function PlaybackTab({data,persist}) {
       reviewText:String(f.reviewText||"").trim(),
       date:f.date||todayISO(),link:String(f.link||"").trim(),
       coverUrl:f.coverUrl||null,
+      channel:String(f.channel||"").trim(),
     };
     if(!row.title) return;
     if(modal&&modal.mode==="edit") setReviews(reviews.map(r=>r.id===modal.id?{...r,...row}:r));
     else setReviews([...reviews,{id:uid(),...row}]);
     setModal(null);
   };
+
+  /* ── ข้อ 48: ชั้นวาง Playback แบบเดียวกับ Book Queue — รายการที่มีชื่อ "ช่อง/เพลย์ลิสต์" ตรงกัน
+     จะถูกรวมเป็นการ์ดโฟลเดอร์ใบเดียว (ปก = ตอนล่าสุดในช่องนั้น), ส่วนรายการเดี่ยวๆ (ไม่มีช่อง) ก็ยังเป็นการ์ดเดี่ยวเหมือนเดิม
+     เรียงรวมกันด้วยวันที่ล่าสุดของแต่ละใบ (การ์ดโฟลเดอร์ใช้วันที่ของตอนล่าสุดในกลุ่ม) ── */
+  const groupsMap=new Map();
+  const standalone=[];
+  sorted.forEach(r=>{
+    const ch=String(r.channel||"").trim();
+    if(!ch){ standalone.push(r); return; }
+    if(!groupsMap.has(ch)) groupsMap.set(ch,[]);
+    groupsMap.get(ch).push(r);
+  });
+  const shelfEntries=[
+    ...standalone.map(r=>({kind:"item",key:"i:"+r.id,date:r.date,r})),
+    ...Array.from(groupsMap.entries()).map(([channel,items])=>({kind:"folder",key:"f:"+channel,date:items[0].date,channel,items})),
+  ].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+
+  const [openFolders,setOpenFolders]=useState({}); // {[channel]:true}
+  const toggleFolder=(ch)=>setOpenFolders(o=>({...o,[ch]:!o[ch]}));
+  const openChannels=Array.from(groupsMap.keys()).filter(ch=>openFolders[ch]);
 
   return (
     <div className="playback-page fin-page">
@@ -6064,7 +6102,10 @@ function PlaybackTab({data,persist}) {
           <div className="db-hero-line">
             {reviews.length} รายการ · วิดีโอ {counts.video} · พอดแคสต์ {counts.podcast}
           </div>
-          <button className="db-btn primary inv-add-btn" onClick={openAdd}><Plus size={14}/> เพิ่มข้อมูล</button>
+          {/* ข้อ 48: ต้องเรียก openAdd() แบบไม่ส่ง event เข้าไปตรงๆ เพราะตอนนี้ openAdd รับพารามิเตอร์ prefillChannel
+             (ปุ่ม "เพิ่มตอนในช่องนี้" ในแผงโฟลเดอร์ใช้พารามิเตอร์นี้) — ถ้าไม่ห่อ arrow function ค่า event ของ React
+             จะหลุดเข้าไปเป็น channel โดยไม่ได้ตั้งใจ (บั๊กที่เจอจาก smoke-test ตอนพัฒนา) */}
+          <button className="db-btn primary inv-add-btn" onClick={()=>openAdd()}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
         <div className="db-bignums">
           <div className="db-bignum">
@@ -6079,39 +6120,99 @@ function PlaybackTab({data,persist}) {
       </div>
 
       <div className="db-bento">
-        {/* ── ข้อ 28/32: รายการยาวใช้ DashCollapse กดกาง/ย่อได้ ── */}
+        {/* ── ข้อ 48: ชั้นวาง (shelf) แบบเดียวกับ Book Queue — การ์ดเดี่ยว + การ์ดโฟลเดอร์ (รวมตามช่อง/เพลย์ลิสต์) ── */}
         <DashCollapse span="db-span4" title="รายการรีวิวทั้งหมด"
           note={reviews.length?`${reviews.length} รายการ`:"ยังไม่มีรายการ"}
           defaultOpen={true}>
-          {sorted.length===0
+          {shelfEntries.length===0
             ? <div className="db-empty">ยังไม่มีรีวิว — กด “เพิ่มข้อมูล” ด้านบน</div>
-            : sorted.map(r=>{
-              const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.video;
-              const TypeIcon=r.type==="podcast"?PodcastIcon:VideoIcon;
-              return (
-                <div key={r.id} className="db-row pb-row">
-                  <div className="pb-thumb">
-                    {r.coverUrl?<img src={r.coverUrl} alt=""/>:<TypeIcon size={14}/>}
-                  </div>
-                  <div className="db-tmain">
-                    <div className="db-tname" title={r.title}>{r.title}</div>
-                    <div className="db-tsub">
-                      <span className="db-dot" style={{background:meta.color,marginRight:4}}/>{meta.label} · ★ {r.rating}/10 · {r.date}
+            : (
+            <div className="pb-shelf">
+              {shelfEntries.map(entry=>{
+                if(entry.kind==="item"){
+                  const r=entry.r;
+                  const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.video;
+                  const TypeIcon=r.type==="podcast"?PodcastIcon:VideoIcon;
+                  return (
+                    <div key={entry.key} className="pb-shelf-item">
+                      <div className="pb-shelf-cover">
+                        {r.coverUrl?<img src={r.coverUrl} alt=""/>:<TypeIcon size={20}/>}
+                      </div>
+                      <div className="pb-shelf-info">
+                        <div className="db-tname" title={r.title}>{r.title}</div>
+                        <div className="db-tsub"><span className="db-dot" style={{background:meta.color,marginRight:4}}/>★ {r.rating}/10 · {r.date}</div>
+                      </div>
+                      <div className="inv-item-actions pb-shelf-actions">
+                        {r.link&&<button className="db-chip" title="เปิดลิงก์" onClick={()=>window.open(r.link,"_blank","noopener,noreferrer")}><LinkIcon size={12}/></button>}
+                        <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(r)}><Edit3 size={12}/></button>
+                        <button className="db-chip" title="ลบ" onClick={()=>removeReview(r.id)}><Trash2 size={12}/></button>
+                      </div>
                     </div>
-                    {r.reviewText&&<div className="db-note" style={{marginTop:4,whiteSpace:"pre-wrap"}}>{r.reviewText}</div>}
+                  );
+                }
+                // kind==="folder": การ์ดช่อง/เพลย์ลิสต์ — ปก = ตอนล่าสุดในกลุ่ม, badge = จำนวนตอน
+                const latest=entry.items[0];
+                const TypeIcon=latest.type==="podcast"?PodcastIcon:VideoIcon;
+                const avg=(entry.items.reduce((s,x)=>s+(Number(x.rating)||0),0)/entry.items.length);
+                const isOpen=!!openFolders[entry.channel];
+                return (
+                  <div key={entry.key} className={`pb-shelf-item pb-folder${isOpen?" open":""}`} onClick={()=>toggleFolder(entry.channel)} title="กดเพื่อดูรายการในช่องนี้">
+                    <div className="pb-shelf-cover">
+                      {latest.coverUrl?<img src={latest.coverUrl} alt=""/>:<TypeIcon size={20}/>}
+                      <span className="pb-folder-badge">{entry.items.length}</span>
+                    </div>
+                    <div className="pb-shelf-info">
+                      <div className="db-tname" title={entry.channel}>{entry.channel} {isOpen?<ChevronUp size={11}/>:<ChevronDown size={11}/>}</div>
+                      <div className="db-tsub">{entry.items.length} รายการ · ★ {avg.toFixed(1)}/10</div>
+                    </div>
                   </div>
-                  <div className="inv-item-actions">
-                    {r.link&&<button className="db-chip" title="เปิดลิงก์" onClick={()=>window.open(r.link,"_blank","noopener,noreferrer")}><LinkIcon size={12}/></button>}
-                    <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(r)}><Edit3 size={12}/></button>
-                    <button className="db-chip" title="ลบ" onClick={()=>removeReview(r.id)}><Trash2 size={12}/></button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
         </DashCollapse>
+
+        {/* ── ข้อ 48: แผงรายการในช่อง/เพลย์ลิสต์ที่กางไว้ — โผล่ต่อท้ายชั้นวาง ทีละช่องที่เปิดอยู่ ── */}
+        {openChannels.map(ch=>{
+          const items=groupsMap.get(ch)||[];
+          return (
+            <div key={ch} className="db-card db-span4 pb-folder-panel">
+              <div className="db-head">
+                <div><div className="db-title">{ch}</div><div className="db-note">{items.length} รายการในช่องนี้</div></div>
+                <div className="inv-item-actions">
+                  <button className="pill-btn" onClick={()=>openAdd(ch)}><Plus size={12}/> เพิ่มตอนในช่องนี้</button>
+                  <button className="db-chip" title="ย่อกลับ" onClick={()=>toggleFolder(ch)}><ChevronUp size={12}/></button>
+                </div>
+              </div>
+              {items.map(r=>{
+                const meta=REVIEW_TYPE_META[r.type]||REVIEW_TYPE_META.video;
+                const TypeIcon=r.type==="podcast"?PodcastIcon:VideoIcon;
+                return (
+                  <div key={r.id} className="db-row pb-row">
+                    <div className="pb-thumb">
+                      {r.coverUrl?<img src={r.coverUrl} alt=""/>:<TypeIcon size={14}/>}
+                    </div>
+                    <div className="db-tmain">
+                      <div className="db-tname" title={r.title}>{r.title}</div>
+                      <div className="db-tsub">
+                        <span className="db-dot" style={{background:meta.color,marginRight:4}}/>{meta.label} · ★ {r.rating}/10 · {r.date}
+                      </div>
+                      {r.reviewText&&<div className="db-note" style={{marginTop:4,whiteSpace:"pre-wrap"}}>{r.reviewText}</div>}
+                    </div>
+                    <div className="inv-item-actions">
+                      {r.link&&<button className="db-chip" title="เปิดลิงก์" onClick={()=>window.open(r.link,"_blank","noopener,noreferrer")}><LinkIcon size={12}/></button>}
+                      <button className="db-chip" title="แก้ไข" onClick={()=>openEdit(r)}><Edit3 size={12}/></button>
+                      <button className="db-chip" title="ลบ" onClick={()=>removeReview(r.id)}><Trash2 size={12}/></button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
 
-      {modal&&<PlaybackFormModal initial={modal.initial} onClose={()=>setModal(null)} onSave={saveReview}/>}
+      {modal&&<PlaybackFormModal mode={modal.mode} initial={modal.initial} channelOptions={channelOptions} onClose={()=>setModal(null)} onSave={saveReview}/>}
     </div>
   );
 }

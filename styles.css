@@ -1140,6 +1140,22 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pb-row{gap:10px;}
 .pb-thumb{width:40px;height:40px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;flex:none;color:var(--ink-5);}
 .pb-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+/* ── ข้อ 48: ชั้นวาง Playback — เหมือน .book-shelf แต่ปกสี่เหลี่ยมจัตุรัส (1:1) ไม่ใช่ทรงหนังสือ (2:3)
+   .pb-folder = การ์ดที่รวมหลายตอนในช่องเดียวกัน กดได้ (cursor:pointer) มี badge จำนวนตอนที่มุมปก ── */
+.pb-shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px;}
+.pb-shelf-item{display:flex;flex-direction:column;}
+.pb-shelf-cover{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;color:var(--ink-5);}
+.pb-shelf-cover img{width:100%;height:100%;object-fit:cover;display:block;}
+.pb-shelf-info{padding-top:8px;min-width:0;}
+.pb-shelf-info .db-tname{display:flex;align-items:center;gap:4px;}
+.pb-shelf-actions{display:flex;gap:4px;margin-top:6px;}
+.pb-folder{cursor:pointer;}
+.pb-folder .pb-shelf-cover{border-color:rgba(217,178,106,.35);}
+.pb-folder.open .pb-shelf-cover{border-color:var(--gold);}
+.pb-folder-badge{position:absolute;top:6px;right:6px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:rgba(8,12,10,.85);border:1px solid rgba(255,255,255,.15);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;color:#fff;}
+.pb-folder-panel{margin-top:14px;}
+.pb-folder-panel .db-head{align-items:center;}
+.pb-folder-panel .inv-item-actions{display:flex;gap:6px;align-items:center;}
 
 @media(max-width:1200px){
   .crypto-platform-grid{grid-template-columns:1fr;}
@@ -1158,4 +1174,5 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .trk-ring-side{min-width:0;}
   .book-page{padding:0 0 20px;}
   .book-shelf{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;}
+  .pb-shelf{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;}
 }
