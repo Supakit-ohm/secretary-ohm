@@ -2808,7 +2808,7 @@ function FinanceInvestmentsTab({finance,persist}) {
     const cost=holdingCostTHB(h,fx);          // แปลงเป็นบาททั้งคู่ก่อนเทียบเสมอ
     const value=holdingValueTHB(h,fx);
     const pnl=value-cost;
-    return {cost,value,pnl,pct:cost>0?(pnl/cost)*100:0,share:cryptoValue>0?(value/cryptoValue)*100:0};
+    return {cost,value,pnl,pct:cost>0?(pnl/cost)*100:0,share:cryptoValue>0?(value/cryptoValue)*100:0,xirrPct:holdingXirrPct(h,fx)};
   };
   const sortHoldings=()=>setHoldings(holdings.slice().sort((a,b)=>coinStat(b).value-coinStat(a).value));
   const [buyFor,setBuyFor]=useState(null);
@@ -3007,6 +3007,12 @@ function FinanceInvestmentsTab({finance,persist}) {
               {cryptoCost>0&&` (${cryptoValue-cryptoCost>=0?"+":"-"}${Math.abs(((cryptoValue-cryptoCost)/cryptoCost)*100).toFixed(1)}%)`}
             </span>
           </div>
+          {(()=>{ const portXirr=xirr(holdings.reduce((a,h)=>a.concat(holdingCashflows(h,fx)),[])); return portXirr!=null&&(
+            <div className="db-row">
+              <span className="lab">ผลตอบแทนเฉลี่ยต่อปี</span>
+              <span className={`val db-mono ${portXirr>=0?"up":"down"}`}>{portXirr>=0?"+":""}{(portXirr*100).toFixed(1)}%</span>
+            </div>
+          ); })()}
           {best&&num(best.quantity)>0&&(
             <div className="db-row">
               <span className="lab">ดี / แย่ที่สุด</span>
@@ -3156,6 +3162,11 @@ function FinanceInvestmentsTab({finance,persist}) {
                                 <span className="val db-mono" style={{color:"var(--accent-soft)"}}>฿{dbNum(st.value)}</span>
                               </div>
                               {st.cost>0&&renderPnlBar(st.pnl,st.pct)}
+                              {st.xirrPct!=null&&(
+                                <div className="db-note" style={{marginTop:4}}>
+                                  ผลตอบแทนเฉลี่ย <b className="db-mono" style={{color:st.xirrPct>=0?"var(--accent-soft)":"var(--orange)"}}>{st.xirrPct>=0?"+":""}{st.xirrPct.toFixed(1)}%</b> ต่อปี
+                                </div>
+                              )}
                               {((h.buys||[]).length>0||(priceAge!=null&&priceAge>=7))&&(
                                 <div className="db-note" style={{marginTop:6}}>
                                   {(h.buys||[]).length>0&&<span style={{color:"var(--accent-soft)"}}>บันทึกซื้อ {h.buys.length} งวด</span>}
@@ -3345,6 +3356,48 @@ function holdingCostTHB(h,fx){
 function holdingValueTHB(h,fx){
   const rate=(h.priceCurrency==="USD")?fx:1;   // มูลค่าปัจจุบันใช้เรตวันนี้เสมอ
   return nv(h.quantity)*nv(h.currentPrice)*rate;
+}
+/* ═══ XIRR ต่อเหรียญ/ต่อพอร์ต (ผลตอบแทนเฉลี่ยต่อปี) — งานค้างข้อ 4.4 ═══
+   กระแสเงินสด = "ก้อนแรก" (ต้นทุนตอนเริ่มถือ ก่อนมีบันทึกซื้อเพิ่มใดๆ) + ทุกงวดใน buys[] + มูลค่าปัจจุบันวันนี้
+   ก้อนแรกหาได้จากผลต่าง: ต้นทุนรวมตอนนี้ (holdingCostTHB) ลบผลรวม buys[].totalTHB ทั้งหมด
+   เพราะ avgCost ปัจจุบันคือค่าเฉลี่ยถ่วงน้ำหนักของก้อนแรก+ทุกงวดซื้อเพิ่มเสมอ (คำนวณไว้ตั้งแต่ AddBuyModal ตามข้อ 16) */
+function holdingCashflows(h,fx){
+  const buys=h.buys||[];
+  const totalCostTHB=holdingCostTHB(h,fx);
+  const boughtTHB=buys.reduce((a,b)=>a+nv(b.totalTHB),0);
+  const initialCostTHB=totalCostTHB-boughtTHB;
+  const firstDate=h.firstHeldDate||(buys[0]&&buys[0].date);
+  const cfs=[];
+  if(initialCostTHB>0&&firstDate) cfs.push({date:firstDate,amount:-initialCostTHB});
+  buys.forEach(b=>{ if(nv(b.totalTHB)>0&&b.date) cfs.push({date:b.date,amount:-nv(b.totalTHB)}); });
+  const value=holdingValueTHB(h,fx);
+  if(value>0&&cfs.length>0) cfs.push({date:todayISO(),amount:value});
+  return cfs;
+}
+/* หาอัตรา r ที่ NPV=0 ด้วย bisection — เครื่องหมายกระแสเงินสดสลับครั้งเดียว (ลบ...ลบ...บวก) NPV(r) จึงลดหน่วยเดียว ลู่เข้าเสมอถ้ามีคำตอบ */
+function xirr(cashflows){
+  if(!cashflows||cashflows.length<2) return null;
+  const sorted=cashflows.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const t0=new Date(sorted[0].date).getTime();
+  const spanDays=(new Date(sorted[sorted.length-1].date).getTime()-t0)/86400000;
+  if(spanDays<1) return null;   // ถือมาไม่ถึง 1 วัน คิดต่อปีไม่มีความหมาย
+  if(!sorted.some(c=>c.amount<0)||!sorted.some(c=>c.amount>0)) return null;
+  const yrs=d=>(new Date(d).getTime()-t0)/(365*86400000);
+  const npv=r=>sorted.reduce((s,cf)=>s+cf.amount/Math.pow(1+r,yrs(cf.date)),0);
+  let lo=-0.9999,hi=10,fLo=npv(lo),fHi=npv(hi),tries=0;
+  while(fLo*fHi>0&&tries<40){ hi*=2; fHi=npv(hi); tries++; }
+  if(fLo*fHi>0) return null;
+  let mid=0;
+  for(let i=0;i<200;i++){
+    mid=(lo+hi)/2; const fMid=npv(mid);
+    if(Math.abs(fMid)<1e-6) return mid;
+    if(fLo*fMid<0){ hi=mid; fHi=fMid; } else { lo=mid; fLo=fMid; }
+  }
+  return mid;
+}
+function holdingXirrPct(h,fx){
+  const r=xirr(holdingCashflows(h,fx));
+  return r==null?null:r*100;
 }
 function cryptoPortfolioValue(f){
   const fx=usdThb(f);
