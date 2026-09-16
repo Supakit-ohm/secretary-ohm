@@ -2667,6 +2667,44 @@ function AddBuyModal({holding,fx,onClose,onSave}) {
     </div>
   );
 }
+/* ═══ ประวัติ DCA ต่อเหรียญ — แสดงรายการซื้อทั้งหมดใน buys[] ย้อนหลัง (ข้อ 51.2 ต่อยอดข้อ 16) ═══
+   ลบได้ทีละงวด — คำนวณย้อนกลับ "ก้อนแรก" (ต้นทุนก่อนมีบันทึกซื้อเพิ่มใดๆ แบบเดียวกับที่ใช้ทำ XIRR)
+   แล้วรวมกับงวดที่เหลือใหม่ ได้ quantity/avgCost ที่ถูกต้องเสมอ (ดู deleteBuy ใน FinanceInvestmentsTab) */
+function BuyHistoryModal({holding,onClose,onDelete}) {
+  const buys=(holding.buys||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const totalQty=buys.reduce((a,b)=>a+nv(b.qty),0);
+  const totalTHB=buys.reduce((a,b)=>a+nv(b.totalTHB),0);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span><Clock size={14}/> ประวัติการซื้อ {holding.coin||"เหรียญ"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          {buys.length===0&&<div className="db-empty">ยังไม่มีบันทึกซื้อเพิ่ม — ยอดตอนนี้มาจากตอนเพิ่มเหรียญครั้งแรกทั้งหมด</div>}
+          {buys.length>0&&(
+            <>
+              <div className="db-note" style={{marginBottom:10}}>รวม {buys.length} งวด · {totalQty.toLocaleString()} หน่วย · ฿{dbNum(totalTHB)}</div>
+              <div className="inv-card-list" style={{padding:0}}>
+                {buys.map(b=>(
+                  <div key={b.id} className="db-row" style={{alignItems:"flex-start"}}>
+                    <span className="lab">
+                      <span className="db-mono" style={{color:"var(--ink)"}}>{thaiDate(b.date)}</span>
+                      <div className="db-note" style={{marginTop:2}}>
+                        {nv(b.qty).toLocaleString()} หน่วย · {b.currency==="USD"?`$${nv(b.total).toLocaleString()} (เรต ${nv(b.fxRate).toFixed(2)})`:`฿${nv(b.total).toLocaleString()}`}
+                        {nv(b.qty)>0&&` · เฉลี่ย ฿${(nv(b.totalTHB)/nv(b.qty)).toLocaleString(undefined,{maximumFractionDigits:2})}/หน่วย`}
+                      </div>
+                    </span>
+                    <button className="db-chip" title="ลบงวดนี้" onClick={()=>onDelete(b.id)}><Trash2 size={12}/></button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ปิด</button></div>
+      </div>
+    </div>
+  );
+}
 function AddCoinModal({fx,onClose,onSave}) {
   const [coin,setCoin]=useState("");
   const [platform,setPlatform]=useState("");
@@ -2812,12 +2850,31 @@ function FinanceInvestmentsTab({finance,persist}) {
   };
   const sortHoldings=()=>setHoldings(holdings.slice().sort((a,b)=>coinStat(b).value-coinStat(a).value));
   const [buyFor,setBuyFor]=useState(null);
+  const [historyForId,setHistoryForId]=useState(null);
   const saveBuy=(patch)=>{
     setHoldings(holdings.map(h=>h.id===buyFor.id?{...h,
       quantity:patch.quantity,avgCost:patch.avgCost,costCurrency:patch.costCurrency,costFxRate:patch.costFxRate,
       firstHeldDate:patch.firstHeldDate,buys:[...(h.buys||[]),patch.buy],updatedAt:todayISO()}:h));
     setBuyFor(null);
   };
+  /* ลบงวดซื้อทีละรายการ — คำนวณย้อนกลับ "ก้อนแรก" (เหมือน holdingCashflows ที่ใช้ทำ XIRR) แล้วรวมกับงวดที่เหลือใหม่
+     buys.length>0 เสมอตอนเรียกฟังก์ชันนี้ (ปุ่มประวัติโชว์เฉพาะเหรียญที่มีงวดซื้อ) costCurrency จึงเป็น "THB" อยู่แล้วตามที่ AddBuyModal ล็อกไว้ */
+  const deleteBuy=(holdingId,buyId)=>{
+    setHoldings(holdings.map(h=>{
+      if(h.id!==holdingId) return h;
+      const buys=h.buys||[];
+      const totalCostTHB=holdingCostTHB(h,fx);
+      const boughtTHB=buys.reduce((a,b)=>a+nv(b.totalTHB),0);
+      const initialCostTHB=totalCostTHB-boughtTHB;
+      const initialQty=nv(h.quantity)-buys.reduce((a,b)=>a+nv(b.qty),0);
+      const remaining=buys.filter(b=>b.id!==buyId);
+      const newQty=initialQty+remaining.reduce((a,b)=>a+nv(b.qty),0);
+      const newCostTHB=initialCostTHB+remaining.reduce((a,b)=>a+nv(b.totalTHB),0);
+      return {...h,quantity:String(newQty),avgCost:newQty>0?String(Math.round((newCostTHB/newQty)*100)/100):"0",
+        costCurrency:"THB",costFxRate:"",buys:remaining,updatedAt:todayISO()};
+    }));
+  };
+  const historyHolding=historyForId&&holdings.find(h=>h.id===historyForId);
   /* ── รื้อ UI ตามที่คุยกับ ohm (2026-08-23): manual entry ใหม่ทุกอย่างเป็นปุ่ม+modal, แก้ไข/ลบยังกดที่การ์ดเดิม, เลิกตารางทั้งหมด ── */
   const [showAddCoin,setShowAddCoin]=useState(false);
   const addCoin=(row)=>{ setHoldings([...holdings,{id:uid(),...row,updatedAt:todayISO(),priceUpdatedAt:todayISO()}]); setShowAddCoin(false); };
@@ -3151,6 +3208,7 @@ function FinanceInvestmentsTab({finance,persist}) {
                             <span className="db-tname inv-coin-name">{h.coin||"(ไม่มีชื่อ)"} <span className="db-note inv-inline-note">· {st.share.toFixed(1)}% ของพอร์ต</span></span>
                             <div className="inv-item-actions">
                               <button className="db-chip" title="บันทึกการซื้อเพิ่ม / DCA" onClick={()=>setBuyFor(h)}><Plus size={12}/></button>
+                              {(h.buys||[]).length>0&&<button className="db-chip" title="ประวัติการซื้อ" onClick={()=>setHistoryForId(h.id)}><Clock size={12}/></button>}
                               <button className="db-chip" title="แก้ไข" onClick={()=>setEditCoinId(editing?null:h.id)}><Edit3 size={12}/></button>
                               <button className="db-chip" title="ลบ" onClick={()=>removeHolding(h.id)}><Trash2 size={12}/></button>
                             </div>
@@ -3307,6 +3365,7 @@ function FinanceInvestmentsTab({finance,persist}) {
         </div>
       )}
       {buyFor&&<AddBuyModal holding={buyFor} fx={fx} onClose={()=>setBuyFor(null)} onSave={saveBuy}/>}
+      {historyHolding&&<BuyHistoryModal holding={historyHolding} onClose={()=>setHistoryForId(null)} onDelete={(buyId)=>deleteBuy(historyHolding.id,buyId)}/>}
       {showAddCoin&&<AddCoinModal fx={fx} onClose={()=>setShowAddCoin(false)} onSave={addCoin}/>}
       {showAddInv&&(
         <AddInvestmentModal
