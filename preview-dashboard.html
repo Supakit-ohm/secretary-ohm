@@ -957,6 +957,8 @@ const DEFAULT_DATA = {
                             //    platform, firstHeldDate, updatedAt, priceUpdatedAt }] — สกุลเงินไม่ระบุ = THB
     fxRate: {},             // { USDTHB: { value, updatedAt } } — เรตแลกเงินกรอกเอง ใช้แปลงพอร์ต crypto เป็นบาท
     cashAccounts: [],       // [{ id, name, balance, updatedAt }] — ยอดเงินสด/เงินฝาก กรอกเองเป็นระยะ (ใช้คำนวณ Net Worth)
+    investmentTargets: {},  // { "<type>": "maxPct" } — เป้าสัดส่วนสูงสุดต่อพอร์ตรวม กรอกเองต่อประเภท ไม่บังคับ (ข้อ 53)
+    portfolioSnapshots: [], // [{ id, date, value }] — มูลค่าพอร์ตรวมทั้งหมด บันทึกด้วยมือเป็นจุดๆ ใช้ทำกราฟตามเวลา (ข้อ 53)
     debts: [],
   },
   goals:[
@@ -2838,6 +2840,25 @@ function FinanceInvestmentsTab({finance,persist}) {
   const valueOfType=(t)=>t==="crypto"?cryptoValue:num(iv[t]&&iv[t].value);
   const totalValue=portfolioValue(finance);
   const setTypeValue=(t,v)=>setIV({...iv,[t]:{value:v,updatedAt:todayISO()}});
+  /* ═══ เป้าสัดส่วนพอร์ต (ข้อ 53) — เก็บเป็น % สูงสุดต่อพอร์ตรวมต่อประเภท ไม่บังคับ ไม่ผูกกับ investmentValues ═══ */
+  const targets=finance.finance.investmentTargets||{};
+  const setTarget=(key,pct)=>persist({...finance,finance:{...finance.finance,investmentTargets:{...targets,[key]:pct}}});
+  /* ═══ กราฟมูลค่าพอร์ตตามเวลา (ข้อ 53) — บันทึกด้วยมือทีละจุด เพราะ investmentValues เดิมเก็บแค่ค่าล่าสุด ไม่มี history ย้อนหลังให้ดึง
+     เพิ่ม portfolioSnapshots เป็น array แยกต่างหาก (ไม่แตะ investmentValues เดิม) กัน migration เสี่ยงๆ ตามที่ข้อ 4.4 เคยเตือนไว้ ═══ */
+  const snapshots=(finance.finance.portfolioSnapshots||[]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  const saveSnapshotToday=()=>{
+    const today=todayISO();
+    const existing=finance.finance.portfolioSnapshots||[];
+    const idx=existing.findIndex(s=>s.date===today);
+    const next=idx>=0?existing.map((s,i)=>i===idx?{...s,value:totalValue}:s):[...existing,{id:uid(),date:today,value:totalValue}];
+    persist({...finance,finance:{...finance.finance,portfolioSnapshots:next}});
+  };
+  const removeLastSnapshot=()=>{
+    if(!snapshots.length) return;
+    const keepIds=snapshots.slice(0,-1).map(s=>s.id);
+    persist({...finance,finance:{...finance.finance,portfolioSnapshots:(finance.finance.portfolioSnapshots||[]).filter(s=>keepIds.includes(s.id))}});
+  };
+  const snapChartData=snapshots.map(s=>({date:s.date,value:s.value,label:new Date(s.date+"T00:00:00").toLocaleDateString("th-TH",{day:"numeric",month:"short"})}));
   // เพิ่มเหรียญใหม่ตอนนี้ผ่าน AddCoinModal (ปุ่ม "+ เพิ่มเหรียญ") — แก้ราคาปัจจุบันจะอัปเดต priceUpdatedAt แยกต่างหาก (แก้ชื่อ/จำนวนไม่นับว่าเช็คราคาใหม่)
   const editHolding=(id,field,v)=>setHoldings(holdings.map(h=>h.id===id?{...h,[field]:v,updatedAt:todayISO(),...(field==="currentPrice"?{priceUpdatedAt:todayISO()}:{})}:h));
   const removeHolding=(id)=>setHoldings(holdings.filter(h=>h.id!==id));
@@ -3011,6 +3032,33 @@ function FinanceInvestmentsTab({finance,persist}) {
               </div>
             )}
         </div>
+        {/* ── เป้าสัดส่วนพอร์ต: ตั้ง % สูงสุดต่อพอร์ตรวมได้ต่อประเภท เทียบกับสัดส่วนจริงตอนนี้ (ข้อ 53) ── */}
+        <div className="db-card db-span2">
+          <div className="db-head">
+            <div><div className="db-title">เป้าสัดส่วนพอร์ต</div><div className="db-note">% สูงสุดต่อพอร์ตรวมทั้งหมด ตั้งต่อประเภท ไม่บังคับ</div></div>
+          </div>
+          {INVEST_TYPES.map(t=>{
+            const share=totalValue>0?(valueOfType(t.key)/totalValue)*100:0;
+            const targetRaw=targets[t.key];
+            const hasTarget=targetRaw!=null&&targetRaw!=="";
+            const over=hasTarget&&share>Number(targetRaw);
+            return (
+              <div key={t.key} className="db-row" style={{alignItems:"center"}}>
+                <span className="lab"><i className="db-dot" style={{background:INVEST_TYPE_COLORS[t.key]}}/> {t.label}</span>
+                <span style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span className="db-mono" style={{color:over?"var(--orange)":undefined,minWidth:44,textAlign:"right"}}>{share.toFixed(1)}%</span>
+                  <span style={{color:"var(--ink-5)"}}>/</span>
+                  <input className="modal-input inv-val-input db-mono" inputMode="decimal" placeholder="—" style={{width:52,textAlign:"right"}}
+                    value={targetRaw==null?"":targetRaw} onChange={e=>setTarget(t.key,e.target.value)}/>
+                  <span className="db-note" style={{marginTop:0}}>%</span>
+                </span>
+              </div>
+            );
+          })}
+          {INVEST_TYPES.some(t=>{const s=totalValue>0?(valueOfType(t.key)/totalValue)*100:0;const tg=targets[t.key];return tg!=null&&tg!==""&&s>Number(tg);})&&(
+            <div className="inv-warn danger" style={{marginTop:8}}>มีบางประเภทเกินเป้าที่ตั้งไว้ (ตัวเลขสีส้ม)</div>
+          )}
+        </div>
         {/* ── กำไร/ขาดทุนรายประเภท (แยกออกจากการ์ดโดนัทเพื่อไม่ให้การ์ดเดียวยาวเกิน) ── */}
         <div className="db-card db-span2">
           <div className="db-head">
@@ -3048,6 +3096,30 @@ function FinanceInvestmentsTab({finance,persist}) {
                 ))}
               </div>
             )}
+        </div>
+        {/* ── กราฟมูลค่าพอร์ตตามเวลา: บันทึกด้วยมือทีละจุด (ข้อ 53) ── */}
+        <div className="db-card db-span4">
+          <div className="db-head">
+            <div><div className="db-title">มูลค่าพอร์ตตามเวลา</div><div className="db-note">{snapshots.length?`บันทึกไว้ ${snapshots.length} ครั้ง`:"ยังไม่มีข้อมูล"}</div></div>
+            <div className="db-head-actions">
+              {snapshots.length>0&&<button className="db-chip" title="ลบจุดล่าสุด" onClick={removeLastSnapshot}><Trash2 size={13}/></button>}
+              <button className="db-chip" title="บันทึกมูลค่าพอร์ตรวมวันนี้" onClick={saveSnapshotToday}><Plus size={13}/></button>
+            </div>
+          </div>
+          {snapshots.length===0&&<div className="db-empty">ยังไม่มีข้อมูล — กดปุ่ม + เพื่อบันทึกมูลค่าพอร์ตรวมตอนนี้ (฿{dbNum(totalValue)}) เป็นจุดแรก แล้วกดอีกครั้งเป็นระยะ (เช่น ทุกเดือน) เพื่อดูกราฟแนวโน้ม</div>}
+          {snapshots.length>0&&(
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={snapChartData} margin={{top:5,right:12,left:0,bottom:5}}>
+                <defs><linearGradient id="grad-portfolio" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.5}/><stop offset="100%" stopColor="#34d399" stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#274038" vertical={false}/>
+                <XAxis dataKey="label" tick={{fontSize:11,fill:"#9bc4b1"}} axisLine={{stroke:"#304a3f"}} tickLine={false}/>
+                <YAxis tick={{fontSize:11,fill:"#9bc4b1"}} axisLine={false} tickLine={false} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={{background:"var(--surface-modal)",border:"1px solid var(--line)",borderRadius:10,color:"var(--ink)",fontFamily:"'Noto Sans Thai',sans-serif"}} formatter={v=>[`฿${Number(v).toLocaleString()}`,"มูลค่าพอร์ต"]} labelFormatter={(_,p)=>p&&p[0]?thaiDate(p[0].payload.date):""}/>
+                <Area type="monotone" dataKey="value" stroke="#34d399" strokeWidth={3} fill="url(#grad-portfolio)" dot={{r:4,fill:"#34d399"}}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+          {snapshots.length>0&&<div className="db-note" style={{marginTop:8}}>บันทึกมูลค่าพอร์ตรวมด้วยมือ (ไม่รวมเงินสด/หนี้สิน) · กด + เป็นระยะเพื่อดูแนวโน้ม กดวันเดียวกันซ้ำจะทับจุดเดิมของวันนั้น ไม่สร้างซ้ำ</div>}
         </div>
         {/* ── สรุปพอร์ตคริปโต (ตัวเลขรวม + เรต + คำเตือน) ── */}
         <div className="db-card db-span2">
