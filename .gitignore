@@ -3,3 +3,4 @@ node_modules/
 test-dashboard.html 
 _to_delete/
 _reference-drive-sync/
+secrets.local.txt
