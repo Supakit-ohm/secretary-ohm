@@ -1,5 +1,5 @@
 rules_version = '2';
-// Security Rules ของ Firestore — เลขา Ohm (ข้อ 55 ขั้นที่ 4 — แยกข้อมูลเป็นหลายเอกสาร)
+// Security Rules ของ Firestore — เลขา Ohm (ข้อ 55 ขั้นที่ 4 แยกหลายเอกสาร + ขั้นที่ 8 ไฟล์แนบ)
 // วิธีใช้: Firebase Console → Firestore Database → แท็บ Rules → ลบของเดิม วางทั้งไฟล์นี้ → Publish
 // อนุญาตเฉพาะ: ล็อกอินแล้ว + อยู่ใต้ users/{uid ของตัวเอง} + อีเมลต้องเป็นของโอมและยืนยันแล้ว
 // ถ้าเปลี่ยนอีเมล ต้องแก้ทั้งที่นี่และ ALLOWED_EMAILS ใน config.js
@@ -25,6 +25,10 @@ service cloud.firestore {
       allow write: if isOhm(uid);
     }
     match /users/{uid}/app/meta {
+      allow write: if isOhm(uid);
+    }
+    // ขั้นที่ 8: ข้อมูลอ้างอิงไฟล์แนบ (ตัวไฟล์อยู่ Google Drive) — 1 เอกสารต่อ 1 ไฟล์
+    match /users/{uid}/files/{fileId} {
       allow write: if isOhm(uid);
     }
     // ที่อื่นทั้งหมด (รวม users/{uid}/app/data): เขียนไม่ได้

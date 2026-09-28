@@ -61,7 +61,13 @@ async function device(browser,name,{local,user,failFire}={}){
   await ctx.route(/accounts\.google\.com/,r=>r.fulfill({contentType:"text/javascript",body:""}));
   await ctx.route(/googleapis\.com\/(upload\/)?drive/,async r=>{
     const u=r.request().url();
-    if(u.includes("upload/drive")){ SERVER.backups.push(u); return r.fulfill({contentType:"application/json",body:'{"id":"bk"}'}); }
+    if(u.includes("upload/drive")){
+      const body=(r.request().postDataBuffer()||Buffer.alloc(0)).toString('latin1');
+      if(/"name":"backup-/.test(body)){ SERVER.backups.push(u); return r.fulfill({contentType:"application/json",body:'{"id":"bk"}'}); }
+      const n=(SERVER.fileUploads=(SERVER.fileUploads||[])).push({url:u,body});
+      const name=(body.match(/"name":"([^"]+)"/)||[])[1]; const mime=(body.match(/"mimeType":"([^"]+)"/)||[])[1];
+      return r.fulfill({contentType:"application/json",body:JSON.stringify({id:"drv"+n,webViewLink:"https://drive.google.com/file/d/drv"+n+"/view",name,mimeType:mime,size:String(body.length)})});
+    }
     if(u.includes("alt=media")) return r.fulfill({contentType:"application/json",body:DRIVE_DATA});
     if(u.includes("folder")) return r.fulfill({contentType:"application/json",body:'{"files":[{"id":"fold"}]}'});
     return r.fulfill({contentType:"application/json",body:'{"files":[{"id":"datafile"}]}'});
@@ -280,6 +286,65 @@ async function logout(p){ p.once('dialog',d=>d.accept()); await p.click('.acct-b
   check("ส่งต่อวันสำรองล่าสุดไป meta",SERVER.docs[META]&&SERVER.docs[META].lastDriveBackupAt===recent);
   check("ไม่สำรองซ้ำ (เพิ่งสำรองเมื่อวาน)",SERVER.backups.length===bk1);
   check("เซิร์ฟเวอร์ = เครื่อง",await eqServer(tab,await localOf(tab)));
+
+  console.log("\n[12] ข้อ 55 ขั้นที่ 8: ไฟล์แนบ (Drive + users/u1/files)");
+  const FILES="users/u1/files/";
+  const serverFiles=()=>Object.keys(SERVER.docs).filter(k=>k.startsWith(FILES)).map(k=>JSON.parse(SERVER.docs[k].json));
+  check("มี window.FireFiles + พร้อม",await tab.evaluate(()=>!!window.FireFiles&&window.FireFiles.ready()));
+  check("ยังไม่มีสิทธิ์ Drive (ต้องกดอนุญาตก่อน)",await tab.evaluate(()=>window.FireFiles.needsToken()));
+  await tab.locator('button:has-text("Finance")').first().click(); await sleep(600);
+  await tab.locator('button:has-text("Expenses")').first().click(); await sleep(800);
+  await tab.locator('.exp-table .del-btn[title="แก้ไข"]').first().click(); await sleep(300);
+  check("หน้าต่างแก้ไขรายจ่ายมีส่วนไฟล์แนบ",await tab.locator('.modal .att-strip').count()===1);
+  const expId=await tab.evaluate(()=>{const d=JSON.parse(localStorage.getItem("secretary-dashboard-v1"));return d.finance.expenses.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0].id;});
+  await tab.setInputFiles('.modal .att-input',[{name:'receipt.png',mimeType:'image/png',buffer:fs.readFileSync('icons/icon-192.png')},{name:'slip.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4 test')}]);
+  await sleep(300);
+  const authBtn=tab.locator('.modal .att-add:has-text("อนุญาต Google Drive")');
+  check("เลือกไฟล์ตอนไม่มีสิทธิ์ → ขึ้นปุ่มอนุญาตแล้วอัปโหลด 2 ไฟล์",(await authBtn.count())===1&&(await authBtn.textContent()).includes("2 ไฟล์"));
+  await authBtn.click(); await sleep(2000);
+  let sf=serverFiles();
+  check("อัปขึ้น Drive 2 ไฟล์ (โฟลเดอร์ files-app)",(SERVER.fileUploads||[]).length===2&&SERVER.fileUploads.every(x=>x.body.includes('"parents":["fold"]')));
+  check("Firestore มีเอกสารไฟล์ 2 อัน ผูกกับรายจ่ายนั้น",sf.length===2&&sf.every(f=>f.link&&f.link.kind==="expense"&&f.link.id===expId),JSON.stringify(sf.map(f=>f.link)));
+  const png=sf.find(f=>/png/.test(f.mime)), pdf=sf.find(f=>/pdf/.test(f.mime));
+  check("รูปมีรูปย่อ data URI ≤16KB · PDF ไม่มีรูปย่อ",!!png&&/^data:image\/jpeg;base64,/.test(png.thumb)&&png.thumb.length<=16000&&!!pdf&&pdf.thumb===null);
+  check("เก็บ driveId + ลิงก์เปิดไฟล์ + from=app",sf.every(f=>/^drv\d/.test(f.driveId)&&/drive\.google\.com/.test(f.url)&&f.from==="app"));
+  check("ชื่อไฟล์ขึ้นต้นด้วยวันที่",sf.every(f=>/^\d{4}-\d{2}-\d{2}_/.test(f.name)));
+  check("รูปย่อโชว์ในหน้าต่างแก้ไข 2 อัน",(await tab.locator('.modal .att-thumb').count())===2&&(await tab.locator('.modal .att-thumb img').count())===1);
+  check("ไฟล์ไม่เข้าไปในข้อมูลก้อนหลัก (localStorage/parts)",!(await localOf(tab)).includes("data:image")&&!Object.values(serverParts()).some(j=>j.includes("driveId")));
+  await tab.setInputFiles('.modal .att-input',{name:'note.txt',mimeType:'text/plain',buffer:Buffer.from('x')}); await sleep(500);
+  check("ไฟล์ชนิดอื่น → แจ้งว่ารับแค่รูปกับ PDF",(await tab.locator('.modal .att-err').textContent().catch(()=>"")).includes("รับได้แค่รูปกับ PDF"));
+  if(process.env.SHOTS) await tab.screenshot({path:'/tmp/shot-modal.png'});
+  await tab.click('.modal .modal-close'); await sleep(300);
+  check("แถวรายจ่ายมีป้ายคลิปหนีบ 2",(await tab.locator('.exp-table .att-badge').first().textContent()).includes("2"));
+  const ph2=await device(b,"iphone2",{user:{uid:"u1",email:"supakit6906@gmail.com"}});
+  await sleep(1200);
+  check("อีกเครื่องเห็นไฟล์ 2 อันเดียวกัน",(await ph2.evaluate(()=>window.FireFiles.list().length))===2);
+
+  console.log("\n[12b] ไฟล์จาก Jack (LINE) ที่ยังไม่ผูก → กล่องไฟล์รอจัดในหน้า Documents");
+  const lineFile={id:"fline1",name:"LINE_2026-09-28_101500.jpg",mime:"image/jpeg",size:1234,driveId:"dl1",url:"https://drive.google.com/file/d/dl1/view",thumb:null,link:null,from:"line",createdAt:new Date().toISOString(),trash:false};
+  await serverCommit([{path:FILES+"fline1",op:"set",data:{json:JSON.stringify(lineFile),by:"line-bot",at:"TS"}}],true);
+  await sleep(500);
+  await tab.locator('button:has-text("Documents")').first().click(); await sleep(600);
+  check("กล่องไฟล์รอจัดโชว์ 1 ไฟล์ + ป้าย LINE",(await tab.locator('.att-inbox-row').count())===1&&(await tab.locator('.att-inbox .att-src').count())===1);
+  if(process.env.SHOTS) await tab.screenshot({path:'/tmp/shot-inbox.png'});
+  await tab.click('.att-inbox-row button:has-text("เก็บเป็นเอกสาร")'); await sleep(1500);
+  if(process.env.SHOTS) await tab.screenshot({path:'/tmp/shot-docs.png'});
+  const docs=await tab.evaluate(()=>JSON.parse(localStorage.getItem("secretary-dashboard-v1")).documents||[]);
+  const newDoc=docs.find(d=>d.description==="ส่งมาจาก LINE");
+  check("สร้างเอกสารใหม่ (ชื่อจากไฟล์)",!!newDoc&&newDoc.title==="เอกสารจาก LINE "+lineFile.createdAt.slice(0,10),newDoc&&newDoc.title);
+  check("ไฟล์ผูกกับเอกสารนั้น + กล่องรอจัดหายไป",serverFiles().find(f=>f.id==="fline1").link.id===(newDoc&&newDoc.id)&&(await tab.locator('.att-inbox').count())===0);
+  check("การ์ดเอกสารโชว์รูป/ไอคอนไฟล์แนบ",(await tab.locator('.doc-item .att-thumb').count())===1);
+  check("เอกสารใหม่ซิงก์ขึ้น parts",(await serverData(tab)).documents.some(d=>d.id===newDoc.id));
+
+  console.log("\n[12c] ลบรายการ → ไฟล์ที่ผูกอยู่ตั้ง trash (Jack ย้ายลงถังขยะ Drive)");
+  await tab.locator('button:has-text("Finance")').first().click(); await sleep(500);
+  await tab.locator('button:has-text("Expenses")').first().click(); await sleep(700);
+  await tab.locator('.exp-table .del-btn[title="ลบ"]').first().click(); await sleep(1500);
+  sf=serverFiles();
+  check("ไฟล์ของรายจ่ายที่ลบ trash:true ทั้ง 2",sf.filter(f=>f.link&&f.link.id===expId).every(f=>f.trash===true&&f.trashedAt));
+  check("ไฟล์ที่ถูก trash หายจากรายการในแอป",(await tab.evaluate(()=>window.FireFiles.list().length))===1);
+  check("ไฟล์ของเอกสารไม่โดน",sf.find(f=>f.id==="fline1").trash===false);
+  pages.splice(pages.indexOf(ph2),1); await ph2.context().close();
 
   for(const p of pages) if(p.errs.length) console.log("ERR",p.__name,p.errs.slice(0,5));
   const errCount=pages.reduce((a,p)=>a+p.errs.length,0)+[pc,ph,other,off].reduce((a,p)=>a+p.errs.length,0);

@@ -74,8 +74,9 @@ function handleEvent_(ev) {
   }
   if (ev.type === "postback") { handlePostback_(ev); return; }
   if (ev.type !== "message") return;
+  if (ev.message.type === "image" || ev.message.type === "file") { handleFileMessage_(ev, userId); return; }   // ขั้นที่ 8 → Files.gs
   if (ev.message.type !== "text") {
-    lineReply_(ev.replyToken, [textMsg_("ตอนนี้ Jack อ่านได้แค่ข้อความครับ รูปใบเสร็จกับข้อความเสียงรอเฟสถัดไปนะ")]);
+    lineReply_(ev.replyToken, [textMsg_("ตอนนี้ Jack รับได้แค่ข้อความ รูป และ PDF ครับ ข้อความเสียงรอเฟสถัดไปนะ")]);
     return;
   }
   var result = handleText_(ev.message.text, userId);
@@ -119,6 +120,10 @@ function handleText_(text, userId) {
       }
     }
   }
+  try {                                                    // ขั้นที่ 8: ส่งรูปมาก่อนแล้วค่อยพิมพ์รายการ → แนบให้เอง
+    var attached = attachPendingTo_(ctx.records);
+    if (attached) reply += "\n📎 แนบ" + (attached > 1 ? " " + attached + " ไฟล์" : "รูป") + "ที่ส่งมาเมื่อกี้กับรายการนี้แล้ว";
+  } catch (err) { noteError_(err); }
   saveHistory_(text, reply);
   rememberRecords_(ctx.records);
   return { text: reply, records: ctx.records, messages: [textMsg_(reply, replyQuick_(reply, ctx))] };
@@ -161,6 +166,7 @@ function handlePostback_(ev) {
     lineReply_(ev.replyToken, [textMsg_(fr.ok ? "ลืมแล้วครับ: " + fr.text : "ลืมไม่ได้ครับ: " + fr.error)]);
     return;
   }
+  if (/^f(link|relink|doc|keep|trash)$/.test(data.a || "")) { handleFilePostback_(ev, data); return; }   // ปุ่มไฟล์แนบ (Files.gs)
   if (data.a === "skipj") {                                 // ปุ่ม "ข้ามวันนี้" ใต้ข้อความชวนเขียน Journal
     saveHistory_("ข้าม Journal วันนี้", "โอเคครับ พักผ่อนเถอะ พรุ่งนี้ค่อยว่ากัน 🌙");
     lineReply_(ev.replyToken, [textMsg_("โอเคครับ พักผ่อนเถอะ พรุ่งนี้ค่อยว่ากัน 🌙")]);
@@ -178,7 +184,14 @@ function handlePostback_(ev) {
     undoRecord_(rec);
     rec.undone = true;
     CacheService.getScriptCache().put("rec_" + data.r, JSON.stringify(rec), 21600);
-    lineReply_(ev.replyToken, [textMsg_("ยกเลิกแล้วครับ: " + rec.label)]);
+    var moved = 0;
+    if (rec.kind === "expense" || rec.kind === "income") {     // ไฟล์ที่แนบไว้ → กลับไปรอผูก (พิมพ์รายการใหม่ภายใน 10 นาทีจะแนบให้)
+      try {
+        var linked = filesLinkedTo_(rec.kind, parseRef_(rec.ref).id).map(function (m) { return m.id; });
+        if (linked.length) { moved = filesSetLink_(linked, null).changed; setPendingFiles_(pendingFiles_().concat(linked.map(function (id) { return { id: id, at: Date.now() }; }))); }
+      } catch (err) { noteError_(err); }
+    }
+    lineReply_(ev.replyToken, [textMsg_("ยกเลิกแล้วครับ: " + rec.label + (moved ? "\n📎 รูปที่แนบไว้ยังอยู่ — พิมพ์รายการใหม่ภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาทีจะแนบให้ หรือไปผูกทีหลังใน \"ไฟล์รอจัด\" หน้า Documents" : ""))]);
     return;
   }
   if (data.a === "edit") {
@@ -205,6 +218,7 @@ var RULES = [
   "- จะแก้/ลบรายการ ต้องใช้ ref จากผลเครื่องมือ หรือจาก \"รายการที่บันทึกล่าสุด\" · ถ้าไม่รู้ ref ให้ค้นด้วย search_expenses ก่อน · ลบเฉพาะเมื่อโอมสั่งชัดเจน",
   "- ถ้าผลลัพธ์มี budget ของหมวดนั้น บอกสั้นๆ ว่าใช้ไปเท่าไหร่จากงบ (เตือนตรงๆ ถ้าเกิน 80%)",
   "- เรื่องที่ยังไม่มีเครื่องมือ (นัดหมาย, สุขภาพ, หนังสือ, ตั้งเตือน) บอกตรงๆ ว่าเฟสนี้ Jack ยังทำไม่ได้ ให้เปิดแอปแทน",
+  "- รูป/PDF: โอมส่งรูปหรือ PDF มาในแชทได้เลย (สลิป ใบเสร็จ เอกสาร) Jack เก็บลง Google Drive และแนบกับรายจ่าย/รายรับที่เพิ่งจดให้เอง มีปุ่มเปลี่ยน/เก็บเป็นเอกสาร/ลบใต้ข้อความ · Jack ยังอ่านตัวอักษรในรูปไม่ได้ (โอมต้องพิมพ์ยอดเอง)",
   "- ถ้าข้อความก่อนหน้าของ Jack เป็นการชวนเขียน Journal แล้วโอมตอบเป็นเรื่องเล่าของวัน → บันทึกด้วย add_journal",
   "- ความจำระยะยาว (\"สิ่งที่ Jack จำเกี่ยวกับโอม\" ด้านล่าง): ใช้ประกอบคำตอบอย่างเป็นธรรมชาติ ไม่ต้องพูดว่า \"จากความจำ\"",
   "  • remember ได้เฉพาะเมื่อโอมสั่ง (\"จำไว้ว่า…\", \"จำไว้นะ\") หรือโอมตอบตกลงหลัง Jack ถาม · ห้ามจำเองโดยไม่ถาม",
@@ -264,6 +278,10 @@ function contextBlock_(ctx, editing) {
   var mem = memoryItems_();
   lines.push(mem.length ? "- สิ่งที่ Jack จำเกี่ยวกับโอม (เลขข้อตรงกับที่โอมเห็นในรายการ \"jack จำอะไรบ้าง\"):" : "- สิ่งที่ Jack จำเกี่ยวกับโอม: (ยังไม่มี)");
   mem.forEach(function (m, i) { lines.push("  • ข้อ " + (i + 1) + " (id=" + m.id + "): " + m.text); });
+  try {
+    var pend = pendingFiles_().length;
+    if (pend) lines.push("- มีรูป/ไฟล์ " + pend + " อันที่โอมเพิ่งส่งมารอแนบ → ถ้าข้อความนี้จดรายจ่าย/รายรับ ระบบแนบให้อัตโนมัติและบอกโอมเอง (ไม่ต้องพูดถึงรูป)");
+  } catch (e) {}
   if (editing) lines.push("- โอมเพิ่งกดปุ่ม \"แก้\" ที่รายการ: " + editing.label + " (ref=" + editing.ref + ") → ข้อความถัดไปคือสิ่งที่จะแก้ ใช้ update_entry กับ ref นี้ (ถ้าข้อความไม่เกี่ยวกับการแก้ ให้ทำตามปกติ)");
   return lines.join("\n");
 }
@@ -687,12 +705,17 @@ function toolUpdateEntry_(a, ctx) {
 function toolDeleteEntry_(a, ctx) {
   var r = parseRef_(a.ref);
   if (!r || !kindOfDoc_(r.doc)) return { ok: false, error: "ref ไม่ถูกต้อง" };
-  return mutate_([{ id: r.doc, def: [] }], function (G) {
+  var out = mutate_([{ id: r.doc, def: [] }], function (G) {
     var f = arrFind_(G[r.doc], r.id);
     if (!f) return { ok: false, error: "ไม่พบรายการนี้" };
     var it = f.chunk.value.splice(f.index, 1)[0]; f.chunk.dirty = true;
     return { ok: true, deleted: summarizeItem_(kindOfDoc_(r.doc), it) };
   });
+  var kind = kindOfDoc_(r.doc);
+  if (out.ok && (kind === "expense" || kind === "income")) {   // ขั้นที่ 8: ลบรายการ → ไฟล์ที่แนบย้ายลงถังขยะ Drive (โอมเลือก)
+    try { var n = trashFilesNow_(filesLinkedTo_(kind, r.id)); if (n) out.filesTrashed = n; } catch (err) { noteError_(err); }
+  }
+  return out;
 }
 
 function undoRecord_(rec) {
@@ -759,7 +782,11 @@ function addRecord_(ctx, rec) {
 function rememberRecords_(records) {
   if (!records.length) return;
   var recent = cacheGetJson_("recent") || [];
-  records.slice().reverse().forEach(function (r) { recent.unshift({ ref: r.ref, label: r.label, kind: r.kind }); });
+  var now = Date.now();
+  records.slice().reverse().forEach(function (r) {
+    recent.unshift({ ref: r.ref, label: r.label, kind: r.kind, token: r.token, at: now,
+      short: String(r.label || "").replace(/^(รายจ่าย|รายรับ) /, "").replace(/ บาท.*$/, "") });
+  });
   CacheService.getScriptCache().put("recent", JSON.stringify(recent.slice(0, 6)), 21600);
 }
 
@@ -1467,7 +1494,10 @@ function removeSchedules() {
   console.log("ลบตั้งเวลาแล้ว " + n + " ตัว — Jack จะไม่ทักก่อนอีก");
 }
 
-function morningPush() { return runPush_("morning", buildMorning_); }
+function morningPush() {
+  try { sweepTrash(); } catch (err) { noteError_(err); }   // ขั้นที่ 8: ไฟล์ที่กดลบในแอป → ถังขยะ Drive (ไม่ให้กระทบสรุปเช้า)
+  return runPush_("morning", buildMorning_);
+}
 function eveningJournalPush() { return runPush_("journal", buildJournalPrompt_); }
 
 // ลองดูข้อความโดยไม่ส่ง (รันจาก editor)

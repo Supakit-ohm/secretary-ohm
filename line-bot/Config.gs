@@ -49,6 +49,10 @@ var CONFIG = {
   // ---- LINE ----
   QUICK_REPLY: true,           // แนบปุ่ม "แก้ / ยกเลิก" หลังบันทึก
 
+  // ---- ไฟล์แนบ (ขั้นที่ 8) — รูป/PDF ที่ส่งใน LINE → Drive SecretaryOhmApp/files-line ----
+  ATTACH_WINDOW_MIN: 10,       // ส่งรูปภายในกี่นาทีหลังจดรายการ → แนบให้เอง (และรูปที่ส่งก่อน รอรายการได้กี่นาที)
+  FILE_MAX_MB: 20,             // PDF ใหญ่สุดที่รับ (UrlFetch ของ Apps Script รับได้ถึง 50MB)
+
   // ---- Rich Menu (ปุ่มลัดล่างแชท) — ติดตั้งด้วยฟังก์ชัน setupRichMenu() ----
   APP_URL: "https://supakit-ohm.github.io/secretary-ohm/preview-dashboard.html",
   RICHMENU_IMAGE_URL: "https://supakit-ohm.github.io/secretary-ohm/line-bot/assets/richmenu.png"

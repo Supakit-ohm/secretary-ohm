@@ -42,6 +42,8 @@ data.events = [{ id: "ev1", title: "นัดลูกค้า", startDate: TOD
 const UID = "UIDOHM123";
 const BASE = "projects/personal-os-505713/databases/(default)/documents";
 const PFX = BASE + "/users/" + UID + "/parts/";
+const FPFX = BASE + "/users/" + UID + "/files/";
+const fstore = {};   // ขั้นที่ 8: fileId -> {json, by, updateTime}
 let clock = 1;
 const store = {};   // docId -> {json, by, size, updateTime}
 const ts = () => "2026-09-28T00:00:00." + String(clock++).padStart(6, "0") + "Z";
@@ -57,9 +59,13 @@ function firestore(url, opt) {
   assert.strictEqual(hdr.Authorization, "Bearer tok");
   assert.strictEqual(hdr["x-goog-user-project"], "personal-os-505713");
   if (u.startsWith(BASE + "/users?showMissing=true")) return res(200, { documents: [{ name: BASE + "/users/" + UID }] });
+  if (u.startsWith(BASE + "/users/" + UID + "/files?")) {
+    return res(200, { documents: Object.keys(fstore).map((id) => ({ name: FPFX + id, fields: { json: { stringValue: fstore[id].json } }, updateTime: fstore[id].updateTime })) });
+  }
   if (u === BASE + ":batchGet") {
     const body = JSON.parse(opt.payload);
     return res(200, body.documents.map((n) => {
+      if (n.startsWith(FPFX)) { const f = fstore[n.replace(FPFX, "")]; return f ? { found: { name: n, fields: { json: { stringValue: f.json } }, updateTime: f.updateTime } } : { missing: n }; }
       const id = n.replace(PFX, "");
       const d = store[id];
       return d ? { found: { name: n, fields: { json: { stringValue: d.json } }, updateTime: d.updateTime } } : { missing: n };
@@ -69,6 +75,15 @@ function firestore(url, opt) {
     if (injectConflict) { const f = injectConflict; injectConflict = null; f(); }
     const body = JSON.parse(opt.payload);
     for (const w of body.writes) {
+      if (w.delete) { assert.ok(w.delete.startsWith(FPFX), "ลบได้เฉพาะเอกสารไฟล์"); continue; }
+      if (w.update.name.startsWith(FPFX)) {
+        const cur = fstore[w.update.name.replace(FPFX, "")], pc = w.currentDocument;
+        if (pc.exists === false && cur) { conflictsSeen++; return res(409, { error: { status: "ALREADY_EXISTS", message: "exists" } }); }
+        if (pc.updateTime && (!cur || cur.updateTime !== pc.updateTime)) { conflictsSeen++; return res(400, { error: { status: "FAILED_PRECONDITION", message: "stale" } }); }
+        assert.deepStrictEqual(Object.keys(w.update.fields).sort(), ["by", "json"]);
+        assert.strictEqual(w.updateTransforms[0].fieldPath, "at");
+        continue;
+      }
       const id = w.update.name.replace(PFX, "");
       const cur = store[id];
       const pc = w.currentDocument;
@@ -80,6 +95,8 @@ function firestore(url, opt) {
       assert.strictEqual(Number(w.update.fields.size.integerValue), Buffer.byteLength(w.update.fields.json.stringValue));
     }
     for (const w of body.writes) {
+      if (w.delete) { delete fstore[w.delete.replace(FPFX, "")]; continue; }
+      if (w.update.name.startsWith(FPFX)) { fstore[w.update.name.replace(FPFX, "")] = { json: w.update.fields.json.stringValue, by: w.update.fields.by.stringValue, updateTime: ts() }; continue; }
       const id = w.update.name.replace(PFX, "");
       store[id] = { json: w.update.fields.json.stringValue, by: "line-bot", updateTime: ts() };
     }
@@ -115,8 +132,18 @@ const lineLog = [];
 const richmenus = [{ richMenuId: "old1", name: "jack-main-v0" }, { richMenuId: "other", name: "manual-menu" }];
 let pushFail = null;
 let rmDefault = null, rmImage = null, rmSpec = null;
+let previewBytes = 3000;
+const contentLog = [];
+function blob(n, type) { let name = null; const bytes = Buffer.alloc(n, 7); return { getBytes: () => [...bytes], getContentType: () => type, setName: (x) => { name = x; }, getName: () => name }; }
 function line(url, opt) {
   const m = (opt.method || "get").toLowerCase();
+  const cm = url.match(/api-data\.line\.me\/v2\/bot\/message\/([^/]+)\/content(\/preview)?$/);
+  if (cm) {
+    contentLog.push(url);
+    assert.strictEqual(opt.headers.Authorization, "Bearer L");
+    if (cm[1].startsWith("pdf")) return { getResponseCode: () => 200, getBlob: () => blob(50000, "application/pdf") };
+    return { getResponseCode: () => 200, getBlob: () => blob(cm[2] ? previewBytes : 250000, "image/jpeg") };
+  }
   if (url.endsWith("/v2/bot/info")) return res(200, { displayName: "Jack", basicId: "@jack" });
   if (url.endsWith("/v2/bot/message/quota/consumption")) return res(200, { totalUsage: lineLog.filter((x) => x.path === "/v2/bot/message/push").length });
   if (url.endsWith("/v2/bot/message/push") && pushFail) return res(pushFail, { message: "fail" });
@@ -136,11 +163,22 @@ const propsMap = { LINE_CHANNEL_ACCESS_TOKEN: "L", OPENAI_API_KEY: "sk-x", WEBHO
 const cacheMap = {};
 const triggers = [];
 function fmtDate(d, tz, p) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
   const wd = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday];
-  return p.replace("yyyy", parts.year).replace("MM", parts.month).replace("dd", parts.day).replace("HH", parts.hour).replace("mm", parts.minute)
+  return p.replace("yyyy", parts.year).replace("MM", parts.month).replace("dd", parts.day).replace("HH", parts.hour).replace("mm", parts.minute).replace("ss", parts.second)
     .replace(/^H$/, String(Number(parts.hour))).replace(/^u$/, String(wd)).replace("d/M", Number(parts.day) + "/" + Number(parts.month));
 }
+const drive = { folders: {}, files: {}, n: 0 };
+const iter = (arr) => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
+function mkFolder(name, parent) {
+  const id = "fold" + (++drive.n);
+  const f = { id, name, parent, trashed: false, getId: () => id, isTrashed: () => f.trashed, getUrl: () => "https://drive.google.com/drive/folders/" + id,
+    getFoldersByName: (nm) => iter(Object.values(drive.folders).filter((x) => x.parent === id && x.name === nm)),
+    createFolder: (nm) => mkFolder(nm, id),
+    createFile: (b) => { const fid = "drv" + (++drive.n); const file = { id: fid, name: b.getName(), parent: id, bytes: b.getBytes().length, trashed: false, getId: () => fid, getUrl: () => "https://drive.google.com/file/d/" + fid + "/view", setTrashed: (t) => { file.trashed = t; } }; drive.files[fid] = file; return file; } };
+  drive.folders[id] = f; return f;
+}
+const ROOT = mkFolder("SecretaryOhmApp", null);   // แอปสร้างไว้แล้ว (สำรองรายสัปดาห์)
 const ctx = {
   console: { log: () => {}, error: (e) => { if (process.env.DEBUG) console.error("GAS error:", e); } },
   JSON, Math, Date, String, Number, Object, Array, isFinite, isNaN, Error, encodeURIComponent, decodeURIComponent, RegExp,
@@ -149,6 +187,8 @@ const ctx = {
     if (url.startsWith("https://firestore.googleapis.com/")) return firestore(url, opt);
     if (url.startsWith("https://api.openai.com/")) return openai(url, opt);
     if (url.startsWith("https://api.line.me/") || url.startsWith("https://api-data.line.me/")) return line(url, opt);
+    if (url.startsWith("https://www.googleapis.com/drive/v3/files/")) return res(200, { thumbnailLink: "https://lh3.googleusercontent.com/thumb=s220" });
+    if (url === "https://lh3.googleusercontent.com/thumb=s160") return { getResponseCode: () => 200, getBlob: () => blob(4000, "image/png") };
     if (url.startsWith("https://supakit-ohm.github.io/")) return { getResponseCode: () => 200, getContentText: () => "", getBlob: () => ({ getBytes: () => [137, 80, 78, 71] }) };
     throw new Error("unexpected fetch " + url);
   } },
@@ -159,8 +199,15 @@ const ctx = {
     formatDate: fmtDate, getUuid: () => require("crypto").randomUUID(), sleep: () => {},
     newBlob: (s) => ({ getBytes: () => [...Buffer.from(s, "utf8")] }),
     base64EncodeWebSafe: (x) => Buffer.from(x).toString("base64url"),
+    base64Encode: (x) => Buffer.from(x).toString("base64"),
   },
   ContentService: { createTextOutput: (t) => ({ t }) },
+  DriveApp: {
+    getFolderById: (id) => { if (!drive.folders[id]) throw new Error("no folder"); return drive.folders[id]; },
+    getFoldersByName: (nm) => iter(Object.values(drive.folders).filter((x) => !x.parent && x.name === nm)),
+    createFolder: (nm) => mkFolder(nm, null),
+    getFileById: (id) => { if (!drive.files[id]) throw new Error("File not found"); return drive.files[id]; },
+  },
   ScriptApp: {
     getOAuthToken: () => "tok",
     getProjectTriggers: () => triggers.slice(),
@@ -172,7 +219,7 @@ const ctx = {
   },
 };
 vm.createContext(ctx);
-for (const f of ["Config.gs", "Persona.gs", "Bot.gs"]) vm.runInContext(fs.readFileSync(path.join(DIR, f), "utf8"), ctx, { filename: f });
+for (const f of ["Config.gs", "Persona.gs", "Bot.gs", "Files.gs"]) vm.runInContext(fs.readFileSync(path.join(DIR, f), "utf8"), ctx, { filename: f });
 
 // ---------- helpers ----------
 let passed = 0;
@@ -516,9 +563,10 @@ test("ไม่มีเอกสาร k.journal (ตัวบอก key) → �
   canonical();
 });
 
-test("ข้อความที่ไม่ใช่ตัวอักษร (รูป) → ตอบว่ายังอ่านไม่ได้", () => {
-  post([{ type: "message", webhookEventId: "img1", replyToken: "rti", source: { type: "user", userId: "U_OHM" }, message: { type: "image", id: "1" } }]);
-  assert.ok(lastReply().text.includes("รูป"));
+test("ข้อความชนิดอื่น (สติกเกอร์/เสียง) → บอกว่ารับได้แค่ข้อความ รูป PDF", () => {
+  post([{ type: "message", webhookEventId: "stk1", replyToken: "rti", source: { type: "user", userId: "U_OHM" }, message: { type: "sticker", id: "1" } }]);
+  assert.ok(lastReply().text.includes("รูป และ PDF"));
+  assert.strictEqual(Object.keys(fstore).length, 0);
 });
 
 test("Rich Menu: ติดตั้ง 6 ปุ่ม + อัปรูป + ตั้งเป็นเมนูหลัก + ลบเมนูเก่าของ Jack (ไม่แตะเมนูอื่น)", () => {
@@ -806,6 +854,219 @@ test("สถานะ jack แสดงความจำ/ตั้งเวล�
   post([msg("สถานะ jack")]);
   const t = lastReply().text;
   assert.ok(t.includes("ความจำระยะยาว: 1/60") && t.includes("สรุปเช้า 07:00") && t.includes("Journal 20:00") && /ส่งไป \d+ ครั้ง/.test(t), t);
+});
+
+// =================== ข้อ 55 ขั้นที่ 8: ไฟล์แนบ ===================
+const img = (id, set) => ({ type: "message", webhookEventId: "ev" + evn++, replyToken: "rt" + evn, source: { type: "user", userId: "U_OHM" }, message: Object.assign({ type: "image", id, contentProvider: { type: "line" } }, set ? { imageSet: set } : {}) });
+const fmsg = (id, fileName, fileSize) => ({ type: "message", webhookEventId: "ev" + evn++, replyToken: "rt" + evn, source: { type: "user", userId: "U_OHM" }, message: { type: "file", id, fileName, fileSize } });
+const files = () => Object.values(fstore).map((x) => JSON.parse(x.json));
+const fileById = (id) => { const f = fstore[id]; return f && JSON.parse(f.json); };
+const ageRecent = () => { const r = JSON.parse(cacheMap.recent || "[]"); r.forEach((x) => { x.at = Date.now() - 30 * 60000; }); cacheMap.recent = JSON.stringify(r); };
+const replies = () => lineLog.filter((x) => x.path === "/v2/bot/message/reply").length;
+const qdata = (label) => { const it = lastReply().quickReply.items.find((i) => i.action.label.includes(label)); return it && it.action.data; };
+const newestExp = (memo) => month(MONTH).find((x) => x.memo === memo);
+
+test("ไฟล์: จดรายจ่ายแล้วส่งรูปภายใน 10 นาที → Drive files-line + ผูกอัตโนมัติ + รูปย่อ · ไม่เรียก AI", () => {
+  aiScript = once([{ name: "add_expense", args: { amount: 850, category: "อื่นๆ", memo: "ค่าซ่อมแอร์" } }]);
+  post([msg("ค่าซ่อมแอร์ 850")]);
+  const exp = newestExp("ค่าซ่อมแอร์");
+  const ai0 = aiLog.length;
+  post([img("m1")]);
+  assert.strictEqual(aiLog.length, ai0, "รูปไม่ต้องใช้ AI");
+  const fl = files();
+  assert.strictEqual(fl.length, 1, JSON.stringify(fl.map((x) => [x.name, x.link])) + " " + JSON.stringify(Object.values(drive.files).map((x) => x.name)));
+  const f = fl[0];
+  assert.deepStrictEqual(f.link, { kind: "expense", id: exp.id });
+  assert.strictEqual(f.from, "line");
+  assert.ok(/^f[a-z0-9]+$/.test(f.id) && /^LINE_\d{4}-\d{2}-\d{2}_\d{6}\.jpg$/.test(f.name), f.name);
+  assert.ok(/^data:image\/jpeg;base64,/.test(f.thumb) && f.thumb.length < 16000);
+  const df = drive.files[f.driveId];
+  assert.ok(df && drive.folders[df.parent].name === "files-line" && drive.folders[df.parent].parent === ROOT.id, "ต้องอยู่ใน SecretaryOhmApp/files-line (ใช้โฟลเดอร์หลักเดิม)");
+  assert.strictEqual(f.url, "https://drive.google.com/file/d/" + f.driveId + "/view");
+  assert.strictEqual(f.size, 250000);
+  assert.ok(lastReply().text.includes("แนบรูปกับ") && lastReply().text.includes("850"), lastReply().text);
+  assert.deepStrictEqual(lastReply().quickReply.items.map((i) => i.action.label), ["เปลี่ยนรายการ", "📄 เก็บเป็นเอกสาร", "🗑️ ลบ"]);
+  assert.ok(contentLog.some((u) => u.endsWith("/m1/content")) && contentLog.some((u) => u.endsWith("/m1/content/preview")));
+  canonical();
+});
+
+test("ไฟล์: ปุ่มเปลี่ยนรายการ → เลือกรายการอื่น → ผูกใหม่ (label ≤20)", () => {
+  const f = files()[0];
+  post([pb(qdata("เปลี่ยนรายการ"))]);
+  const items = lastReply().quickReply.items;
+  assert.ok(items.every((i) => i.action.label.length <= 20));
+  const picks = items.filter((i) => i.action.label.startsWith("📎"));
+  assert.ok(picks.length >= 2, "ต้องมีตัวเลือกรายการ");
+  const other = picks.find((i) => !i.action.data.endsWith("#" + f.link.id));
+  const ref = new URLSearchParams(other.action.data).get("ref");
+  post([pb(other.action.data)]);
+  assert.strictEqual(fileById(f.id).link.id, ref.split("#")[1]);
+  assert.ok(lastReply().text.startsWith("📎 แนบกับ"), lastReply().text);
+});
+
+test("ไฟล์: ส่งรูปก่อน → รอผูก → พิมพ์รายการภายใน 10 นาที → แนบให้เอง", () => {
+  ageRecent();
+  post([img("m2")]);
+  const f = files().find((x) => x.name && !x.link);
+  assert.ok(f, "ยังไม่ผูก");
+  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive") && lastReply().quickReply.items.some((i) => i.action.label === "เก็บไว้ก่อน"));
+  assert.strictEqual(JSON.parse(cacheMap.pendingFiles).length, 1);
+  aiScript = once([{ name: "add_expense", args: { amount: 320, category: "อาหาร", memo: "หมูกระทะ" } }], "จดแล้วครับ");
+  post([msg("หมูกระทะ 320")]);
+  assert.deepStrictEqual(fileById(f.id).link, { kind: "expense", id: newestExp("หมูกระทะ").id });
+  assert.ok(lastReply().text.includes("📎 แนบรูปที่ส่งมาเมื่อกี้"), lastReply().text);
+  assert.ok(!cacheMap.pendingFiles);
+});
+
+test("ไฟล์: รูปรอเกิน 10 นาที → ไม่แนบกับรายการถัดไป", () => {
+  ageRecent();
+  post([img("m3")]);
+  const f = files().find((x) => !x.link);
+  cacheMap.pendingFiles = JSON.stringify([{ id: f.id, at: Date.now() - 11 * 60000 }]);
+  aiScript = once([{ name: "add_expense", args: { amount: 40, category: "ขนม", memo: "โดนัท" } }], "จดแล้วครับ");
+  post([msg("โดนัท 40")]);
+  assert.strictEqual(fileById(f.id).link, null);
+  assert.ok(!lastReply().text.includes("📎"));
+  post([pb("a=ftrash&f=" + f.id)]);
+});
+
+test("ไฟล์: ส่ง 3 รูปชุดเดียว (imageSet) → ตอบครั้งเดียว · ปุ่มเก็บไว้ก่อน → ไฟล์รอจัด", () => {
+  ageRecent();
+  const r0 = replies();
+  post([img("s1", { id: "SET1", index: 1, total: 3 })]);
+  post([img("s2", { id: "SET1", index: 2, total: 3 })]);
+  assert.strictEqual(replies(), r0, "ยังไม่ครบชุด ยังไม่ตอบ");
+  post([img("s3", { id: "SET1", index: 3, total: 3 })]);
+  assert.strictEqual(replies(), r0 + 1);
+  assert.ok(lastReply().text.includes("3 รูป"));
+  const ids = new URLSearchParams(qdata("เก็บไว้ก่อน")).get("f").split(",");
+  assert.strictEqual(ids.length, 3);
+  assert.strictEqual(JSON.parse(cacheMap.pendingFiles).length, 3);
+  post([pb(qdata("เก็บไว้ก่อน"))]);
+  assert.ok(ids.every((id) => fileById(id).link === null));
+  assert.ok(!cacheMap.pendingFiles);
+  assert.ok(lastReply().text.includes("ไฟล์รอจัด"));
+});
+
+test("ไฟล์: เก็บเป็นเอกสาร → สร้างใน documents + ผูกทั้ง 3 รูป (รูปแบบมาตรฐานของแอป)", () => {
+  const f3 = files().filter((x) => x.link === null && /_\d\.jpg$/.test(x.name)).map((x) => x.id);
+  assert.strictEqual(f3.length, 3);
+  post([pb("a=fdoc&f=" + f3.join(","))]);
+  const doc = (app().documents || []).find((d) => d.description === "ส่งมาจาก LINE");
+  assert.ok(doc && doc.title.startsWith("เอกสารจาก LINE ") && doc.category === "อื่นๆ", JSON.stringify(doc));
+  assert.ok(f3.every((id) => fileById(id).link.kind === "document" && fileById(id).link.id === doc.id));
+  assert.ok(lastReply().text.includes("เก็บเป็นเอกสาร"));
+  canonical();
+});
+
+test("ไฟล์: PDF → เก็บชื่อเดิม ไม่มีรูปย่อ · เก็บเป็นเอกสารใช้ชื่อไฟล์", () => {
+  ageRecent();
+  post([fmsg("pdf1", "ใบกำกับภาษี.pdf", 50000)]);
+  const f = files().find((x) => x.name === "ใบกำกับภาษี.pdf");
+  assert.ok(f && f.mime === "application/pdf" && f.thumb === null && f.link === null);
+  assert.ok(lastReply().text.includes("ไฟล์ ใบกำกับภาษี.pdf"));
+  post([pb(qdata("เก็บเป็นเอกสาร"))]);
+  assert.ok((app().documents || []).some((d) => d.title === "ใบกำกับภาษี"));
+});
+
+test("ไฟล์: ชนิดอื่น/ใหญ่เกิน → ปฏิเสธ ไม่อัป", () => {
+  const n = Object.keys(drive.files).length;
+  post([fmsg("x1", "งบ.xlsx", 1000)]);
+  assert.ok(lastReply().text.includes("แค่รูปกับ PDF"));
+  post([fmsg("pdf2", "ใหญ่.pdf", 30 * 1024 * 1024)]);
+  assert.ok(lastReply().text.includes("ใหญ่เกิน 20MB"));
+  assert.strictEqual(Object.keys(drive.files).length, n);
+});
+
+test("ไฟล์: ปุ่มลบ → ถังขยะ Drive + ลบเอกสาร Firestore", () => {
+  ageRecent();
+  post([img("m4")]);
+  const f = files().find((x) => !x.link);
+  post([pb(qdata("ลบ"))]);
+  assert.ok(!fstore[f.id]);
+  assert.strictEqual(drive.files[f.driveId].trashed, true);
+  assert.ok(lastReply().text.includes("ถังขยะ Drive"));
+  post([pb("a=ftrash&f=" + f.id)]);
+  assert.ok(lastReply().text.includes("ไม่เจอไฟล์นี้"));
+});
+
+test("ไฟล์: ยกเลิกรายจ่ายที่มีรูปแนบ → รูปไม่หาย กลับไปรอผูก", () => {
+  aiScript = once([{ name: "add_expense", args: { amount: 2000, category: "อื่นๆ", memo: "ผิดยอด" } }]);
+  post([msg("ผิดยอด 2000")]);
+  const tok = new URLSearchParams(lastReply().quickReply.items[1].action.data).get("r");
+  post([img("m5")]);
+  const f = files().find((x) => x.link && x.link.id === newestExp("ผิดยอด").id);
+  assert.ok(f);
+  post([pb("a=undo&r=" + tok)]);
+  assert.strictEqual(fileById(f.id).link, null);
+  assert.ok(JSON.parse(cacheMap.pendingFiles).some((p) => p.id === f.id));
+  assert.ok(lastReply().text.includes("รูปที่แนบไว้ยังอยู่"), lastReply().text);
+  aiScript = once([{ name: "add_expense", args: { amount: 200, category: "อื่นๆ", memo: "ยอดถูก" } }], "จดแล้วครับ");
+  post([msg("ยอดถูก 200")]);
+  assert.strictEqual(fileById(f.id).link.id, newestExp("ยอดถูก").id);
+});
+
+test("ไฟล์: ส่งรูปหลังยกเลิกรายการ → ไม่แนบกับรายการที่ยกเลิกไปแล้ว (ไปรอผูกแทน)", () => {
+  ageRecent();
+  aiScript = once([{ name: "add_expense", args: { amount: 77, category: "อื่นๆ", memo: "จะยกเลิก" } }]);
+  post([msg("จะยกเลิก 77")]);
+  const tok = new URLSearchParams(lastReply().quickReply.items[1].action.data).get("r");
+  post([pb("a=undo&r=" + tok)]);
+  post([img("m6")]);
+  const f = files().find((x) => !x.link);
+  assert.ok(f, "ต้องไม่ผูกกับรายการที่ยกเลิก");
+  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive"), lastReply().text);
+  assert.ok(!lastReply().quickReply.items.some((i) => i.action.label.includes("จะยกเลิก")), "ตัวเลือกต้องไม่มีรายการที่ยกเลิกแล้ว");
+  post([pb("a=ftrash&f=" + f.id)]);
+});
+
+test("ไฟล์: สั่งลบรายการ (delete_entry) → ไฟล์ที่แนบลงถังขยะ Drive", () => {
+  aiScript = once([{ name: "add_expense", args: { amount: 555, category: "อื่นๆ", memo: "ลบทั้งรูป" } }]);
+  post([msg("ลบทั้งรูป 555")]);
+  post([img("m7")]);
+  const e = newestExp("ลบทั้งรูป");
+  const f = files().find((x) => x.link && x.link.id === e.id);
+  aiScript = once([{ name: "delete_entry", args: { ref: "fg.expenses." + MONTH + "#" + e.id } }], "ลบแล้วครับ");
+  post([msg("ลบรายการลบทั้งรูปทิ้ง")]);
+  assert.ok(!newestExp("ลบทั้งรูป"));
+  assert.ok(!fstore[f.id] && drive.files[f.driveId].trashed);
+  canonical();
+});
+
+test("ไฟล์: preview ของ LINE ใหญ่เกิน → ใช้รูปย่อ 160px จาก Drive", () => {
+  ageRecent();
+  previewBytes = 20000;
+  post([img("m8")]);
+  previewBytes = 3000;
+  const f = files().find((x) => !x.link);
+  assert.ok(/^data:image\/png;base64,/.test(f.thumb), String(f.thumb).slice(0, 40));
+  post([pb("a=fkeep&f=" + f.id)]);
+});
+
+test("ไฟล์: แอปแก้เอกสารไฟล์แทรกระหว่างผูก → อ่านใหม่แล้วผูกสำเร็จ", () => {
+  const f = files().find((x) => !x.link);
+  const c0 = conflictsSeen;
+  injectConflict = () => { fstore[f.id].updateTime = ts(); };
+  post([pb("a=flink&f=" + f.id + "&ref=fg.expenses." + MONTH + "#e_cur1")]);
+  assert.ok(conflictsSeen > c0);
+  assert.deepStrictEqual(fileById(f.id).link, { kind: "expense", id: "e_cur1" });
+});
+
+test("ไฟล์: รอบ 07:00 เก็บกวาดไฟล์ที่แอปกดลบ (trash:true) → ถังขยะ Drive + ลบเอกสาร", () => {
+  const f = files().find((x) => x.link && x.link.id === "e_cur1");
+  const m = Object.assign({}, f, { trash: true, trashedAt: new Date().toISOString() });
+  fstore[f.id] = { json: JSON.stringify(m), by: "app", updateTime: ts() };
+  propsMap.PUSHED_morning = TODAY;   // วันนี้ส่งสรุปไปแล้ว — เก็บกวาดก็ยังต้องทำ
+  assert.strictEqual(ctx.morningPush(), "already");
+  assert.ok(!fstore[f.id] && drive.files[f.driveId].trashed);
+});
+
+test("ไฟล์: setupFiles ใช้โฟลเดอร์เดิม ไม่สร้างซ้ำ", () => {
+  const n = Object.values(drive.folders).filter((x) => x.name === "files-line").length;
+  delete propsMap.DRIVE_FILES_FOLDER_ID;
+  ctx.setupFiles();
+  assert.strictEqual(Object.values(drive.folders).filter((x) => x.name === "files-line").length, n);
+  assert.strictEqual(n, 1);
 });
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));

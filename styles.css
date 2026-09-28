@@ -1217,3 +1217,31 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .acct-item-txt small{font-size:11px;color:var(--ink-5);}
 .acct-item.acct-signout i{color:var(--ink-5);}
 .sync-warn{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:70;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 32px);padding:10px 16px;border-radius:999px;border:1px solid #fb923c;background:rgba(40,24,12,.95);color:#fdba74;font:inherit;font-size:13px;cursor:pointer;box-shadow:0 12px 30px rgba(0,0,0,.5);}
+
+/* ── ข้อ 55 ขั้นที่ 8: ไฟล์แนบ (รูป/PDF → Drive) ── */
+.att-strip{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.att-row{display:flex;flex-wrap:wrap;gap:8px;}
+.att-thumb{position:relative;border-radius:10px;border:1px solid var(--line);background:var(--surface-sunken);overflow:visible;flex-shrink:0;}
+.att-thumb-open{width:100%;height:100%;border:none;padding:0;background:none;cursor:pointer;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--ink-3);}
+.att-thumb-open img{width:100%;height:100%;object-fit:cover;display:block;}
+.att-thumb-open:hover{outline:1.5px solid var(--accent);}
+.att-thumb-x{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:1px solid var(--line-hover);background:var(--surface-modal);color:var(--ink-2);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.att-thumb-x:hover{color:var(--red-soft);border-color:var(--red-soft);}
+.att-src{position:absolute;left:3px;bottom:3px;font-size:8.5px;font-weight:700;letter-spacing:.3px;color:#fff;background:#06c755;border-radius:4px;padding:0 4px;line-height:13px;pointer-events:none;}
+.att-add{align-self:flex-start;background:none;border:1.5px dashed var(--line-hover);border-radius:10px;color:var(--ink-3);font-size:12px;padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:'Noto Sans Thai',sans-serif;}
+.att-add:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+.att-add:disabled{opacity:.7;cursor:progress;}
+.att-note{font-size:11.5px;color:var(--ink-3);}
+.att-err{font-size:11.5px;color:var(--orange-soft);}
+.att-badge{margin-left:6px;background:var(--chip-bg);border:1px solid var(--line);border-radius:999px;color:var(--gold-soft);font-size:10.5px;padding:1px 7px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;vertical-align:middle;}
+.doc-item{padding:10px;margin-bottom:8px;background:var(--surface-sunken);border-radius:8px;border:1px solid var(--line);}
+.doc-form{background:var(--surface-sunken);padding:12px;border-radius:8px;margin-bottom:12px;}
+.att-inbox{margin-bottom:14px;border-color:var(--gold-dim);}
+.att-inbox-count{margin-left:6px;background:var(--gold-dim);color:var(--gold-soft);border-radius:999px;font-size:11px;padding:1px 8px;}
+.att-inbox-row{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line-soft);}
+.att-inbox-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.att-inbox-name{font-size:12.5px;font-weight:600;word-break:break-all;}
+.att-inbox-meta{font-size:11px;color:var(--ink-3);}
+.att-inbox-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:2px;}
+.att-inbox-select{flex:1 1 220px;min-width:0;padding:6px 9px;font-size:11.5px;}
+.att-inbox-btn{padding:6px 12px!important;font-size:11.5px!important;}

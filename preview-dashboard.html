@@ -787,6 +787,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     if (unsubMeta) { unsubMeta(); unsubMeta = null; }
     partsRef = metaRef = legacyRef = null; base = {}; metaLoaded = false;
     state.remoteLoaded = false; state.docCount = 0;
+    resetFiles();
     if (!user) {
       state.user = null;
       state.wasUsed = !!localStorage.getItem(USED_KEY);
@@ -812,8 +813,172 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     };
     unsubMeta = onSnapshot(metaRef, onMeta, function (e) { console.warn("[FireSync] meta", e); metaLoaded = true; });
     unsubParts = onSnapshot(partsRef, { includeMetadataChanges: true }, onParts, onErr);
+    startFiles(user.uid);
   });
   window.addEventListener("online", function () { if (state.user && state.phase === "offline") emit("connecting", "กลับมาออนไลน์ — กำลังซิงก์…"); });
+
+  // ---------- ข้อ 55 ขั้นที่ 8: ไฟล์แนบ (ตัวไฟล์อยู่ Google Drive · Firestore เก็บแค่ข้อมูลอ้างอิง + รูปย่อ) ----------
+  // users/{uid}/files/{fileId} : json = {id,name,mime,size,driveId,url,thumb,link:{kind,id}|null,from:"app"|"line",createdAt,trash,trashedAt}
+  //   แยกจากข้อมูลก้อนหลัก (ไม่อยู่ใน localStorage/parts) → รูปย่อไม่กินที่ localStorage · React อ่านผ่าน window.FireFiles + event "secretary-files"
+  //   ผูกกับรายการด้วย link อย่างเดียว (ไม่แตะตัวรายการ) → Jack ผูก/ย้ายได้โดยไม่ต้องเขียนเอกสารรายจ่ายชนกับแอป
+  //   kind = expense | income | document · link ที่ชี้ไปรายการที่ไม่มีแล้ว = ไฟล์รอจัด (โชว์ในหน้า Documents)
+  //   ลบ = ตั้ง trash:true → Jack (Apps Script) ย้ายไฟล์ลงถังขยะ Drive รอบ 07:00 แล้วลบเอกสารนี้
+  //   (แอปมีสิทธิ์ drive.file ลบไฟล์ที่ Jack สร้างไม่ได้ เลยให้ Jack ลบทั้งหมดที่เดียว)
+  var files = {}, filesLoaded = false, filesError = "", unsubFiles = null;
+  var FILE_MAX_BYTES = 5 * 1024 * 1024;            // multipart upload ของ Drive รับได้ถึง 5MB
+  var FILES_FOLDER = "files-app";                   // SecretaryOhmApp/files-app (Jack ใช้ files-line — แอปมองไม่เห็นโฟลเดอร์ที่ Jack สร้าง)
+  var FILES_FOLDER_KEY = "secretary-drive-files-folder-id";
+  function filesEmit() { try { window.dispatchEvent(new CustomEvent("secretary-files")); } catch (e) {} }
+  function resetFiles() {
+    if (unsubFiles) { unsubFiles(); unsubFiles = null; }
+    files = {}; filesLoaded = false; filesError = ""; filesEmit();
+  }
+  function startFiles(uid) {
+    unsubFiles = onSnapshot(collection(db, "users", uid, "files"), function (snap) {
+      var next = {};
+      snap.forEach(function (d) {
+        var x = d.data() || {};
+        try { var m = JSON.parse(x.json); if (m && m.id) next[m.id] = m; } catch (e) { console.warn("[FireFiles] อ่านเอกสารไม่ได้", d.id); }
+      });
+      files = next; filesLoaded = true; filesError = ""; filesEmit();
+    }, function (e) {
+      console.warn("[FireFiles] snapshot", e);
+      filesLoaded = true;
+      filesError = e && e.code === "permission-denied" ? "ยังอ่านไฟล์แนบไม่ได้ — วาง firestore.rules ใหม่ใน Firebase Console ก่อน" : "โหลดรายการไฟล์แนบไม่สำเร็จ";
+      filesEmit();
+    });
+  }
+  function fileRef(id) { return doc(db, "users", state.user.uid, "files", id); }
+  function writeFiles(list) {
+    if (!state.user) return Promise.reject(new Error("ต้องล็อกอินก่อน"));
+    list.forEach(function (m) { files[m.id] = m; });
+    filesEmit();
+    var b = writeBatch(db);
+    list.forEach(function (m) { b.set(fileRef(m.id), { json: JSON.stringify(m), by: clientId, at: serverTimestamp() }); });
+    return b.commit();
+  }
+  function fileList() {
+    return Object.keys(files).map(function (k) { return files[k]; }).filter(function (f) { return !f.trash; })
+      .sort(function (a, b) { return String(b.createdAt || "").localeCompare(String(a.createdAt || "")); });
+  }
+  function findFilesFolder() {
+    var cached = localStorage.getItem(FILES_FOLDER_KEY);
+    if (cached) return Promise.resolve(cached);
+    return findFolder().then(function (parent) {
+      var q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='" + FILES_FOLDER + "' and '" + parent + "' in parents and trashed=false");
+      return driveFetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&fields=files(id)&spaces=drive").then(function (r) { return r.json(); }).then(function (d) {
+        if (d.files && d.files.length) return d.files[0].id;
+        return driveFetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: FILES_FOLDER, mimeType: "application/vnd.google-apps.folder", parents: [parent] })
+        }).then(function (r) { return r.json(); }).then(function (d2) { return d2.id; });
+      });
+    }).then(function (id) { localStorage.setItem(FILES_FOLDER_KEY, id); return id; });
+  }
+  function driveUpload(blob, name, mime, retried) {
+    return findFilesFolder().then(function (folderId) {
+      var boundary = "secretaryohmfile" + Date.now().toString(36);
+      var meta = { name: name, parents: [folderId], mimeType: mime };
+      var body = new Blob(["--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
+        "\r\n--" + boundary + "\r\nContent-Type: " + mime + "\r\n\r\n", blob, "\r\n--" + boundary + "--"]);
+      return driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name,mimeType,size", {
+        method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: body
+      }).then(function (r) { return r.json(); });
+    }).catch(function (e) {
+      // โฟลเดอร์ที่จำไว้ถูกลบ/ย้าย → ลืมแล้วหาใหม่ 1 ครั้ง
+      if (!retried && /Drive 404/.test(String(e && e.message))) { localStorage.removeItem(FILES_FOLDER_KEY); localStorage.removeItem("secretary-drive-folder-id"); return driveUpload(blob, name, mime, true); }
+      throw e;
+    });
+  }
+  function loadImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () { resolve(img); setTimeout(function () { URL.revokeObjectURL(url); }, 1000); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("decode")); };
+      img.src = url;
+    });
+  }
+  function drawScaled(img, max) {
+    var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, s = Math.min(1, max / Math.max(w, h));
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+    var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+  function makeThumb(img) {
+    // รูปย่อเก็บใน Firestore — คุมไม่ให้เกิน ~12KB
+    var tries = [[200, 0.72], [160, 0.6], [120, 0.5]];
+    for (var i = 0; i < tries.length; i++) {
+      var u = drawScaled(img, tries[i][0]).toDataURL("image/jpeg", tries[i][1]);
+      if (u.length <= 16000) return u;
+    }
+    return null;
+  }
+  function toBlob(canvas, q) { return new Promise(function (r) { canvas.toBlob(function (b) { r(b); }, "image/jpeg", q); }); }
+  function datePrefix() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function prepareFile(file) {
+    var name = String(file.name || "file").replace(/[\\/:*?"<>|]+/g, "_");
+    var isPdf = file.type === "application/pdf" || /\.pdf$/i.test(name);
+    var isImg = /^image\//.test(file.type || "");
+    if (!isPdf && !isImg) return Promise.reject(new Error("รับได้แค่รูปกับ PDF ครับ"));
+    if (isPdf) {
+      if (file.size > FILE_MAX_BYTES) return Promise.reject(new Error("PDF ใหญ่เกิน 5MB — อัปขึ้น Drive เองแล้ววางลิงก์ในช่อง Link ของเอกสารแทน"));
+      return Promise.resolve({ blob: file, name: datePrefix() + "_" + name, mime: "application/pdf", thumb: null });
+    }
+    return loadImage(file).then(function (img) {
+      var thumb = makeThumb(img);
+      if (file.size <= FILE_MAX_BYTES) return { blob: file, name: datePrefix() + "_" + name, mime: file.type, thumb: thumb };
+      // รูปใหญ่เกิน 5MB → ย่อเหลือด้านยาว 2400px (ยังอ่านใบเสร็จชัด)
+      return toBlob(drawScaled(img, 2400), 0.85).then(function (b) {
+        if (b && b.size > FILE_MAX_BYTES) return toBlob(drawScaled(img, 1800), 0.8);
+        return b;
+      }).then(function (b) {
+        if (!b || b.size > FILE_MAX_BYTES) throw new Error("รูปใหญ่เกินไป ย่อแล้วก็ยังเกิน 5MB");
+        return { blob: b, name: datePrefix() + "_" + name.replace(/\.[^.]+$/, "") + ".jpg", mime: "image/jpeg", thumb: thumb };
+      });
+    }, function () {
+      // เบราว์เซอร์นี้เปิดรูปไม่ได้ (เช่น HEIC บน Chrome) → อัปตัวจริงไปเลย ไม่มีรูปย่อ
+      if (file.size > FILE_MAX_BYTES) throw new Error("รูปนี้ใหญ่เกิน 5MB และเบราว์เซอร์ย่อให้ไม่ได้");
+      return { blob: file, name: datePrefix() + "_" + name, mime: file.type || "application/octet-stream", thumb: null };
+    });
+  }
+  function newFileId() { return "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function uploadFile(file, link) {
+    if (!state.user) return Promise.reject(new Error("ต้องล็อกอินก่อนถึงจะแนบไฟล์ได้"));
+    if (!tokenValid()) { var e = new Error("ต้องอนุญาต Google Drive ก่อน"); e.code = "no-token"; return Promise.reject(e); }
+    return prepareFile(file).then(function (p) {
+      return driveUpload(p.blob, p.name, p.mime).then(function (d) {
+        var m = {
+          id: newFileId(), name: d.name || p.name, mime: d.mimeType || p.mime, size: Number(d.size) || p.blob.size || 0,
+          driveId: d.id, url: d.webViewLink || ("https://drive.google.com/file/d/" + d.id + "/view"),
+          thumb: p.thumb || null, link: link || null, from: "app", createdAt: new Date().toISOString(), trash: false
+        };
+        return writeFiles([m]).then(function () { return m; });
+      });
+    });
+  }
+  function patchFiles(pred, patch) {
+    var list = fileList().filter(pred).map(function (m) { return Object.assign({}, m, patch(m)); });
+    return list.length ? writeFiles(list).then(function () { return list.length; }) : Promise.resolve(0);
+  }
+  function sameLink(m, kind, id) { return !!(m.link && m.link.kind === kind && m.link.id === id); }
+  window.FireFiles = {
+    ready: function () { return !!state.user && filesLoaded; },
+    signedIn: function () { return !!state.user; },
+    error: function () { return filesError; },
+    list: fileList,
+    forEntry: function (kind, id) { return fileList().filter(function (m) { return sameLink(m, kind, id); }); },
+    needsToken: function () { return !tokenValid(); },
+    authorize: function (cb) { requestToken(function (err) { filesEmit(); if (cb) cb(err); }); },   // ต้องเรียกจากการกดปุ่ม (iOS)
+    upload: uploadFile,
+    setLink: function (id, link) { return patchFiles(function (m) { return m.id === id; }, function () { return { link: link || null }; }); },
+    relink: function (kind, fromId, toId) { return patchFiles(function (m) { return sameLink(m, kind, fromId); }, function () { return { link: { kind: kind, id: toId } }; }); },
+    trash: function (id) { return patchFiles(function (m) { return m.id === id; }, function () { return { trash: true, trashedAt: new Date().toISOString() }; }); },
+    trashLinked: function (kind, ids) {
+      var set = {}; (ids || []).forEach(function (x) { set[x] = 1; });
+      return patchFiles(function (m) { return !!(m.link && m.link.kind === kind && set[m.link.id]); }, function () { return { trash: true, trashedAt: new Date().toISOString() }; });
+    }
+  };
 
   window.FireSync = {
     isSignedIn: function () { return !!state.user; },
@@ -1976,6 +2141,134 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
     </div>
   );
 }
+/* ── ข้อ 55 ขั้นที่ 8: ไฟล์แนบ (รูป/PDF → Google Drive · ข้อมูลอ้างอิงอยู่ Firestore users/{uid}/files ผ่าน window.FireFiles) ──
+   ผูกกับรายการด้วย link {kind:"expense"|"income"|"document", id} ในเอกสารไฟล์ ไม่ได้เก็บในตัวรายการ
+   ไฟล์ที่ยังไม่ผูก/ผูกกับรายการที่ถูกลบไปแล้ว → "ไฟล์รอจัด" ในหน้า Documents */
+const Paperclip=makeIcon("fa-paperclip");
+const FilePdfIcon=makeIcon("fa-file-pdf");
+const ImageIcon=makeIcon("fa-image");
+const InboxIcon=makeIcon("fa-inbox");
+function useFireFiles(){
+  const [,setTick]=useState(0);
+  useEffect(()=>{
+    const f=()=>setTick(t=>t+1);
+    const evs=["secretary-files","sync-status","firesync-ready"];
+    evs.forEach(e=>window.addEventListener(e,f));
+    return ()=>evs.forEach(e=>window.removeEventListener(e,f));
+  },[]);
+  return window.FireFiles||null;
+}
+function useAttachCounts(kind){
+  const api=useFireFiles();
+  const m={};
+  if(api) api.list().forEach(f=>{ if(f.link&&f.link.kind===kind) m[f.link.id]=(m[f.link.id]||0)+1; });
+  return m;
+}
+/* ลบรายการ → ไฟล์ที่ผูกอยู่ย้ายลงถังขยะ Drive (Jack เก็บกวาดรอบ 07:00) */
+function trashAttachments(kind,ids){ if(window.FireFiles&&ids&&ids.length) window.FireFiles.trashLinked(kind,ids).catch(e=>console.warn("[FireFiles] trash",e)); }
+function isPdfFile(f){ return /pdf/.test(f.mime||"")||/\.pdf$/i.test(f.name||""); }
+function FileThumb({f,size=52,onRemove}){
+  return (
+    <div className="att-thumb" style={{width:size,height:size}} title={f.name}>
+      <button className="att-thumb-open" onClick={()=>window.open(f.url,"_blank","noopener")}>
+        {f.thumb?<img src={f.thumb} alt={f.name}/>:(isPdfFile(f)?<FilePdfIcon size={20}/>:<ImageIcon size={20}/>)}
+      </button>
+      {f.from==="line"&&<span className="att-src">LINE</span>}
+      {onRemove&&<button className="att-thumb-x" title="ลบไฟล์ (ย้ายลงถังขยะ Drive)" onClick={onRemove}><X size={10}/></button>}
+    </div>
+  );
+}
+function AttachStrip({kind,id}){
+  const api=useFireFiles();
+  const [busy,setBusy]=useState("");
+  const [err,setErr]=useState("");
+  const [pending,setPending]=useState(null);   // เลือกไฟล์แล้วแต่ยังไม่มีสิทธิ์ Drive → รอกดอนุญาต (iOS ต้องเป็นการกดปุ่มเท่านั้น)
+  const inputRef=useRef(null);
+  if(!api) return <div className="att-note">ระบบไฟล์แนบยังไม่พร้อม (รอโหลดสักครู่)</div>;
+  const list=api.forEntry(kind,id);
+  const run=async(arr)=>{
+    if(!arr.length) return;
+    setErr("");
+    if(api.needsToken()){ setPending(arr); return; }
+    for(let i=0;i<arr.length;i++){
+      setBusy(`กำลังอัปโหลด ${i+1}/${arr.length}…`);
+      try{ await api.upload(arr[i],{kind,id}); }
+      catch(e){
+        if(e&&e.code==="no-token"){ setPending(arr.slice(i)); break; }
+        setErr(`${arr[i].name}: ${e&&e.message||e}`);
+      }
+    }
+    setBusy("");
+  };
+  const authorizeThenRun=()=>{
+    const p=pending;
+    api.authorize(e=>{ if(e){ setErr("ยังไม่ได้อนุญาต Google Drive"); return; } setPending(null); run(p); });
+  };
+  const remove=(f)=>{
+    if(!window.confirm(`ลบไฟล์ "${f.name}"?\n(ย้ายลงถังขยะ Google Drive — กู้คืนได้ 30 วัน)`)) return;
+    api.trash(f.id).catch(e=>setErr(String(e&&e.message||e)));
+  };
+  return (
+    <div className="att-strip">
+      {list.length>0&&<div className="att-row">{list.map(f=><FileThumb key={f.id} f={f} onRemove={()=>remove(f)}/>)}</div>}
+      {!api.signedIn()?<div className="att-note">ล็อกอิน Google (เมนู O) ก่อนถึงจะแนบไฟล์ได้</div>
+        :pending?<button type="button" className="att-add" onClick={authorizeThenRun}><Paperclip size={12}/> อนุญาต Google Drive แล้วอัปโหลด {pending.length} ไฟล์</button>
+        :<button type="button" className="att-add" disabled={!!busy} onClick={()=>inputRef.current&&inputRef.current.click()}><Paperclip size={12}/> {busy||"แนบรูป / PDF"}</button>}
+      <input ref={inputRef} type="file" className="att-input" accept="image/*,application/pdf" multiple hidden
+        onChange={e=>{ const arr=Array.from(e.target.files||[]); e.target.value=""; run(arr); }}/>
+      {api.error()&&<div className="att-err">{api.error()}</div>}
+      {err&&<div className="att-err">{err}</div>}
+    </div>
+  );
+}
+/* ไฟล์รอจัด: ยังไม่ผูก (ส่งรูปให้ Jack แล้วไม่ได้เลือกรายการ) หรือรายการที่ผูกไว้ถูกลบไปแล้ว */
+function FileInbox({data,persist}){
+  const api=useFireFiles();
+  const [pick,setPick]=useState({});
+  if(!api||!api.signedIn()) return null;
+  const fin=data.finance||{};
+  const ids={expense:new Set((fin.expenses||[]).map(e=>e.id)),income:new Set((fin.income||[]).map(i=>i.id)),document:new Set((data.documents||[]).map(d=>d.id))};
+  const orphans=api.list().filter(f=>!f.link||!ids[f.link.kind]||!ids[f.link.kind].has(f.link.id));
+  if(!orphans.length) return null;
+  const recent=[...(fin.expenses||[]).map(r=>({k:"expense",r})),...(fin.income||[]).map(r=>({k:"income",r}))]
+    .sort((a,b)=>String(b.r.date||"").localeCompare(String(a.r.date||""))).slice(0,40);
+  const label=x=>x.k==="expense"
+    ?`${x.r.date} · ${x.r.category} -฿${Math.abs(Number(x.r.amount)||0).toLocaleString()}${x.r.memo?" · "+x.r.memo:""}`
+    :`${x.r.date} · ${x.r.source} +฿${(Number(x.r.amount)||0).toLocaleString()} (รายรับ)`;
+  const asDoc=f=>{
+    const id=uid();
+    const title=f.from==="line"&&/^LINE_/.test(f.name||"")?`เอกสารจาก LINE ${String(f.createdAt||"").slice(0,10)}`
+      :String(f.name||"").replace(/^\d{4}-\d{2}-\d{2}_/,"").replace(/\.[^.]+$/,"")||"เอกสาร";
+    persist({...data,documents:[...(data.documents||[]),{id,title,category:"อื่นๆ",description:f.from==="line"?"ส่งมาจาก LINE":"",link:""}]});
+    api.setLink(f.id,{kind:"document",id});
+  };
+  const link=f=>{ const v=pick[f.id]; if(!v) return; const i=v.indexOf("|"); api.setLink(f.id,{kind:v.slice(0,i),id:v.slice(i+1)}); };
+  const remove=f=>{ if(window.confirm(`ลบไฟล์ "${f.name}"?\n(ย้ายลงถังขยะ Google Drive — กู้คืนได้ 30 วัน)`)) api.trash(f.id); };
+  return (
+    <div className="card att-inbox">
+      <div className="card-head"><InboxIcon size={15}/> ไฟล์รอจัด <span className="att-inbox-count">{orphans.length}</span></div>
+      <div className="att-note" style={{marginBottom:10}}>รูป/PDF ที่ยังไม่ได้ผูกกับรายการ (เช่นส่งให้ Jack ใน LINE แล้วไม่ได้เลือก) หรือรายการที่ผูกไว้ถูกลบไปแล้ว</div>
+      {orphans.map(f=>(
+        <div key={f.id} className="att-inbox-row">
+          <FileThumb f={f} size={56}/>
+          <div className="att-inbox-body">
+            <div className="att-inbox-name">{f.name}</div>
+            <div className="att-inbox-meta">{String(f.createdAt||"").slice(0,10)} · {f.from==="line"?"จาก LINE":"จากแอป"}{f.link?" · รายการเดิมถูกลบแล้ว":""}</div>
+            <div className="att-inbox-actions">
+              <select className="modal-input att-inbox-select" value={pick[f.id]||""} onChange={e=>setPick(p=>({...p,[f.id]:e.target.value}))}>
+                <option value="">ผูกกับรายจ่าย/รายรับ…</option>
+                {recent.map(x=><option key={x.k+x.r.id} value={`${x.k}|${x.r.id}`}>{label(x)}</option>)}
+              </select>
+              <button className="modal-btn-save att-inbox-btn" disabled={!pick[f.id]} onClick={()=>link(f)}>ผูก</button>
+              <button className="modal-btn-cancel att-inbox-btn" onClick={()=>asDoc(f)}>เก็บเป็นเอกสาร</button>
+              <button className="del-btn" title="ลบ" onClick={()=>remove(f)}><Trash2 size={13}/></button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 function TxnEditModal({kind,initial,onClose,onSave,options}) {
   const isIncome=kind==="income";
   const [form,setForm]=useState(()=>({
@@ -2034,6 +2327,10 @@ function TxnEditModal({kind,initial,onClose,onSave,options}) {
           <div>
             <label className="field-label">Note</label>
             <input className="modal-input" value={form[noteKey]||""} onChange={e=>set(noteKey,e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()}/>
+          </div>
+          <div>
+            <label className="field-label"><Paperclip size={10}/> ไฟล์แนบ (สลิป / ใบเสร็จ)</label>
+            <AttachStrip kind={isIncome?"income":"expense"} id={initial.id}/>
           </div>
         </div>
         <div className="modal-foot">
@@ -2272,12 +2569,13 @@ function FinanceIncomeTab({finance,persist}) {
     });
     setIncAmount("");setIncNote("");setIncSource("เงินเดือน");
   };
-  const removeIncome=(id)=>persist({
+  const removeIncome=(id)=>{ persist({
     ...finance,
     finance:{...finance.finance,income:finance.finance.income.filter(i=>i.id!==id)}
-  });
+  }); trashAttachments("income",[id]); };
   const removeSelectedIncome=()=>{
     if(selectedIds.size===0) return;
+    trashAttachments("income",[...selectedIds]);
     persist({
       ...finance,
       finance:{...finance.finance,income:finance.finance.income.filter(i=>!selectedIds.has(i.id))}
@@ -2309,6 +2607,7 @@ function FinanceIncomeTab({finance,persist}) {
   const [fCat,setFCat]=useState("all");
   const [fSrc,setFSrc]=useState("all");
   const [editRow,setEditRow]=useState(null);
+  const attCounts=useAttachCounts("income");
   const listMonths=[...new Set(allIncome.map(i=>i.month||monthYearKey(i.date)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
   const listCats=[...new Set(allIncome.map(i=>i.source).filter(Boolean))].sort();
   const listOrigins=[...new Set(allIncome.map(originOf))].sort();
@@ -2422,7 +2721,7 @@ function FinanceIncomeTab({finance,persist}) {
                     <td className="exp-col-date">{inc.date}</td>
                     <td>{inc.source}</td>
                     <td className="exp-col-amount exp-amount-value" style={{color:"var(--accent-soft)"}}>+฿{inc.amount.toLocaleString()}</td>
-                    <td className="exp-col-memo">{inc.note||"—"}</td>
+                    <td className="exp-col-memo">{inc.note||"—"}{attCounts[inc.id]>0&&<button className="att-badge" title="ไฟล์แนบ" onClick={()=>setEditRow(inc)}><Paperclip size={10}/> {attCounts[inc.id]}</button>}</td>
                     <td className="exp-col-actions">
                       <div className="txn-row-actions">
                         <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(inc)}><Edit3 size={13}/></button>
@@ -2787,12 +3086,13 @@ function FinanceExpensesTab({finance,persist}) {
     });
     setExpAmount("");setExpMemo("");
   };
-  const removeExpense=(id)=>persist({
+  const removeExpense=(id)=>{ persist({
     ...finance,
     finance:{...finance.finance,expenses:finance.finance.expenses.filter(e=>e.id!==id)}
-  });
+  }); trashAttachments("expense",[id]); };
   const removeSelectedExpenses=()=>{
     if(selectedIds.size===0) return;
+    trashAttachments("expense",[...selectedIds]);
     persist({
       ...finance,
       finance:{...finance.finance,expenses:finance.finance.expenses.filter(e=>!selectedIds.has(e.id))}
@@ -2922,6 +3222,7 @@ function FinanceExpensesTab({finance,persist}) {
   const [fCat,setFCat]=useState("all");
   const [fSrc,setFSrc]=useState("all");
   const [editRow,setEditRow]=useState(null);
+  const attCounts=useAttachCounts("expense");
   const listMonths=[...new Set(allExpenses.map(e=>monthYearKey(e.date)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
   const listCats=[...new Set(allExpenses.map(e=>e.category).filter(Boolean))].sort();
   const listOrigins=[...new Set(allExpenses.map(originOf))].sort();
@@ -2948,6 +3249,7 @@ function FinanceExpensesTab({finance,persist}) {
     const cur=finance.finance.expenses||[];
     persist({...finance,finance:{...finance.finance,
       expenses:[...cur.filter(e=>e.id!==splitRow.id),...newRows]}});
+    if(window.FireFiles&&newRows[0]) window.FireFiles.relink("expense",splitRow.id,newRows[0].id).catch(()=>{});   // ไฟล์แนบตามไปอยู่ที่ส่วนแรก
     setSplitRow(null);
   };
   /* แบนเนอร์ + ทางลัดเปิดหน้าจัดหมวด สำหรับหมวดก้อนใหญ่ที่ยังไม่ได้แยก */
@@ -3073,7 +3375,7 @@ function FinanceExpensesTab({finance,persist}) {
                     <td className="exp-col-date">{exp.date}</td>
                     <td>{exp.category} {exp.source==="kbank-csv"&&<span className="exp-csv-badge">CSV</span>}{exp.source==="payslip"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>SLIP</span>}{exp.source==="csv-refund"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>คืนเงิน</span>}</td>
                     <td className="exp-col-amount exp-amount-value" style={exp.amount>0?{color:"var(--accent-soft)"}:undefined}>{exp.amount>0?"+":"-"}฿{Math.abs(exp.amount).toLocaleString()}</td>
-                    <td className="exp-col-memo">{exp.memo||"—"}</td>
+                    <td className="exp-col-memo">{exp.memo||"—"}{attCounts[exp.id]>0&&<button className="att-badge" title="ไฟล์แนบ" onClick={()=>setEditRow(exp)}><Paperclip size={10}/> {attCounts[exp.id]}</button>}</td>
                     <td className="exp-col-actions">
                       <div className="txn-row-actions">
                         <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(exp)}><Edit3 size={13}/></button>
@@ -6231,58 +6533,77 @@ function HealthPage({data,persist}) {
   );
 }
 function DocumentPage({data,persist}) {
-  const [docs,setDocs]=useState(data.documents||[]);
-  const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({title:"",category:"",description:"",link:""});
-  const addDoc=()=>{ if(!form.title) return; persist({...data,documents:[...docs,{id:uid(),...form}]}); setForm({title:"",category:"",description:"",link:""}); setShowForm(false); };
-  const removeDoc=(id)=>persist({...data,documents:docs.filter(d=>d.id!==id)});
+  /* ข้อ 55 ขั้นที่ 8: อ่านจาก data.documents ตรงๆ (เดิมมิเรอร์เป็น state แล้วไม่อัปเดตตามข้อมูลจากเครื่องอื่น/Jack) + แก้ไขได้ + ไฟล์แนบต่อเอกสาร + กล่องไฟล์รอจัด */
+  const docs=data.documents||[];
+  const empty={title:"",category:"",description:"",link:""};
+  const [editId,setEditId]=useState(null);   // null | "new" | id ของเอกสารที่กำลังแก้
+  const [form,setForm]=useState(empty);
+  const attCounts=useAttachCounts("document");
   const categories=["ประชาชน","สัญญา","การเงิน","ประกัน","อื่นๆ"];
+  const openNew=()=>{ setForm(empty); setEditId("new"); };
+  const openEdit=d=>{ setForm({title:d.title||"",category:d.category||"",description:d.description||"",link:d.link||""}); setEditId(d.id); };
+  const save=()=>{
+    const title=form.title.trim(); if(!title) return;
+    if(editId==="new") persist({...data,documents:[...docs,{id:uid(),...form,title}]});
+    else persist({...data,documents:docs.map(d=>d.id===editId?{...d,...form,title}:d)});
+    setEditId(null);
+  };
+  const removeDoc=d=>{
+    const n=attCounts[d.id]||0;
+    if(n&&!window.confirm(`ลบเอกสาร "${d.title}"?\nไฟล์แนบ ${n} ไฟล์จะย้ายลงถังขยะ Google Drive (กู้คืนได้ 30 วัน)`)) return;
+    persist({...data,documents:docs.filter(x=>x.id!==d.id)});
+    trashAttachments("document",[d.id]);
+  };
+  const formBox=(
+    <div className="doc-form">
+      <div style={{marginBottom:10}}>
+        <label className="field-label">ชื่อเอกสาร *</label>
+        <input className="modal-input" placeholder="บัตรประชาชน" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+      </div>
+      <div style={{marginBottom:10}}>
+        <label className="field-label">ประเภท</label>
+        <select className="modal-input" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={{cursor:"pointer"}}>
+          <option value="">เลือก...</option>
+          {[...new Set([...categories,form.category].filter(Boolean))].map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{marginBottom:10}}>
+        <label className="field-label">Note</label>
+        <textarea className="modal-input" rows={2} placeholder="หมายเหตุ..." value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
+      </div>
+      <div style={{marginBottom:10}}>
+        <label className="field-label">Link/Path</label>
+        <input className="modal-input" placeholder="https://..." value={form.link} onChange={e=>setForm({...form,link:e.target.value})}/>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button className="modal-btn-cancel" onClick={()=>setEditId(null)}>ยกเลิก</button>
+        <button className="modal-btn-save" onClick={save} disabled={!form.title.trim()}>{editId==="new"?"เพิ่ม":"บันทึก"}</button>
+      </div>
+    </div>
+  );
   return (
     <div className="page-content">
+      <FileInbox data={data} persist={persist}/>
       <div className="card">
         <div className="card-head"><FileText size={15}/> Documents</div>
         {docs.length===0&&<div className="empty">ยังไม่มีเอกสาร</div>}
-        {docs.map(d=>(
-          <div key={d.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,border:"1px solid var(--line)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-              <div style={{flex:1}}>
+        {docs.map(d=>editId===d.id?<div key={d.id}>{formBox}</div>:(
+          <div key={d.id} className="doc-item">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+              <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600}}>{d.title}</div>
-                <div style={{fontSize:12.5,color:"var(--accent)",marginTop:4}}>{d.category}</div>
+                {d.category&&<div style={{fontSize:12.5,color:"var(--accent)",marginTop:4}}>{d.category}</div>}
                 {d.description&&<div style={{fontSize:12.5,color:"var(--ink-2)",marginTop:4}}>{d.description}</div>}
                 {d.link&&<div style={{fontSize:11.5,color:"#34d399",marginTop:4,wordBreak:"break-all"}}>{d.link}</div>}
               </div>
-              <button className="del-btn" onClick={()=>removeDoc(d.id)}><Trash2 size={13}/></button>
+              <button className="del-btn" title="แก้ไข" onClick={()=>openEdit(d)}><Edit3 size={13}/></button>
+              <button className="del-btn" title="ลบ" onClick={()=>removeDoc(d)}><Trash2 size={13}/></button>
             </div>
+            <AttachStrip kind="document" id={d.id}/>
           </div>
         ))}
-        {showForm&&(
-          <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8,marginBottom:12}}>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">ชื่อเอกสาร *</label>
-              <input className="modal-input" placeholder="บัตรประชาชน" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
-            </div>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">ประเภท</label>
-              <select className="modal-input" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={{cursor:"pointer"}}>
-                <option value="">เลือก...</option>
-                {categories.map(c=><option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">Note</label>
-              <textarea className="modal-input" rows={2} placeholder="หมายเหตุ..." value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
-            </div>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">Link/Path</label>
-              <input className="modal-input" placeholder="https://..." value={form.link} onChange={e=>setForm({...form,link:e.target.value})}/>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <button className="modal-btn-cancel" onClick={()=>setShowForm(false)}>ยกเลิก</button>
-              <button className="modal-btn-save" onClick={addDoc} disabled={!form.title}>เพิ่ม</button>
-            </div>
-          </div>
-        )}
-        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={13}/> เอกสารใหม่</button>}
+        {editId==="new"&&formBox}
+        {editId===null&&<button className="text-btn" onClick={openNew}><Plus size={13}/> เอกสารใหม่</button>}
       </div>
     </div>
   );
