@@ -238,6 +238,7 @@
     } else {
       window.localStorage.setItem(STORAGE_KEY, normalized);
     }
+    if (window.FireSync && window.FireSync.isSignedIn()) { try { await window.FireSync.flush(4000); } catch (e) {} }
     alert("นำเข้าข้อมูลสำเร็จ กำลังโหลดหน้าใหม่");
     location.reload();
   }
@@ -339,6 +340,7 @@
   }
 
   function schedulePush(jsonText) {
+    if (window.__fireSignedIn) return;   // ข้อ 55: ล็อกอิน Firestore แล้ว → Drive เหลือเป็น backup รายสัปดาห์ ไม่ซิงก์สดอีก
     setStatus("กำลังบันทึกขึ้น Drive…");
     clearTimeout(pushTimer);
     pushTimer = setTimeout(function () {
@@ -405,6 +407,7 @@
   }
 
   document.getElementById("driveConnectBtn").addEventListener("click", function () {
+    if (window.__fireSignedIn) { alert("ตอนนี้ซิงก์ผ่าน Firestore แล้ว — ไม่ต้องเชื่อมต่อ Drive แบบเดิม (สำรองขึ้น Drive ได้จากเมนูวงกลม O)"); return; }
     if (!tokenClient) { alert("ยังไม่พร้อมเชื่อมต่อ Google — รอสักครู่แล้วลองใหม่"); return; }
     tokenClient.requestAccessToken({ prompt: "consent" });
   });
@@ -415,6 +418,350 @@
   };
 
   initGoogleIdentity();
+})();
+</script>
+
+<script type="module">
+// ================== ข้อ 55 ขั้นที่ 2: Firestore sync (ESM จาก gstatic, ไม่มี build step) ==================
+// ที่เก็บหลัก = Firestore เอกสารเดียว users/{uid}/app/data  (เฟสแรก — ขั้นที่ 4 ค่อยแยกหลายเอกสาร)
+//   field: json (สตริง JSON ทั้งก้อน เหมือนใน localStorage ทุกตัวอักษร) · by (clientId เครื่องที่เขียน) · at (serverTimestamp)
+//          · size · lastDriveBackupAt (ISO) · lastDriveBackupFile
+// เก็บเป็นสตริงแทน map โดยตั้งใจ: เทียบ "ข้อมูลตรงกันไหม" ได้ตรงตัว (map ของ Firestore เรียง key ใหม่),
+// ไม่ติดข้อห้าม array ซ้อน array / key ว่าง, และ roundtrip กับ localStorage ได้เป๊ะ
+// localStorage ยังเป็นสำเนาในเครื่องให้แอปบูตเร็ว/ใช้ออฟไลน์ — Firestore เป็นตัวจริง
+// ล็อกอิน: GIS token client (popup เดิมที่ยืนยันแล้วว่าใช้ได้บน iPhone ข้อ 54) → signInWithCredential
+//          ห้ามใช้ signInWithPopup/Redirect ของ Firebase (ติด cookie ข้ามโดเมนบน iOS)
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, GoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+(function () {
+  var cfg = window.APP_CONFIG || {};
+  if (!cfg.FIREBASE) { console.warn("[FireSync] ไม่มี APP_CONFIG.FIREBASE — ข้าม"); return; }
+  var STORAGE_KEY = "secretary-dashboard-v1";
+  var PRE_BACKUP_KEY = "secretary-pre-firestore-backup";   // สำเนาข้อมูลในเครื่องก่อนถูกข้อมูลจาก Firestore ทับครั้งแรก
+  var WARN_BYTES = 700 * 1024;                                 // เอกสาร Firestore จำกัด 1 MiB
+  var BACKUP_EVERY_MS = 7 * 24 * 3600 * 1000;
+  var PUSH_DELAY = 700;
+
+  var clientId = (function () {
+    try {
+      var id = sessionStorage.getItem("secretary-client-id");
+      if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("secretary-client-id", id); }
+      return id;
+    } catch (e) { return Math.random().toString(36).slice(2); }
+  })();
+
+  var app = initializeApp(cfg.FIREBASE);
+  var auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] });
+  var db;
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      ignoreUndefinedProperties: true
+    });
+  } catch (e) {
+    console.warn("[FireSync] offline cache ใช้ไม่ได้ ใช้แบบหน่วยความจำแทน", e);
+    db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+  }
+
+  var state = {
+    user: null,          // {email, uid}
+    phase: "init",       // init | signedOut | connecting | synced | saving | offline | error | migrating
+    text: "",
+    lastBackupAt: null,
+    remoteLoaded: false
+  };
+  var docRef = null, unsub = null, pushTimer = null, pendingText = null;
+  var tokenClient = null, accessToken = null, tokenExpiresAt = 0, pendingTokenCb = null;
+  var migrating = false, backupRunning = false;
+  var rejectedMsg = "";   // ข้อความตอนบัญชีอื่นล็อกอิน — ต้องค้างให้เห็น ไม่ให้ "ยังไม่ได้ล็อกอิน" ทับทันที
+
+  function emit(phase, text) {
+    if (phase) state.phase = phase;
+    if (text !== undefined) state.text = text;
+    window.__syncStatus = Object.assign({}, state);
+    try { window.dispatchEvent(new CustomEvent("sync-status", { detail: window.__syncStatus })); } catch (e) {}
+  }
+  function localText() { return localStorage.getItem(STORAGE_KEY) || ""; }
+  function isAllowed(email) {
+    var allow = (cfg.ALLOWED_EMAILS || []).map(function (s) { return String(s).toLowerCase(); });
+    return !allow.length || allow.indexOf(String(email || "").toLowerCase()) >= 0;
+  }
+  function summarize(text) {
+    try {
+      var d = JSON.parse(text) || {}; var f = d.finance || {};
+      return "รายรับ " + (f.income || []).length + " · รายจ่าย " + (f.expenses || []).length +
+        " · งาน " + (d.tasks || []).length + " · โปรเจกต์ " + (d.projects || []).length + " · Journal " + (d.journal || []).length;
+    } catch (e) { return "(อ่านไม่ได้)"; }
+  }
+
+  // ---------- เขียนขึ้น Firestore ----------
+  function writeRemote(text, extra) {
+    if (!docRef) return Promise.resolve();
+    var payload = Object.assign({ json: text, by: clientId, at: serverTimestamp(), size: text.length }, extra || {});
+    return setDoc(docRef, payload, { merge: true });
+  }
+  function doPush() {
+    pushTimer = null;
+    var text = pendingText; pendingText = null;
+    if (text == null || !docRef) return Promise.resolve();
+    if (text.length > WARN_BYTES) console.warn("[FireSync] ข้อมูลใหญ่ " + Math.round(text.length / 1024) + "KB ใกล้เพดาน 1 MiB ต่อเอกสาร");
+    emit(navigator.onLine === false ? "offline" : "saving", navigator.onLine === false ? "ออฟไลน์ — บันทึกในเครื่องแล้ว จะซิงก์เมื่อออนไลน์" : "กำลังบันทึก…");
+    // setDoc จะ resolve เมื่อเซิร์ฟเวอร์รับแล้ว — ออฟไลน์ก็ยังเข้าคิวใน IndexedDB ไม่หาย
+    return writeRemote(text).then(function () {
+      if (!pendingText) emit("synced", sizeNote(text) || "ซิงก์แล้ว ✓");
+    }).catch(function (e) {
+      console.error("[FireSync] write", e);
+      emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์เขียน (เช็ก Security Rules/อีเมล)" : "บันทึกขึ้น Firestore ไม่สำเร็จ");
+    });
+  }
+  function sizeNote(text) {
+    return text && text.length > WARN_BYTES ? "ซิงก์แล้ว — แต่ข้อมูลใหญ่ " + Math.round(text.length / 1024) + "KB ใกล้เพดาน 1MB" : "";
+  }
+  function schedulePush(text) {
+    if (!docRef || !state.remoteLoaded || migrating) return;   // ก่อนโหลดของจริงจาก Firestore ห้ามเขียนทับ
+    pendingText = text;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(doPush, PUSH_DELAY);
+    emit(state.phase === "error" ? "error" : "saving", state.phase === "error" ? state.text : "กำลังบันทึก…");
+  }
+  // ใช้ก่อน reload (Import) / ตอนปิดแอป — ส่งของที่ค้าง debounce ออกไปทันที
+  function flush(timeoutMs) {
+    if (!pushTimer) return Promise.resolve();
+    clearTimeout(pushTimer);
+    var p = doPush();
+    return Promise.race([p, new Promise(function (r) { setTimeout(r, timeoutMs || 2500); })]);
+  }
+  window.addEventListener("pagehide", function () { if (pushTimer) flush(0); });
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden" && pushTimer) flush(0); });
+
+  // ---------- รับจาก Firestore ----------
+  function applyRemote(text, why) {
+    if (!text || text === localText()) return;
+    localStorage.setItem(STORAGE_KEY, text);
+    try { window.dispatchEvent(new CustomEvent("secretary-remote-data", { detail: { text: text, why: why || "remote" } })); } catch (e) {}
+  }
+  function onSnap(snap) {
+    if (snap.metadata.hasPendingWrites) return;          // echo จากการเขียนของเครื่องนี้เอง
+    if (!snap.exists()) {
+      if (snap.metadata.fromCache) { emit("connecting", "กำลังเชื่อมต่อ Firestore…"); return; }   // ยังไม่รู้จริงว่าไม่มี
+      firstMigration();
+      return;
+    }
+    var d = snap.data() || {};
+    state.lastBackupAt = d.lastDriveBackupAt || null;
+    var firstLoad = !state.remoteLoaded;
+    state.remoteLoaded = true;
+    if (typeof d.json === "string" && d.json) {
+      if (pendingText != null) {
+        // เครื่องนี้มีของแก้ค้างอยู่ (ยังไม่ส่ง) → ของเราชนะ ส่งทับไปเลย
+      } else if (d.by === clientId && !firstLoad) {
+        // เซิร์ฟเวอร์ยืนยันการเขียนของเราเอง — ไม่ต้องทำอะไร
+      } else if (d.json !== localText()) {
+        if (firstLoad && localText()) {
+          try { if (!localStorage.getItem(PRE_BACKUP_KEY)) localStorage.setItem(PRE_BACKUP_KEY, localText()); } catch (e) {}
+        }
+        applyRemote(d.json, firstLoad ? "first-load" : "remote");
+      }
+    }
+    if (pendingText == null && !pushTimer) {
+      emit(snap.metadata.fromCache ? "offline" : "synced",
+        snap.metadata.fromCache ? "ออฟไลน์ — ใช้ข้อมูลในเครื่อง" : (sizeNote(d.json) || "ซิงก์แล้ว ✓"));
+    }
+    maybeAutoBackup(d.json);
+  }
+
+  // ---------- ย้ายข้อมูลครั้งแรก (ยังไม่มีเอกสารใน Firestore) ----------
+  function firstMigration() {
+    if (migrating) return;
+    migrating = true;
+    emit("migrating", "ย้ายข้อมูลขึ้น Firestore ครั้งแรก…");
+    var local = localText();
+    var fromDrive = accessToken ? readDriveData().catch(function (e) { console.warn("[FireSync] อ่าน data.json จาก Drive ไม่ได้", e); return null; }) : Promise.resolve(null);
+    fromDrive.then(function (driveText) {
+      var chosen = local || driveText || "";
+      if (driveText && local && driveText.trim() !== local.trim()) {
+        var useDrive = window.confirm(
+          "ย้ายข้อมูลขึ้น Firestore ครั้งแรก — เลือกว่าจะใช้ข้อมูลชุดไหนเป็นตัวตั้งต้น\n\n" +
+          "Google Drive (data.json): " + summarize(driveText) + "\n" +
+          "ในเครื่องนี้: " + summarize(local) + "\n\n" +
+          "OK = ใช้ข้อมูลจาก Drive\nCancel = ใช้ข้อมูลในเครื่องนี้"
+        );
+        chosen = useDrive ? driveText : local;
+      } else if (driveText && !local) {
+        chosen = driveText;
+      }
+      if (!chosen) { chosen = "{}"; }
+      return writeRemote(chosen).then(function () {
+        state.remoteLoaded = true;
+        if (chosen !== local) {
+          try { if (local) localStorage.setItem(PRE_BACKUP_KEY, local); } catch (e) {}
+          applyRemote(chosen, "migration");
+        }
+        emit("synced", "ย้ายข้อมูลขึ้น Firestore แล้ว ✓");
+      });
+    }).catch(function (e) {
+      console.error("[FireSync] migration", e);
+      emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์เขียน (เช็ก Security Rules/อีเมล)" : "ย้ายข้อมูลไม่สำเร็จ");
+    }).then(function () { migrating = false; });
+  }
+
+  // ---------- Google Drive (อ่าน data.json เดิมตอนย้าย + สำรองรายสัปดาห์) ----------
+  function driveFetch(url, options) {
+    options = options || {};
+    var headers = Object.assign({}, options.headers, { Authorization: "Bearer " + accessToken });
+    return fetch(url, Object.assign({}, options, { headers: headers })).then(function (res) {
+      if (!res.ok) return res.text().then(function (b) { throw new Error("Drive " + res.status + ": " + b.slice(0, 160)); });
+      return res;
+    });
+  }
+  function findFolder() {
+    var cached = localStorage.getItem("secretary-drive-folder-id");
+    if (cached) return Promise.resolve(cached);
+    var name = cfg.DRIVE_FOLDER_NAME || "SecretaryOhmApp";
+    var q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='" + name + "' and trashed=false");
+    return driveFetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&fields=files(id)&spaces=drive")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.files && d.files.length) return d.files[0].id;
+        return driveFetch("https://www.googleapis.com/drive/v3/files", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name, mimeType: "application/vnd.google-apps.folder" })
+        }).then(function (r) { return r.json(); }).then(function (d2) { return d2.id; });
+      })
+      .then(function (id) { localStorage.setItem("secretary-drive-folder-id", id); return id; });
+  }
+  function readDriveData() {
+    return findFolder().then(function (folderId) {
+      var q = encodeURIComponent("name='" + (cfg.DATA_FILE_NAME || "data.json") + "' and '" + folderId + "' in parents and trashed=false");
+      return driveFetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&fields=files(id)&spaces=drive");
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.files || !d.files.length) return null;
+      return driveFetch("https://www.googleapis.com/drive/v3/files/" + d.files[0].id + "?alt=media").then(function (r) { return r.text(); });
+    }).then(function (t) { return t && t.trim() ? t : null; });
+  }
+  function tokenValid() { return accessToken && Date.now() < tokenExpiresAt - 60000; }
+  function backupToDrive(text) {
+    if (backupRunning) return Promise.resolve(false);
+    if (!tokenValid()) return Promise.reject(new Error("no-token"));
+    backupRunning = true;
+    var d = new Date();
+    var name = "backup-" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + ".json";
+    return findFolder().then(function (folderId) {
+      var boundary = "secretaryohmbackup";
+      var meta = { name: name, parents: [folderId], mimeType: "application/json" };
+      var body = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
+        "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + (text || localText() || "{}") + "\r\n--" + boundary + "--";
+      return driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+        method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: body
+      });
+    }).then(function () {
+      var at = new Date().toISOString();
+      state.lastBackupAt = at;
+      if (docRef) setDoc(docRef, { lastDriveBackupAt: at, lastDriveBackupFile: name }, { merge: true }).catch(function () {});
+      emit(null, "สำรองขึ้น Drive แล้ว (" + name + ") ✓");
+      return true;
+    }).finally(function () { backupRunning = false; });
+  }
+  function backupDue() {
+    return !state.lastBackupAt || (Date.now() - Date.parse(state.lastBackupAt)) > BACKUP_EVERY_MS;
+  }
+  function maybeAutoBackup(text) {
+    if (tokenValid() && backupDue() && !backupRunning) backupToDrive(text).catch(function (e) { console.warn("[FireSync] auto backup", e); });
+  }
+
+  // ---------- ล็อกอิน ----------
+  function initTokenClient() {
+    if (tokenClient) return true;
+    if (!window.google || !google.accounts || !google.accounts.oauth2) return false;
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: cfg.CLIENT_ID,
+      scope: "openid email profile https://www.googleapis.com/auth/drive.file",
+      callback: function (resp) {
+        var cb = pendingTokenCb; pendingTokenCb = null;
+        if (resp.error) { emit("error", "ล็อกอิน Google ไม่สำเร็จ"); if (cb) cb(resp); return; }
+        accessToken = resp.access_token;
+        tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3500) * 1000;
+        if (cb) cb(null, resp);
+      },
+      error_callback: function (err) {
+        var cb = pendingTokenCb; pendingTokenCb = null;
+        emit(state.user ? state.phase : "signedOut", err && err.type === "popup_closed" ? "ปิดหน้าต่างล็อกอินไปก่อน" : "เปิดหน้าล็อกอินไม่ได้");
+        if (cb) cb(err || { error: "popup" });
+      }
+    });
+    return true;
+  }
+  (function waitGis() { if (!initTokenClient()) setTimeout(waitGis, 300); })();
+
+  // ต้องเรียกจาก user gesture (กดปุ่ม) ไม่งั้น iOS บล็อก popup
+  function requestToken(cb) {
+    if (!initTokenClient()) { alert("ยังไม่พร้อมเชื่อมต่อ Google — รอสักครู่แล้วลองใหม่"); return; }
+    pendingTokenCb = cb;
+    tokenClient.requestAccessToken({});
+  }
+  function signIn() {
+    emit("connecting", "กำลังล็อกอิน…");
+    requestToken(function (err, resp) {
+      if (err) return;
+      var cred = GoogleAuthProvider.credential(null, resp.access_token);
+      signInWithCredential(auth, cred).catch(function (e) {
+        console.error("[FireSync] signIn", e);
+        emit("error", "ล็อกอิน Firebase ไม่สำเร็จ (" + (e.code || "error") + ")");
+      });
+    });
+  }
+  function backupNow() {
+    var go = function () {
+      emit(null, "กำลังสำรองขึ้น Drive…");
+      backupToDrive(localText()).catch(function (e) { console.error(e); emit(null, "สำรองขึ้น Drive ไม่สำเร็จ"); });
+    };
+    if (tokenValid()) go(); else requestToken(function (err) { if (!err) go(); });
+  }
+  function doSignOut() {
+    return flush(2500).then(function () { return signOut(auth); });
+  }
+
+  onAuthStateChanged(auth, function (user) {
+    if (unsub) { unsub(); unsub = null; }
+    docRef = null; state.remoteLoaded = false;
+    if (!user) {
+      state.user = null;
+      window.__fireSignedIn = false;
+      emit("signedOut", rejectedMsg || "ยังไม่ได้ล็อกอิน — ข้อมูลอยู่ในเครื่องนี้อย่างเดียว");
+      rejectedMsg = "";
+      return;
+    }
+    if (!isAllowed(user.email)) {
+      rejectedMsg = "บัญชี " + user.email + " ไม่มีสิทธิ์ใช้แอปนี้ — ล็อกอินด้วยบัญชีของโอห์ม";
+      emit("error", rejectedMsg);
+      signOut(auth);
+      return;
+    }
+    state.user = { email: user.email, uid: user.uid };
+    window.__fireSignedIn = true;   // ให้ DriveSync แบบเดิมหยุด push อัตโนมัติ (กันซิงก์ 2 ทาง)
+    emit("connecting", "กำลังโหลดข้อมูลจาก Firestore…");
+    docRef = doc(db, "users", user.uid, "app", "data");
+    unsub = onSnapshot(docRef, { includeMetadataChanges: true }, onSnap, function (e) {
+      console.error("[FireSync] snapshot", e);
+      emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์อ่าน (เช็ก Security Rules/อีเมล)" : "เชื่อมต่อ Firestore ไม่สำเร็จ");
+    });
+  });
+  window.addEventListener("online", function () { if (state.user && state.phase === "offline") emit("connecting", "กลับมาออนไลน์ — กำลังซิงก์…"); });
+
+  window.FireSync = {
+    isSignedIn: function () { return !!state.user; },
+    isReady: function () { return !!docRef && state.remoteLoaded; },
+    schedulePush: schedulePush,
+    flush: flush,
+    signIn: signIn,
+    signOut: doSignOut,
+    backupNow: backupNow,
+    status: function () { return Object.assign({}, state); }
+  };
+  emit("init", "กำลังเตรียมระบบซิงก์…");
+  try { window.dispatchEvent(new CustomEvent("firesync-ready")); } catch (e) {}
 })();
 </script>
 
@@ -477,7 +824,7 @@ const SplitIcon = makeIcon("fa-code-branch");
 const Flame = makeIcon("fa-fire");
 const SortDesc = makeIcon("fa-arrow-down-wide-short"); // ข้อ 24/3: ปุ่มเรียงตามมูลค่าในการ์ดเหรียญ
 
-// ---- จำลอง window.storage ด้วย localStorage (พรีวิวเท่านั้น ยังไม่ต่อ Google Drive) ----
+// ---- window.storage: localStorage = สำเนาในเครื่อง · Firestore = ตัวจริง (ข้อ 55) · Drive แบบเดิม = fallback ตอนยังไม่ล็อกอิน Firestore ----
 window.storage = {
   async get(key) {
     const value = window.localStorage.getItem(key);
@@ -485,7 +832,8 @@ window.storage = {
   },
   async set(key, value) {
     window.localStorage.setItem(key, value);
-    if (window.DriveSync && window.DriveSync.isSignedIn()) window.DriveSync.schedulePush(value);
+    if (window.FireSync && window.FireSync.isSignedIn()) window.FireSync.schedulePush(value);
+    else if (window.DriveSync && window.DriveSync.isSignedIn()) window.DriveSync.schedulePush(value);
     return true;
   }
 };
@@ -1154,14 +1502,9 @@ function applyResets(data) {
   if (nm!==markers) next.resetMarkers=nm;
   return {data:next,changed};
 }
-function useSecretaryData() {
-  const [data,setData]=useState(null);
-  const [loading,setLoading]=useState(true);
-  useEffect(()=>{
-    (async()=>{
-      try {
-        const res=await window.storage.get(STORAGE_KEY);
-        const parsed=res?JSON.parse(res.value):DEFAULT_DATA;
+/* ข้อ 55: แยกขั้น "ทำข้อมูลที่โหลดมาให้เป็นรูปปัจจุบัน" (migration + reset) ออกมา
+   ใช้ทั้งตอนบูต และตอนได้ข้อมูลใหม่จากเครื่องอื่นผ่าน Firestore (event "secretary-remote-data") */
+function prepareLoadedData(parsed) {
         const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,mediaReviews:parsed.mediaReviews||DEFAULT_DATA.mediaReviews,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{}};
         // migration: แก้ format วันที่รายจ่ายที่นำเข้าจาก CSV ให้เป็น ISO (YYYY-MM-DD) เพื่อให้ตัวกรองเดือนทำงานถูกต้อง
         let dateFixed=false;
@@ -1201,11 +1544,33 @@ function useSecretaryData() {
           ? {...withFixedDates,projects:migrated.projects,tasks:migrated.tasks,checkins:migrated.checkins}
           : {...withFixedDates,projects:withFixedDates.projects||[],tasks:withFixedDates.tasks||[],checkins:withFixedDates.checkins||[]};
         const {data:cleaned,changed}=applyResets(withTracker);
+        return {cleaned,needsSave:!!(changed||dateFixed||invTyped||migrated)};
+}
+function useSecretaryData() {
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    // ข้อมูลจากเครื่องอื่น (Firestore onSnapshot) — FireSync เขียนลง localStorage แล้วค่อยยิง event นี้
+    const onRemote=e=>{
+      try {
+        const {cleaned,needsSave}=prepareLoadedData(JSON.parse(e.detail.text));
         setData(cleaned);
-        if (changed||dateFixed||invTyped||migrated) try{await window.storage.set(STORAGE_KEY,JSON.stringify(cleaned));}catch{}
+        setLoading(false);
+        if (needsSave) window.storage.set(STORAGE_KEY,JSON.stringify(cleaned)).catch(()=>{});
+      } catch(err){ console.error("[remote-data]",err); }
+    };
+    window.addEventListener("secretary-remote-data",onRemote);
+    (async()=>{
+      try {
+        const res=await window.storage.get(STORAGE_KEY);
+        const parsed=res?JSON.parse(res.value):DEFAULT_DATA;
+        const {cleaned,needsSave}=prepareLoadedData(parsed);
+        setData(cleaned);
+        if (needsSave) try{await window.storage.set(STORAGE_KEY,JSON.stringify(cleaned));}catch{}
       } catch { setData(DEFAULT_DATA); }
       finally { setLoading(false); }
     })();
+    return ()=>window.removeEventListener("secretary-remote-data",onRemote);
   },[]);
   const persist=async(next)=>{ setData(next); try{await window.storage.set(STORAGE_KEY,JSON.stringify(next));}catch{}; };
   return {data,loading,persist};
@@ -1424,17 +1789,31 @@ function PageNav({page,setPage}) {
     </div>
   );
 }
-/* เมนูบัญชี (วงกลม O มุมขวาบน) — รวมปุ่ม Drive/Export/Import ไว้ที่นี่ เพราะ #driveBar ถูกซ่อนบนจอ <900px
-   ตัวปุ่มจริงยังเป็น plain JS ใน #driveBar เมนูนี้แค่สั่ง .click() ต่อ (อยู่ใน user gesture เดียวกัน popup Google จึงไม่โดนบล็อก) */
+/* เมนูบัญชี (วงกลม O มุมขวาบน)
+   ข้อ 55: หลัก = ล็อกอิน Google → Firestore (window.FireSync, event "sync-status") · Drive เหลือแค่ "สำรองรายสัปดาห์"
+   ถ้าโมดูล Firebase โหลดไม่ขึ้น (เช่นเปิดครั้งแรกตอนออฟไลน์) จะถอยไปโชว์ปุ่ม "เชื่อมต่อ Google Drive" แบบเดิม (#driveBar ใน plain JS)
+   ปุ่มที่เปิด popup Google ต้องเรียกตรงจาก onClick (user gesture) ไม่งั้น iOS บล็อก */
+function daysAgoText(iso){
+  if(!iso) return "ยังไม่เคยสำรอง";
+  const d=Math.floor((Date.now()-Date.parse(iso))/86400000);
+  return d<=0?"สำรองล่าสุดวันนี้":`สำรองล่าสุด ${d} วันก่อน`;
+}
 function AccountMenu() {
   const [open,setOpen]=useState(false);
   const [st,setSt]=useState(()=>window.__driveStatus||{text:"",kind:""});
   const [signed,setSigned]=useState(()=>!!(window.DriveSync&&window.DriveSync.isSignedIn()));
+  const [fs,setFs]=useState(()=>window.__syncStatus||null);
+  const [hasFire,setHasFire]=useState(()=>!!window.FireSync);
   const ref=useRef(null);
   useEffect(()=>{
     const onSt=e=>{ setSt(e.detail||{text:"",kind:""}); setSigned(!!(window.DriveSync&&window.DriveSync.isSignedIn())); };
+    const onFs=e=>{ setFs(e.detail||null); setHasFire(!!window.FireSync); };
+    const onReady=()=>setHasFire(true);
     window.addEventListener("drive-status",onSt);
-    return ()=>window.removeEventListener("drive-status",onSt);
+    window.addEventListener("sync-status",onFs);
+    window.addEventListener("firesync-ready",onReady);
+    if(window.FireSync){ setHasFire(true); setFs(window.__syncStatus||null); }
+    return ()=>{ window.removeEventListener("drive-status",onSt); window.removeEventListener("sync-status",onFs); window.removeEventListener("firesync-ready",onReady); };
   },[]);
   useEffect(()=>{
     if(!open) return;
@@ -1443,18 +1822,38 @@ function AccountMenu() {
     return ()=>document.removeEventListener("pointerdown",onDoc);
   },[open]);
   const clickById=id=>{ const b=document.getElementById(id); if(b) b.click(); };
-  const state=st.kind==="err"?"err":(signed?"on":"off");
-  const statusText=st.text||(signed?"เชื่อมต่อ Drive แล้ว ✓":"ยังไม่ได้เชื่อมต่อ Google Drive");
+  let state,statusText;
+  const fireUser=hasFire&&fs&&fs.user;
+  if(hasFire&&fs){
+    state=fs.phase==="error"?"err":fs.phase==="synced"?"on":(fs.phase==="signedOut"||fs.phase==="init")?"off":"busy";
+    statusText=fs.text||"";
+  } else {
+    state=st.kind==="err"?"err":(signed?"on":"off");
+    statusText=st.text||(signed?"เชื่อมต่อ Drive แล้ว ✓":"ยังไม่ได้เชื่อมต่อ Google Drive");
+  }
   return (
     <div className="acct-wrap" ref={ref}>
       <button className={`nav-icon-btn avatar acct-btn acct-${state}`} onClick={()=>setOpen(v=>!v)} title="บัญชีและการซิงก์">O<span className="acct-dot"></span></button>
       {open&&(
         <div className="acct-pop">
           <div className="acct-head">คุณโอห์ม</div>
+          {fireUser&&<div className="acct-email">{fs.user.email}</div>}
           <div className={`acct-status ${state}`}>{statusText}</div>
-          <button className="acct-item" disabled={signed} onClick={()=>clickById("driveConnectBtn")}><i className="fa-solid fa-cloud"></i>{signed?"เชื่อมต่อ Drive แล้ว":"เชื่อมต่อ Google Drive"}</button>
+          {hasFire?(
+            fireUser?(
+              <button className="acct-item" onClick={()=>window.FireSync.backupNow()}>
+                <i className="fa-solid fa-cloud-arrow-up"></i>
+                <span className="acct-item-txt">สำรองขึ้น Google Drive ตอนนี้<small>{daysAgoText(fs.lastBackupAt)} · อัตโนมัติทุก 7 วัน</small></span>
+              </button>
+            ):(
+              <button className="acct-item" onClick={()=>window.FireSync.signIn()}><i className="fa-brands fa-google"></i>เข้าสู่ระบบ Google (ซิงก์ทุกเครื่อง)</button>
+            )
+          ):(
+            <button className="acct-item" disabled={signed} onClick={()=>clickById("driveConnectBtn")}><i className="fa-solid fa-cloud"></i>{signed?"เชื่อมต่อ Drive แล้ว":"เชื่อมต่อ Google Drive"}</button>
+          )}
           <button className="acct-item" onClick={()=>{clickById("exportJsonBtn");setOpen(false);}}><i className="fa-solid fa-file-export"></i>Export JSON (สำรองข้อมูล)</button>
           <button className="acct-item" onClick={()=>{clickById("importJsonBtn");setOpen(false);}}><i className="fa-solid fa-file-import"></i>Import JSON (กู้คืนข้อมูล)</button>
+          {fireUser&&<button className="acct-item acct-signout" onClick={()=>{ if(window.confirm("ออกจากระบบ? ข้อมูลในเครื่องนี้ยังอยู่ แต่จะไม่ซิงก์จนกว่าจะล็อกอินใหม่")) window.FireSync.signOut(); }}><i className="fa-solid fa-right-from-bracket"></i>ออกจากระบบ</button>}
         </div>
       )}
     </div>

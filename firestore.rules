@@ -1,0 +1,16 @@
+rules_version = '2';
+// Security Rules ของ Firestore — เลขา Ohm (ข้อ 55 ขั้นที่ 2)
+// วิธีใช้: Firebase Console → Firestore Database → แท็บ Rules → ลบของเดิม วางทั้งไฟล์นี้ → Publish
+// อนุญาตเฉพาะ: ล็อกอินแล้ว + อ่าน/เขียนได้แค่ใต้ users/{uid ของตัวเอง} + อีเมลต้องเป็นของ ohm และยืนยันแล้ว
+// ถ้าเปลี่ยนอีเมล ต้องแก้ทั้งที่นี่และ ALLOWED_EMAILS ใน config.js
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email == "supakit6906@gmail.com"
+        && request.auth.token.email_verified == true;
+    }
+    // ที่อื่นทั้งหมด: ปิด (ค่าเริ่มต้นของ production mode อยู่แล้ว)
+  }
+}

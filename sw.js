@@ -1,6 +1,6 @@
 // Service Worker — เลขา Ohm
 // Cache-first สำหรับไฟล์แอปหลัก + CDN, network-first สำหรับทุกอย่างอื่น (เช่น Google Drive API)
-const CACHE_NAME = "secretary-ohm-v6";   // bump ทุกครั้งที่ deploy ของใหม่ ไม่งั้นเครื่องเก่าจะติด cache เดิม
+const CACHE_NAME = "secretary-ohm-v7";   // bump ทุกครั้งที่ deploy ของใหม่ ไม่งั้นเครื่องเก่าจะติด cache เดิม
 
 const PRECACHE_URLS = [
   "./preview-dashboard.html",
@@ -14,7 +14,11 @@ const PRECACHE_URLS = [
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
   "https://unpkg.com/prop-types@15.8.1/prop-types.js",
-  "https://unpkg.com/recharts@2.15.0/umd/Recharts.js"
+  "https://unpkg.com/recharts@2.15.0/umd/Recharts.js",
+  // ข้อ 55: Firebase SDK (ESM) — ให้เปิดแอปออฟไลน์ได้หลังเคยเปิดออนไลน์แล้ว
+  "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js",
+  "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js",
+  "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js"
 ];
 
 self.addEventListener("install", (event) => {
@@ -42,6 +46,7 @@ self.addEventListener("fetch", (event) => {
   const url = event.request.url;
 
   // ไม่แคช Google API / Drive — ต้องเป็นข้อมูลสดเสมอ
+  // (Firestore/Firebase Auth ก็อยู่ใต้ googleapis.com — ปล่อยผ่านทั้งหมด)
   if (url.includes("googleapis.com") || url.includes("accounts.google.com")) {
     return;
   }
