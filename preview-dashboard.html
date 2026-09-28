@@ -26,12 +26,12 @@
 <script src="https://unpkg.com/recharts@2.15.0/umd/Recharts.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
 
-<div id="driveBar" style="position:fixed;left:16px;bottom:16px;z-index:45;display:flex;flex-direction:column;align-items:center;gap:8px;font-family:'Noto Sans Thai',sans-serif;background:rgba(23,38,32,.9);backdrop-filter:blur(6px);border:1px solid #304a3f;border-radius:999px;padding:12px 7px;box-shadow:0 18px 40px -24px rgba(0,0,0,.9);">
-  <button id="exportJsonBtn" title="Export JSON (สำรองข้อมูล)" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#a9c1b6;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-export"></i></button>
-  <button id="importJsonBtn" title="Import JSON (กู้คืนข้อมูล)" style="width:36px;height:36px;border-radius:999px;background:transparent;border:1px solid #304a3f;color:#d9b26a;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;"><i class="fa-solid fa-file-import"></i></button>
-  <input id="importJsonFile" type="file" accept="application/json" style="display:none;" />
+<!-- ข้อ 55 ขั้นที่ 3: เลิกแถบลอยซ้ายล่าง (ohm ขอ) — Export/Import อยู่ในเมนู O แล้ว ปุ่มพวกนี้เหลือเป็นตัวกดซ่อนให้ AccountMenu เรียก -->
+<div id="driveBar" hidden style="display:none;">
+  <button id="exportJsonBtn" type="button"></button>
+  <button id="importJsonBtn" type="button"></button>
+  <input id="importJsonFile" type="file" accept="application/json" />
 </div>
-<style>@media(max-width:900px){#driveBar{display:none !important;}}</style>
 
 <script>
 // ================== Export/Import JSON สำรองข้อมูล (plain JS, ทำงานนอก React) ==================

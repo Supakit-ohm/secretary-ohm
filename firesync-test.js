@@ -95,7 +95,8 @@ const DOC="users/u1/app/data";
   check("สถานะ synced + อีเมลถูก",s.phase==="synced"&&s.user.email==="supakit6906@gmail.com",s.phase+" / "+s.text);
   check("สำรองขึ้น Drive อัตโนมัติรอบแรก (ยังไม่เคยสำรอง)",SERVER.backups.length===1&&!!SERVER.docs[DOC].lastDriveBackupAt);
   check("ลบ Drive sync แบบเดิมแล้ว (ไม่มี DriveSync/#driveConnectBtn/#driveStatus)",await pc.evaluate(()=>!window.DriveSync&&!document.getElementById("driveConnectBtn")&&!document.getElementById("driveStatus")));
-  check("ปุ่ม Export/Import ยังอยู่",await pc.evaluate(()=>!!document.getElementById("exportJsonBtn")&&!!document.getElementById("importJsonBtn")));
+  check("ปุ่ม Export/Import ยังอยู่ (ซ่อน ให้เมนู O เรียก)",await pc.evaluate(()=>!!document.getElementById("exportJsonBtn")&&!!document.getElementById("importJsonBtn")));
+  check("ไม่มีแถบลอยซ้ายล่างให้เห็นแล้ว",await pc.evaluate(()=>{const e=document.getElementById("driveBar");return !e||e.offsetParent===null&&e.getBoundingClientRect().width===0;}));
   check("ล้าง key secretary-drive-file-id เดิม",await pc.evaluate(()=>!localStorage.getItem("secretary-drive-file-id")));
 
   console.log("\n[3] iPhone: ล็อกอินค้างไว้แล้ว ข้อมูลในเครื่องเป็นค่าตั้งต้น → ต้องได้ข้อมูลจริงจาก Firestore");
