@@ -1297,4 +1297,6 @@ js/app.js           — root + routing
 - LINE: ต้องสร้าง LINE Official Account ก่อน แล้วเปิด Messaging API จาก LINE Official Account Manager (สร้าง channel อัตโนมัติ) · **เลือก Provider แล้วเปลี่ยนไม่ได้** · ฟรี ~300 push/เดือน (ไทย)
 - **รอโอมส่งกลับมา (ห้ามแปะในแชท — ใส่ไฟล์ `secrets.local.txt` ในโฟลเดอร์นี้ ซึ่งอยู่ใน .gitignore แล้ว):** LINE Channel secret · LINE Channel access token (long-lived) · OpenAI API key (project "secretary-jack") · แล้วบอกในแชทแค่ว่า "ใส่แล้ว"
 - ถัดไป = ขั้นที่ 6 (บอตเฟส 1: Apps Script webhook + persona Jack + tool calling + ตัวนับเพดาน $5 + ขอ userId ของโอมจากข้อความแรก)
+- ✅ **โอมทำเสร็จแล้ว (2026-09-28):** เติม $5 + ปิด auto-recharge · สร้าง key ในโปรเจกต์ `secretary-jack` · สร้าง LINE OA "Jack" + เปิด Messaging API + ปิดตอบกลับอัตโนมัติ/ทักทาย + เปิด Webhook + เพิ่มเพื่อนแล้ว · `secrets.local.txt` กรอกครบ 3 ค่า (เช็กแค่ความยาว: secret 32 / token 172 / key 164 ขึ้นต้น sk-) · **ยังไม่ได้ทดสอบเรียกจริง** — shell บนเครื่องโอมโดน proxy บล็อก api.line.me/api.openai.com (403) → ทดสอบจริงใน Apps Script ตอนขั้นที่ 6 (ถ้าค่าไหนผิด ให้โอมออกใหม่)
+- **ขั้นที่ 5 ปิด** → ถัดไป = ขั้นที่ 6 (session ใหม่): Apps Script webhook + persona Jack + tool calling + ตัวนับเพดาน $5 · ค่า secret ใส่ใน Script Properties ของ Apps Script (ไม่ใส่ในโค้ด) · webhook URL ใส่รหัสลับใน query · จับ userId ของโอมจากข้อความแรกแล้วล็อกไว้
 
