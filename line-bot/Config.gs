@@ -34,6 +34,18 @@ var CONFIG = {
   // ---- ความจำระยะสั้น ----
   HISTORY_TURNS: 6,            // จำบทสนทนาล่าสุดกี่รอบ (เก็บ 6 ชม.)
 
+  // ---- ความจำระยะยาว (เก็บใน Firestore parts/k.jackMemory — ติดไปกับ Export/สำรอง Drive ของแอปด้วย) ----
+  // โอมสั่ง "จำไว้ว่า…" หรือ Jack ถามก่อนแล้วโอมตกลง · ดู/ลบ: พิมพ์ "jack จำอะไรบ้าง"
+  MEMORY_MAX_ITEMS: 60,        // เต็มแล้วต้องลบของเก่าก่อน (กัน prompt บวม)
+  MEMORY_MAX_CHARS: 200,       // ยาวสุดต่อข้อ
+
+  // ---- ทักก่อน (push) — แก้เวลาแล้วต้องรัน setupSchedules() ใหม่ ----
+  MORNING_PUSH: true,          // สรุปเช้า
+  MORNING_HOUR: 7,             // 07:00 (Apps Script ยิงคลาดได้ ±15 นาที)
+  MORNING_USE_AI: true,        // true = gpt-6-luna เขียนสไตล์ Jack (~฿1/เดือน) · false = แม่แบบตายตัว ฟรี
+  JOURNAL_PUSH: true,          // ชวนเขียน Journal (ถ้าวันนั้นเขียนแล้ว = ไม่ทัก)
+  JOURNAL_HOUR: 20,            // 20:00
+
   // ---- LINE ----
   QUICK_REPLY: true,           // แนบปุ่ม "แก้ / ยกเลิก" หลังบันทึก
 

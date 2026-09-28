@@ -113,10 +113,13 @@ const once = (calls, text) => (body, outs) => outs.length ? { text: text || "โ
 // ---------- Fake LINE ----------
 const lineLog = [];
 const richmenus = [{ richMenuId: "old1", name: "jack-main-v0" }, { richMenuId: "other", name: "manual-menu" }];
+let pushFail = null;
 let rmDefault = null, rmImage = null, rmSpec = null;
 function line(url, opt) {
   const m = (opt.method || "get").toLowerCase();
   if (url.endsWith("/v2/bot/info")) return res(200, { displayName: "Jack", basicId: "@jack" });
+  if (url.endsWith("/v2/bot/message/quota/consumption")) return res(200, { totalUsage: lineLog.filter((x) => x.path === "/v2/bot/message/push").length });
+  if (url.endsWith("/v2/bot/message/push") && pushFail) return res(pushFail, { message: "fail" });
   if (url.endsWith("/v2/bot/richmenu/list")) return res(200, { richmenus: richmenus.slice() });
   if (url.endsWith("/v2/bot/richmenu") && m === "post") { rmSpec = JSON.parse(opt.payload); richmenus.push({ richMenuId: "new1", name: rmSpec.name }); return res(200, { richMenuId: "new1" }); }
   if (url.includes("api-data.line.me/v2/bot/richmenu/new1/content")) { assert.strictEqual(opt.contentType, "image/png"); rmImage = opt.payload; return res(200, {}); }
@@ -131,6 +134,7 @@ function res(code, obj) { const t = JSON.stringify(obj); return { getResponseCod
 // ---------- Fake GAS ----------
 const propsMap = { LINE_CHANNEL_ACCESS_TOKEN: "L", OPENAI_API_KEY: "sk-x", WEBHOOK_KEY: "SECRET" };
 const cacheMap = {};
+const triggers = [];
 function fmtDate(d, tz, p) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
   const wd = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday];
@@ -150,14 +154,22 @@ const ctx = {
   } },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in propsMap ? propsMap[k] : null), setProperty: (k, v) => { propsMap[k] = String(v); }, deleteProperty: (k) => { delete propsMap[k]; } }) },
   CacheService: { getScriptCache: () => ({ get: (k) => (k in cacheMap ? cacheMap[k] : null), put: (k, v) => { assert.ok(String(v).length < 100000, "cache value too big"); cacheMap[k] = String(v); }, remove: (k) => { delete cacheMap[k]; }, removeAll: (ks) => ks.forEach((k) => delete cacheMap[k]) }) },
-  LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+  LockService: { getScriptLock: () => ({ waitLock: () => {}, tryLock: () => true, releaseLock: () => {} }) },
   Utilities: {
     formatDate: fmtDate, getUuid: () => require("crypto").randomUUID(), sleep: () => {},
     newBlob: (s) => ({ getBytes: () => [...Buffer.from(s, "utf8")] }),
     base64EncodeWebSafe: (x) => Buffer.from(x).toString("base64url"),
   },
   ContentService: { createTextOutput: (t) => ({ t }) },
-  ScriptApp: { getOAuthToken: () => "tok" },
+  ScriptApp: {
+    getOAuthToken: () => "tok",
+    getProjectTriggers: () => triggers.slice(),
+    deleteTrigger: (t) => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
+    newTrigger: (fn) => { const spec = { fn }; const b = {
+      timeBased: () => b, atHour: (h) => { spec.hour = h; return b; }, nearMinute: (m) => { spec.minute = m; return b; },
+      everyDays: (d) => { spec.everyDays = d; return b; }, inTimezone: (tz) => { spec.tz = tz; return b; },
+      create: () => { const t = { spec, getHandlerFunction: () => fn }; triggers.push(t); return t; } }; return b; },
+  },
 };
 vm.createContext(ctx);
 for (const f of ["Config.gs", "Persona.gs", "Bot.gs"]) vm.runInContext(fs.readFileSync(path.join(DIR, f), "utf8"), ctx, { filename: f });
@@ -568,5 +580,232 @@ test("ปุ่ม ยอดเดือนนี้ → สรุปไม่�
 });
 
 test("checkAll ผ่านทุกข้อกับของปลอม", () => { assert.strictEqual(ctx.checkAll(), true); });
+
+
+// =================== ขั้นที่ 7: ความจำระยะยาว ===================
+const lastPush = () => { const r = lineLog.filter((x) => x.path === "/v2/bot/message/push").pop(); return r && r.body; };
+const pushCount = () => lineLog.filter((x) => x.path === "/v2/bot/message/push").length;
+const mem = () => JSON.parse(JSON.stringify(app().jackMemory || []));
+
+test("ความจำ: ยังว่าง → context บอกว่ายังไม่มี · 'jack จำอะไรบ้าง' ไม่เรียก AI", () => {
+  aiScript = () => ({ text: "ครับ" });
+  post([msg("หวัดดี")]);
+  assert.ok(aiLog[aiLog.length - 1].instructions.includes("สิ่งที่ Jack จำเกี่ยวกับโอม: (ยังไม่มี)"));
+  const n = aiLog.length;
+  post([msg("jack จำอะไรบ้าง")]);
+  assert.strictEqual(aiLog.length, n);
+  assert.ok(lastReply().text.includes("ยังไม่ได้จำ"));
+});
+
+test("ความจำ: สั่งจำ → เก็บใน k.jackMemory (แอปถือไว้ได้ รูปแบบมาตรฐาน) + ปุ่ม 'ลืม:' + รอบถัดไป AI เห็น", () => {
+  aiScript = once([{ name: "remember", args: { text: "โอมไม่กินเผ็ด" } }], "จำไว้แล้วครับ");
+  post([msg("จำไว้ว่าเราไม่กินเผ็ด")]);
+  assert.deepStrictEqual(mem().map((m) => [m.id, m.text]), [["m1", "โอมไม่กินเผ็ด"]]);
+  assert.strictEqual(mem()[0].at, TODAY);
+  canonical();
+  const q = lastReply().quickReply.items;
+  assert.ok(q.some((i) => i.action.data === "a=forget&id=m1" && i.action.label.length <= 20));
+  aiScript = () => ({ text: "โอเค" });
+  post([msg("กินอะไรดี")]);
+  assert.ok(aiLog[aiLog.length - 1].instructions.includes("ข้อ 1 (id=m1): โอมไม่กินเผ็ด"));
+});
+
+test("ความจำ: ซ้ำไม่เพิ่ม · id เดินต่อ · รหัสผ่าน/เลขบัญชีไม่จำ · เบอร์โทรจำได้", () => {
+  aiScript = once([{ name: "remember", args: { text: "โอมไม่กินเผ็ด" } }, { name: "remember", args: { text: "ทุกวันที่ 25 โอนค่าเช่าร้าน 15,000 บาท" } },
+    { name: "remember", args: { text: "รหัสผ่านเน็ตบ้าน abc123" } }, { name: "remember", args: { text: "บัญชีกสิกร 123-4-56789-0" } },
+    { name: "remember", args: { text: "เบอร์ซัพพลายเออร์ผ้า 081-234-5678" } }]);
+  post([msg("จำหลายอย่าง")]);
+  const outs = aiLog[aiLog.length - 1].input.filter((x) => x.type === "function_call_output").map((o) => JSON.parse(o.output));
+  assert.strictEqual(outs[0].already, true);
+  assert.strictEqual(outs[2].ok, false); assert.strictEqual(outs[3].ok, false);
+  assert.deepStrictEqual(mem().map((m) => m.id), ["m1", "m2", "m3"]);
+  assert.ok(mem().find((m) => m.text.includes("081-234-5678")));
+  canonical();
+});
+
+test("ความจำ: รายการ + ปุ่มลืม (postback ไม่ใช้ AI) · ลืมผ่าน AI ด้วย id", () => {
+  const n = aiLog.length;
+  post([msg("Jack จำอะไรบ้าง?")]);
+  const r = lastReply();
+  assert.ok(r.text.includes("1. โอมไม่กินเผ็ด") && r.text.includes("(3/60)"), r.text);
+  const btn = r.quickReply.items.find((i) => i.action.data === "a=forget&id=m2");
+  post([pb(btn.action.data)]);
+  assert.ok(lastReply().text.startsWith("ลืมแล้วครับ"));
+  assert.deepStrictEqual(mem().map((m) => m.id), ["m1", "m3"]);
+  post([pb("a=forget&id=m2")]);
+  assert.ok(lastReply().text.includes("ไม่พบ"));
+  assert.strictEqual(aiLog.length, n);
+  aiScript = once([{ name: "forget", args: { id: "m3" } }], "ลืมแล้วครับ");
+  post([msg("ลืมเบอร์ซัพไปเลย")]);
+  assert.deepStrictEqual(mem().map((m) => m.id), ["m1"]);
+  canonical();
+});
+
+test("ความจำ: เต็มแล้วไม่จำเพิ่ม", () => {
+  const was = ctx.CONFIG.MEMORY_MAX_ITEMS; ctx.CONFIG.MEMORY_MAX_ITEMS = 1;
+  aiScript = once([{ name: "remember", args: { text: "เรื่องใหม่" } }]);
+  post([msg("จำอันนี้ด้วย")]);
+  const out = JSON.parse(aiLog[aiLog.length - 1].input.filter((x) => x.type === "function_call_output")[0].output);
+  assert.strictEqual(out.ok, false); assert.ok(out.error.includes("เต็ม"));
+  assert.strictEqual(mem().length, 1);
+  ctx.CONFIG.MEMORY_MAX_ITEMS = was;
+});
+
+test("ความจำ: Jack ถาม 'ให้ Jack จำไว้ไหมครับ' → มีปุ่ม จำไว้เลย/ไม่ต้องจำ · 'ไม่ต้องจำ' ไม่เรียก AI", () => {
+  aiScript = () => ({ text: "เข้าใจเลยครับ ให้ Jack จำไว้ไหมครับ: โอมอยากเก็บเงินดาวน์รถ" });
+  post([msg("ปีหน้าอยากดาวน์รถ")]);
+  const labels = lastReply().quickReply.items.map((i) => i.action.label);
+  assert.deepStrictEqual(labels, ["จำไว้เลย", "ไม่ต้องจำ"]);
+  const n = aiLog.length;
+  post([msg("ไม่ต้องจำ")]);
+  assert.strictEqual(aiLog.length, n);
+  assert.strictEqual(mem().length, 1);
+});
+
+test("ความจำ: rules ใน prompt ห้ามจำเองโดยไม่ถาม", () => {
+  const ins = aiLog[aiLog.length - 1].instructions;
+  assert.ok(ins.includes("ห้ามจำเองโดยไม่ถาม") && ins.includes("ห้ามจำรหัสผ่าน"));
+  assert.ok(aiLog[aiLog.length - 1].tools.some((t) => t.name === "remember") && aiLog[aiLog.length - 1].tools.some((t) => t.name === "forget"));
+});
+
+// =================== ขั้นที่ 7: ทักก่อน ===================
+test("setupSchedules → ทริกเกอร์ 07:00 + 20:00 เขต Asia/Bangkok · รันซ้ำไม่ซ้อน · removeSchedules ลบหมด", () => {
+  ctx.setupSchedules(); ctx.setupSchedules();
+  const sp = triggers.map((t) => t.spec).sort((a, b) => a.hour - b.hour);
+  assert.deepStrictEqual(sp, [{ fn: "morningPush", hour: 7, minute: 0, everyDays: 1, tz: "Asia/Bangkok" }, { fn: "eveningJournalPush", hour: 20, minute: 0, everyDays: 1, tz: "Asia/Bangkok" }]);
+  triggers.push({ spec: { fn: "other" }, getHandlerFunction: () => "other" });
+  ctx.removeSchedules();
+  assert.deepStrictEqual(triggers.map((t) => t.getHandlerFunction()), ["other"]);
+  triggers.length = 0;
+  ctx.setupSchedules();
+  assert.strictEqual(triggers.length, 2);
+});
+
+test("สรุปเช้า (AI): ส่ง push หาโอม + ข้อมูลที่ส่งให้ AI ครบ/ถูก + ความจำ + ปุ่มลัด + วันเดียวส่งครั้งเดียว", () => {
+  aiScript = (body) => ({ text: "☀️ อรุณสวัสดิ์ครับโอม (AI)" });
+  const n = aiLog.length, p0 = pushCount();
+  assert.strictEqual(ctx.morningPush(), "sent");
+  assert.strictEqual(aiLog.length - n, 1);
+  const b = aiLog[aiLog.length - 1];
+  assert.strictEqual(b.model, "gpt-6-luna"); assert.ok(!b.tools);
+  assert.ok(b.instructions.includes("โอมไม่กินเผ็ด"));
+  const f = JSON.parse(b.input[0].content);
+  assert.ok(f.tasksOverdue.some((x) => x.startsWith("งานเลยกำหนด")));
+  assert.ok(f.recurringToday.includes("อ่านหนังสือ") || f.recurringToday.length === 0);
+  assert.deepStrictEqual(f.eventsToday, ["14:00 นัดลูกค้า"]);
+  const spent = month(MONTH).reduce((s, e) => s - e.amount, 0);
+  assert.strictEqual(f.month.budget, 6500);
+  assert.ok(Math.abs(f.month.spent - spent) < 0.01);
+  assert.ok(Math.abs(f.month.budgetLeft - (6500 - spent)) < 0.01);
+  const p = lastPush();
+  assert.strictEqual(pushCount() - p0, 1);
+  assert.strictEqual(p.to, "U_OHM");
+  assert.strictEqual(p.messages[0].text, "☀️ อรุณสวัสดิ์ครับโอม (AI)");
+  assert.deepStrictEqual(p.messages[0].quickReply.items.map((i) => i.action.data), ["a=menu&m=tasks", "a=menu&m=month"]);
+  assert.strictEqual(ctx.morningPush(), "already");
+  assert.strictEqual(pushCount() - p0, 1);
+  const hist = JSON.parse(cacheMap.hist);
+  assert.ok(hist[hist.length - 1].u.includes("Jack ทักเอง") && hist[hist.length - 1].a.includes("(AI)"));
+});
+
+test("สรุปเช้า: เพดานเต็ม → แม่แบบไม่ใช้ AI · ตัวเลขตรง ไม่มี NaN", () => {
+  const key = Object.keys(propsMap).find((k) => k.startsWith("usage_"));
+  const u = JSON.parse(propsMap[key]); const was = u.usd; u.usd = 5; propsMap[key] = JSON.stringify(u);
+  const n = aiLog.length;
+  assert.strictEqual(ctx.testMorningPush(), "sent");
+  assert.strictEqual(aiLog.length, n);
+  const t = lastPush().messages[0].text;
+  if (process.env.SHOW) console.log(t + "\n---");
+  const spent = month(MONTH).reduce((s, e) => s - e.amount, 0);
+  const fmt = (x) => { x = Math.round(x * 100) / 100; const [a, b] = String(Math.abs(x)).split("."); return (x < 0 ? "-" : "") + a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (b ? "." + b : ""); };
+  assert.ok(t.includes("อรุณสวัสดิ์") && t.includes("งานเลยกำหนด") && t.includes("14:00 นัดลูกค้า"), t);
+  assert.ok(t.includes("งบเดือนนี้เหลือ " + fmt(6500 - spent)), t);
+  assert.ok(!/NaN|undefined|null/.test(t), t);
+  u.usd = was; propsMap[key] = JSON.stringify(u);
+});
+
+test("สรุปเช้า: OpenAI ล่ม → ยังส่งแม่แบบ · ปิด MORNING_USE_AI → ไม่เรียก AI", () => {
+  aiFail = { code: 500, msg: "down" };
+  assert.strictEqual(ctx.testMorningPush(), "sent");
+  aiFail = null;
+  assert.ok(lastPush().messages[0].text.includes("อรุณสวัสดิ์ครับโอม ·"));
+  ctx.CONFIG.MORNING_USE_AI = false;
+  const n = aiLog.length;
+  ctx.testMorningPush();
+  assert.strictEqual(aiLog.length, n);
+  ctx.CONFIG.MORNING_USE_AI = true;
+});
+
+test("สรุปเช้า: ต้นเดือน (เมื่อวาน = เดือนก่อน) อ่านรายจ่ายเมื่อวานจากเอกสารเดือนก่อน", () => {
+  const c = { today: MONTH + "-01", time: "07:00", hour: 7, weekday: 1, records: [] };
+  const y = ctx.addDays_(c.today, -1);
+  const yDoc = "fg.expenses." + y.slice(0, 7);
+  const arr = JSON.parse(store[yDoc] ? store[yDoc].json : "[]");
+  arr.push({ id: "y1", date: y, amount: -123, category: "อาหาร", memo: "เมื่อวาน", source: "manual" });
+  store[yDoc] = { json: JSON.stringify(arr), by: "app", updateTime: ts() };
+  const f = ctx.morningFacts_(c);
+  const exp = arr.filter((e) => e.date === y).reduce((s, e) => s - e.amount, 0);
+  assert.strictEqual(f.yesterdaySpent, Math.round(exp * 100) / 100);
+  assert.ok(f.yesterdaySpent >= 123);
+});
+
+function clearTodayJournal() {
+  const id = "g.journal." + TODAY.slice(0, 4);
+  if (store[id]) store[id] = { json: JSON.stringify(JSON.parse(store[id].json).filter((j) => j.date !== TODAY)), by: "app", updateTime: ts() };
+  delete propsMap.PUSHED_journal;
+}
+test("ชวน Journal: ยังไม่เขียน → ส่ง พร้อมยอดวันนี้ + ปุ่มเขียนเลย/ข้าม · ปุ่มข้ามตอบไม่ใช้ AI", () => {
+  aiScript = once([{ name: "add_expense", args: { amount: 80, category: "อาหาร", memo: "ข้าวเย็น journal" } }]);
+  post([msg("ข้าวเย็น 80")]);
+  clearTodayJournal();
+  const n = aiLog.length;
+  assert.strictEqual(ctx.eveningJournalPush(), "sent");
+  assert.strictEqual(aiLog.length, n);
+  const m = lastPush().messages[0];
+  const todaySpent = month(MONTH).filter((e) => e.date === TODAY).reduce((s, e) => s - e.amount, 0);
+  const fmt = (x) => String(Math.round(x * 100) / 100).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  assert.ok(m.text.includes("Journal") && m.text.includes("ใช้ไป " + fmt(todaySpent) + " บาท"), m.text);
+  const q = m.quickReply.items.map((i) => i.action);
+  assert.strictEqual(q[0].inputOption, "openKeyboard"); assert.strictEqual(q[0].fillInText, "journal วันนี้ ");
+  assert.strictEqual(q[1].data, "a=skipj");
+  post([pb("a=skipj")]);
+  assert.ok(lastReply().text.includes("พรุ่งนี้"));
+  assert.strictEqual(aiLog.length, n);
+  assert.strictEqual(ctx.eveningJournalPush(), "already");
+});
+
+test("ชวน Journal: วันนี้เขียนแล้ว → ไม่ทัก (ไม่เสียโควตา) · ถ้า Journal วันนี้ว่างเปล่ายังทัก", () => {
+  clearTodayJournal();
+  const yr = TODAY.slice(0, 4), id = "g.journal." + yr;
+  const arr = JSON.parse(store[id] ? store[id].json : "[]");
+  arr.push({ id: "jt", date: TODAY, entry: "  " });
+  store[id] = { json: JSON.stringify(arr), by: "app", updateTime: ts() };
+  delete propsMap.PUSHED_journal;
+  assert.strictEqual(ctx.eveningJournalPush(), "sent");
+  aiScript = once([{ name: "add_journal", args: { text: "วันนี้ขายดี" } }]);
+  post([msg("วันนี้ขายดี")]);
+  delete propsMap.PUSHED_journal;
+  const p0 = pushCount();
+  assert.strictEqual(ctx.eveningJournalPush(), "skipped");
+  assert.strictEqual(pushCount(), p0);
+  assert.strictEqual(propsMap.PUSHED_journal, TODAY);
+});
+
+test("ทักก่อน: ยังไม่ผูก LINE → ไม่ส่ง · LINE push พัง → เก็บ LAST_ERROR ไม่ throw", () => {
+  const owner = propsMap.OWNER_LINE_USER_ID;
+  delete propsMap.OWNER_LINE_USER_ID;
+  assert.strictEqual(ctx.testMorningPush(), "no-owner");
+  propsMap.OWNER_LINE_USER_ID = owner;
+  pushFail = 429;
+  assert.strictEqual(ctx.testMorningPush(), "error");
+  pushFail = null;
+  assert.ok(propsMap.LAST_ERROR.includes("LINE push 429"));
+});
+
+test("สถานะ jack แสดงความจำ/ตั้งเวลา/จำนวน push", () => {
+  post([msg("สถานะ jack")]);
+  const t = lastReply().text;
+  assert.ok(t.includes("ความจำระยะยาว: 1/60") && t.includes("สรุปเช้า 07:00") && t.includes("Journal 20:00") && /ส่งไป \d+ ครั้ง/.test(t), t);
+});
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));
