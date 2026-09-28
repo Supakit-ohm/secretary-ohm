@@ -1164,3 +1164,15 @@ js/app.js           — root + routing
     **smoke-test.js:** แก้ helper `addPbWithChannel` ให้เลือกจาก `#pb-channel-select` แทนการพิมพ์ (เลือกตรงถ้ามีตัวเลือกอยู่แล้ว, ใช้ `__new__`+พิมพ์ถ้ายังไม่มี) · แก้เช็คเดิม "ตัวเลือกประเภทเหลือแค่ video/podcast" ให้ query เจาะจง `#pb-type-select option` (ไม่งั้นจะนับตัวเลือกของ dropdown ช่องปนด้วยแล้ว fail) · เพิ่มบล็อกใหม่ "[ข้อ 49]" 4 เช็ค (dropdown มีทั้งชื่อช่องเดิม+ตัวเลือกสร้างใหม่, เลือกช่องเดิมจาก dropdown ไม่เด้งช่องพิมพ์ใหม่ขึ้นมา, บันทึกแล้วเข้ากลุ่มเดียวกันจริง, กด "+ สร้างช่องใหม่..." แล้วกด "ยกเลิก" กลับเป็น dropdown ค่าว่างถูกต้อง) — **ผลรันจริงก่อน commit: ผ่าน (ดูตัวเลขล่าสุดที่ท้ายผลรัน)**
 
     **ขั้นต่อไป:** รอ ohm push แล้วลองสร้างช่องใหม่/เลือกช่องเดิมดูว่า flow ลื่นไหม · **ohm ยังต้อง push เอง** (รวมกับข้อ 48 ที่ยังไม่เคย push เหมือนกัน — ทำสองข้อนี้ต่อกันในวันเดียวกันก่อน push เลย)
+
+---
+
+## ข้อ 54 (2026-09-28) — เมนูบัญชี (วงกลม O) ให้เชื่อมต่อ Drive / Export / Import ได้บนมือถือ
+
+- **บั๊กที่พบ:** `#driveBar` ถูกซ่อนด้วย `@media(max-width:900px){#driveBar{display:none}}` → บน iPhone ไม่มีปุ่มเชื่อมต่อ Drive เลย (ohm เพิ่งลองใช้บน iPhone ครั้งแรก ข้อมูลในเครื่องเป็นข้อมูลตั้งต้น ไม่ใช่ของจริง)
+- **แก้:** วงกลม "O" ใน `TopNav` เปลี่ยนเป็นคอมโพเนนต์ `AccountMenu` (วางก่อน `TopNav`) กดแล้วเปิดเมนู: สถานะซิงก์ / เชื่อมต่อ Google Drive / Export JSON / Import JSON — เมนูแค่สั่ง `.click()` ไปที่ปุ่ม plain JS เดิมใน `#driveBar` (ยังอยู่ในหน้า แค่ซ่อนบนมือถือ) ไม่ได้ย้าย logic
+- จุดสีมุมวงกลม: เทา = ยังไม่เชื่อมต่อ, เขียว = เชื่อมต่อแล้ว, ส้ม = error — `setStatus()` ใน Drive sync ส่ง `CustomEvent("drive-status")` + เก็บ `window.__driveStatus`
+- CSS ใหม่ท้าย `styles.css`: `.acct-wrap .acct-btn .acct-dot .acct-pop .acct-head .acct-status .acct-item`
+- bump `sw.js` → `secretary-ohm-v6`
+- ทดสอบใน Chromium ขนาด iPhone 13: เมนูเปิด/ปิด (แตะข้างนอกปิด), สถานะเปลี่ยนสี, Export ดาวน์โหลดไฟล์ได้, ไม่มี runtime error
+- **ถัดไป:** ohm ทดสอบเชื่อมต่อ Drive จากแอปหน้าจอหลักบน iPhone จริง → ผลใช้ตัดสินใจเรื่องย้ายไป Firebase Firestore (คุยข้อดีข้อเสียไว้แล้ว — ถ้าไป Firestore บน iOS PWA ให้ล็อกอินผ่าน GIS ID token → `signInWithCredential` เลี่ยง redirect)

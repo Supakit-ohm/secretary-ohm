@@ -272,6 +272,9 @@
   function setStatus(text, kind) {
     var el = document.getElementById("driveStatus");
     if (el) { el.textContent = text; el.style.color = kind === "err" ? "#fb923c" : "#34d399"; }
+    // ส่งสถานะให้เมนูบัญชี (วงกลม O) ใน React รู้ด้วย — ใช้ได้ทั้งมือถือและคอม
+    window.__driveStatus = { text: text, kind: kind || "" };
+    try { window.dispatchEvent(new CustomEvent("drive-status", { detail: window.__driveStatus })); } catch (e) {}
   }
 
   function driveFetch(url, options) {
@@ -1421,6 +1424,42 @@ function PageNav({page,setPage}) {
     </div>
   );
 }
+/* เมนูบัญชี (วงกลม O มุมขวาบน) — รวมปุ่ม Drive/Export/Import ไว้ที่นี่ เพราะ #driveBar ถูกซ่อนบนจอ <900px
+   ตัวปุ่มจริงยังเป็น plain JS ใน #driveBar เมนูนี้แค่สั่ง .click() ต่อ (อยู่ใน user gesture เดียวกัน popup Google จึงไม่โดนบล็อก) */
+function AccountMenu() {
+  const [open,setOpen]=useState(false);
+  const [st,setSt]=useState(()=>window.__driveStatus||{text:"",kind:""});
+  const [signed,setSigned]=useState(()=>!!(window.DriveSync&&window.DriveSync.isSignedIn()));
+  const ref=useRef(null);
+  useEffect(()=>{
+    const onSt=e=>{ setSt(e.detail||{text:"",kind:""}); setSigned(!!(window.DriveSync&&window.DriveSync.isSignedIn())); };
+    window.addEventListener("drive-status",onSt);
+    return ()=>window.removeEventListener("drive-status",onSt);
+  },[]);
+  useEffect(()=>{
+    if(!open) return;
+    const onDoc=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("pointerdown",onDoc);
+    return ()=>document.removeEventListener("pointerdown",onDoc);
+  },[open]);
+  const clickById=id=>{ const b=document.getElementById(id); if(b) b.click(); };
+  const state=st.kind==="err"?"err":(signed?"on":"off");
+  const statusText=st.text||(signed?"เชื่อมต่อ Drive แล้ว ✓":"ยังไม่ได้เชื่อมต่อ Google Drive");
+  return (
+    <div className="acct-wrap" ref={ref}>
+      <button className={`nav-icon-btn avatar acct-btn acct-${state}`} onClick={()=>setOpen(v=>!v)} title="บัญชีและการซิงก์">O<span className="acct-dot"></span></button>
+      {open&&(
+        <div className="acct-pop">
+          <div className="acct-head">คุณโอห์ม</div>
+          <div className={`acct-status ${state}`}>{statusText}</div>
+          <button className="acct-item" disabled={signed} onClick={()=>clickById("driveConnectBtn")}><i className="fa-solid fa-cloud"></i>{signed?"เชื่อมต่อ Drive แล้ว":"เชื่อมต่อ Google Drive"}</button>
+          <button className="acct-item" onClick={()=>{clickById("exportJsonBtn");setOpen(false);}}><i className="fa-solid fa-file-export"></i>Export JSON (สำรองข้อมูล)</button>
+          <button className="acct-item" onClick={()=>{clickById("importJsonBtn");setOpen(false);}}><i className="fa-solid fa-file-import"></i>Import JSON (กู้คืนข้อมูล)</button>
+        </div>
+      )}
+    </div>
+  );
+}
 function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
   const [openSearch,setOpenSearch]=useState(false);
   return (
@@ -1456,7 +1495,7 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
           )}
         </div>
         <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={12}/></button>
-        <div className="nav-icon-btn avatar" title="คุณโอห์ม">O</div>
+        <AccountMenu/>
       </div>
     </div>
   );
