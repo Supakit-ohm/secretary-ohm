@@ -1175,4 +1175,5 @@ js/app.js           — root + routing
 - CSS ใหม่ท้าย `styles.css`: `.acct-wrap .acct-btn .acct-dot .acct-pop .acct-head .acct-status .acct-item`
 - bump `sw.js` → `secretary-ohm-v6`
 - ทดสอบใน Chromium ขนาด iPhone 13: เมนูเปิด/ปิด (แตะข้างนอกปิด), สถานะเปลี่ยนสี, Export ดาวน์โหลดไฟล์ได้, ไม่มี runtime error
-- **ถัดไป:** ohm ทดสอบเชื่อมต่อ Drive จากแอปหน้าจอหลักบน iPhone จริง → ผลใช้ตัดสินใจเรื่องย้ายไป Firebase Firestore (คุยข้อดีข้อเสียไว้แล้ว — ถ้าไป Firestore บน iOS PWA ให้ล็อกอินผ่าน GIS ID token → `signInWithCredential` เลี่ยง redirect)
+- ✅ **ยืนยันแล้ว (2026-09-28):** ohm push แล้วทดสอบบน iPhone (แอปหน้าจอหลัก) — เชื่อมต่อ Drive + ล็อกอิน Google (GIS popup) ใช้ได้ปกติ ข้อมูลจริงดึงลงมาครบ → แปลว่าเส้นทางล็อกอิน GIS ใช้ได้บน iOS PWA
+- **ถัดไป (ยังไม่ตัดสินใจ):** ย้ายไป Firebase Firestore (คุยข้อดีข้อเสียไว้แล้ว — ถ้าไป Firestore บน iOS PWA ให้ล็อกอินผ่าน GIS ID token → `signInWithCredential` เลี่ยง redirect)
