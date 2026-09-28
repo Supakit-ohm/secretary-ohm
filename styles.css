@@ -1216,3 +1216,4 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .acct-item-txt{display:flex;flex-direction:column;gap:2px;}
 .acct-item-txt small{font-size:11px;color:var(--ink-5);}
 .acct-item.acct-signout i{color:var(--ink-5);}
+.sync-warn{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:70;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 32px);padding:10px 16px;border-radius:999px;border:1px solid #fb923c;background:rgba(40,24,12,.95);color:#fdba74;font:inherit;font-size:13px;cursor:pointer;box-shadow:0 12px 30px rgba(0,0,0,.5);}

@@ -24,6 +24,7 @@ const FAKE_FS=`
 const subs={};
 window.__fsDeliver=(path,data,pending)=>{(subs[path]||[]).forEach(f=>f({exists:()=>!!data,data:()=>data,metadata:{hasPendingWrites:!!pending,fromCache:false}}));};
 export function initializeFirestore(){return {};}
+export async function disableNetwork(){} export async function enableNetwork(){}
 export function persistentLocalCache(){return {};} export function persistentMultipleTabManager(){return {};}
 export function doc(db,...p){return p.join("/");}
 export function serverTimestamp(){return "TS";}
@@ -50,7 +51,7 @@ async function device(browser,name,{local,user}={}){
     return r.fulfill({contentType:"application/json",body:'{"files":[{"id":"datafile"}]}'});
   });
   await ctx.route(/fonts\.googleapis|cdnjs\.cloudflare\.com\/ajax\/libs\/font-awesome/,r=>r.fulfill({body:""}));
-  const p=await ctx.newPage(); p.__name=name; p.errs=[];
+  const p=await ctx.newPage(); p.__name=name; p.errs=[]; p.dialogs=0; p.on('dialog',()=>p.dialogs++);
   p.on('pageerror',e=>p.errs.push(e.message));
   p.on('console',m=>{ if(m.type()==='error'&&!/Failed to load resource/.test(m.text())) p.errs.push(m.text()); });
   await p.exposeFunction('__srvGet',path=>SERVER.docs[path]||null);
@@ -96,6 +97,7 @@ const DOC="users/u1/app/data";
   await sleep(800);
   const phLocal=await ph.evaluate(()=>localStorage.getItem("secretary-dashboard-v1"));
   check("iPhone localStorage = Firestore",phLocal===SERVER.docs[DOC].json);
+  check("iPhone ไม่ถามอะไร และไม่เอาข้อมูลตั้งต้นทับคลาวด์",SERVER.docs[DOC].json===pcLocal&&ph.dialogs===0,"dialogs="+ph.dialogs);
   check("เก็บสำเนาข้อมูลเดิมของ iPhone ไว้ก่อนทับ",await ph.evaluate(()=>!!localStorage.getItem("secretary-pre-firestore-backup")));
   await ph.click('.nav-pill-btn:has-text("Tracker")').catch(()=>{});
   await sleep(500);
@@ -140,9 +142,35 @@ const DOC="users/u1/app/data";
   s=await status(pc);
   check("สถานะกลับเป็น signedOut",s.phase==="signedOut");
   const w3=SERVER.writes;
-  await pc.evaluate(()=>window.storage.set("secretary-dashboard-v1",localStorage.getItem("secretary-dashboard-v1")+" "));
+  await pc.evaluate(()=>{const d=JSON.parse(localStorage.getItem("secretary-dashboard-v1"));d.projects[0].title="เพิ่มตอนยังไม่ล็อกอิน";return window.storage.set("secretary-dashboard-v1",JSON.stringify(d));});
   await sleep(1200);
   check("ออกแล้วไม่เขียนขึ้น Firestore",SERVER.writes===w3);
+  check("ตั้ง flag ว่ามีของยังไม่ซิงก์",await pc.evaluate(()=>!!localStorage.getItem("secretary-unsynced-since")));
+  check("ขึ้นแถบเตือน 'ยังไม่ได้ล็อกอิน — ข้อมูลไม่ซิงก์'",await pc.locator('.sync-warn').count()===1);
+
+  console.log("\n[8b] (บั๊กที่ ohm เจอ) ล็อกอินกลับหลังแก้ตอนหลุด → ต้องถาม ไม่ทับเงียบ · เลือก Cancel = ใช้ของเครื่องนี้");
+  let dlg2=null; pc.once('dialog',async d=>{dlg2=d.message(); await d.dismiss();});
+  await pc.click('.sync-warn');
+  await sleep(1500);
+  check("ถามก่อนทับ",dlg2&&dlg2.includes("ยังไม่เคยขึ้นคลาวด์"));
+  check("ของที่เพิ่มตอนหลุดขึ้น Firestore",JSON.parse(SERVER.docs[DOC].json).projects[0].title==="เพิ่มตอนยังไม่ล็อกอิน");
+  check("iPhone ได้ของนั้นด้วย",(await ph.evaluate(()=>JSON.parse(localStorage.getItem("secretary-dashboard-v1")).projects[0].title))==="เพิ่มตอนยังไม่ล็อกอิน");
+  check("แถบเตือนหายหลังล็อกอิน",await pc.locator('.sync-warn').count()===0);
+  check("flag ถูกล้าง",await pc.evaluate(()=>!localStorage.getItem("secretary-unsynced-since")));
+
+  console.log("\n[8c] เลือก OK = ใช้คลาวด์ → ของเครื่องนี้ถูกเก็บสำรอง");
+  pc.once('dialog',d=>d.accept()); await pc.click('.acct-btn'); await sleep(200);
+  if(!(await pc.locator('.acct-item:has-text("ออกจากระบบ")').count())) await pc.click('.acct-btn');
+  await pc.click('.acct-item:has-text("ออกจากระบบ")'); await sleep(500);
+  await pc.evaluate(()=>{const d=JSON.parse(localStorage.getItem("secretary-dashboard-v1"));d.projects[0].title="ของเครื่องที่จะทิ้ง";return window.storage.set("secretary-dashboard-v1",JSON.stringify(d));});
+  let dlg3=null; pc.once('dialog',async d=>{dlg3=d.message(); await d.accept();});
+  await pc.click('.sync-warn'); await sleep(1500);
+  check("ถามอีกครั้ง",!!dlg3);
+  check("ใช้ของคลาวด์",(await pc.evaluate(()=>JSON.parse(localStorage.getItem("secretary-dashboard-v1")).projects[0].title))==="เพิ่มตอนยังไม่ล็อกอิน");
+  check("ของเครื่องเก็บไว้ใน pre-firestore-backup",await pc.evaluate(()=>(localStorage.getItem("secretary-pre-firestore-backup")||"").includes("ของเครื่องที่จะทิ้ง")));
+  pc.once('dialog',d=>d.accept()); await pc.click('.acct-btn'); await sleep(200);
+  if(!(await pc.locator('.acct-item:has-text("ออกจากระบบ")').count())) await pc.click('.acct-btn');
+  await pc.click('.acct-item:has-text("ออกจากระบบ")'); await sleep(500);
 
   console.log("\n[9] บัญชีอื่นล็อกอิน → ถูกปฏิเสธ");
   const other=await device(b,"other",{});

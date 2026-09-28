@@ -433,13 +433,16 @@
 //          ห้ามใช้ signInWithPopup/Redirect ของ Firebase (ติด cookie ข้ามโดเมนบน iOS)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, GoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp, disableNetwork, enableNetwork } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 (function () {
   var cfg = window.APP_CONFIG || {};
   if (!cfg.FIREBASE) { console.warn("[FireSync] ไม่มี APP_CONFIG.FIREBASE — ข้าม"); return; }
   var STORAGE_KEY = "secretary-dashboard-v1";
-  var PRE_BACKUP_KEY = "secretary-pre-firestore-backup";   // สำเนาข้อมูลในเครื่องก่อนถูกข้อมูลจาก Firestore ทับครั้งแรก
+  var PRE_BACKUP_KEY = "secretary-pre-firestore-backup";   // สำเนาข้อมูลในเครื่องล่าสุดก่อนถูกข้อมูลจาก Firestore ทับ (เขียนทับทุกครั้งที่ทิ้งข้อมูลในเครื่อง)
+  // ข้อ 55 แก้บั๊ก: ถ้าแก้ข้อมูลตอน "ยังไม่ได้ล็อกอิน" แล้วค่อยล็อกอิน ห้ามให้ Firestore ทับเงียบๆ — window.storage.set ตั้ง flag นี้ไว้
+  var UNSYNCED_KEY = "secretary-unsynced-since";
+  var USED_KEY = "secretary-fire-used";                     // เครื่องนี้เคยล็อกอิน Firestore แล้ว → ถ้าหลุดให้ขึ้นแถบเตือน
   var WARN_BYTES = 700 * 1024;                                 // เอกสาร Firestore จำกัด 1 MiB
   var BACKUP_EVERY_MS = 7 * 24 * 3600 * 1000;
   var PUSH_DELAY = 700;
@@ -534,7 +537,14 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     return Promise.race([p, new Promise(function (r) { setTimeout(r, timeoutMs || 2500); })]);
   }
   window.addEventListener("pagehide", function () { if (pushTimer) flush(0); });
-  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden" && pushTimer) flush(0); });
+  var hiddenAt = 0;
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") { hiddenAt = Date.now(); if (pushTimer) flush(0); return; }
+    // iOS พักแอปไว้เบื้องหลังแล้วท่อ realtime มักค้าง → กลับมาหลังพัก >20 วิ บังคับต่อใหม่ ให้ได้ข้อมูลล่าสุดทันที
+    if (state.user && hiddenAt && Date.now() - hiddenAt > 20000) {
+      disableNetwork(db).then(function () { return enableNetwork(db); }).catch(function (e) { console.warn("[FireSync] reconnect", e); });
+    }
+  });
 
   // ---------- รับจาก Firestore ----------
   function applyRemote(text, why) {
@@ -559,11 +569,21 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
       } else if (d.by === clientId && !firstLoad) {
         // เซิร์ฟเวอร์ยืนยันการเขียนของเราเอง — ไม่ต้องทำอะไร
       } else if (d.json !== localText()) {
-        if (firstLoad && localText()) {
-          try { if (!localStorage.getItem(PRE_BACKUP_KEY)) localStorage.setItem(PRE_BACKUP_KEY, localText()); } catch (e) {}
+        var unsynced = firstLoad && localText() && localStorage.getItem(UNSYNCED_KEY);
+        if (unsynced && !window.confirm(
+          "เครื่องนี้มีข้อมูลที่แก้ตอนยังไม่ได้ล็อกอิน (ยังไม่เคยขึ้นคลาวด์) — จะใช้ชุดไหน?\n\n" +
+          "บนคลาวด์ (Firestore): " + summarize(d.json) + "\n" +
+          "ในเครื่องนี้: " + summarize(localText()) + "\n\n" +
+          "OK = ใช้ข้อมูลบนคลาวด์ (ของในเครื่องนี้เก็บสำรองไว้)\nCancel = ใช้ข้อมูลในเครื่องนี้ แล้วอัปขึ้นคลาวด์แทน")) {
+          try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {}
+          pendingText = localText();
+          doPush();
+          return;
         }
+        if (firstLoad && localText()) { try { localStorage.setItem(PRE_BACKUP_KEY, localText()); } catch (e) {} }
         applyRemote(d.json, firstLoad ? "first-load" : "remote");
       }
+      if (firstLoad) { try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {} }
     }
     if (pendingText == null && !pushTimer) {
       emit(snap.metadata.fromCache ? "offline" : "synced",
@@ -595,6 +615,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
       if (!chosen) { chosen = "{}"; }
       return writeRemote(chosen).then(function () {
         state.remoteLoaded = true;
+        try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {}
         if (chosen !== local) {
           try { if (local) localStorage.setItem(PRE_BACKUP_KEY, local); } catch (e) {}
           applyRemote(chosen, "migration");
@@ -729,7 +750,8 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     if (!user) {
       state.user = null;
       window.__fireSignedIn = false;
-      emit("signedOut", rejectedMsg || "ยังไม่ได้ล็อกอิน — ข้อมูลอยู่ในเครื่องนี้อย่างเดียว");
+      state.wasUsed = !!localStorage.getItem(USED_KEY);
+      emit("signedOut", rejectedMsg || "ยังไม่ได้ล็อกอิน — ข้อมูลอยู่ในเครื่องนี้อย่างเดียว ไม่ซิงก์");
       rejectedMsg = "";
       return;
     }
@@ -740,6 +762,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
       return;
     }
     state.user = { email: user.email, uid: user.uid };
+    try { localStorage.setItem(USED_KEY, "1"); } catch (e) {}
     window.__fireSignedIn = true;   // ให้ DriveSync แบบเดิมหยุด push อัตโนมัติ (กันซิงก์ 2 ทาง)
     emit("connecting", "กำลังโหลดข้อมูลจาก Firestore…");
     docRef = doc(db, "users", user.uid, "app", "data");
@@ -833,7 +856,12 @@ window.storage = {
   async set(key, value) {
     window.localStorage.setItem(key, value);
     if (window.FireSync && window.FireSync.isSignedIn()) window.FireSync.schedulePush(value);
-    else if (window.DriveSync && window.DriveSync.isSignedIn()) window.DriveSync.schedulePush(value);
+    else {
+      // แก้ตอนยังไม่ล็อกอิน Firestore (ยืนยันแล้วว่าไม่มีผู้ใช้ ไม่ใช่แค่กำลังกู้ session ตอนบูต) → จำไว้ ตอนล็อกอินจะถามก่อนทับ
+      const ph=window.__syncStatus&&window.__syncStatus.phase;
+      if (!window.FireSync || ph==="signedOut") { try { window.localStorage.setItem("secretary-unsynced-since", String(Date.now())); } catch (e) {} }
+      if (window.DriveSync && window.DriveSync.isSignedIn()) window.DriveSync.schedulePush(value);
+    }
     return true;
   }
 };
@@ -1831,8 +1859,10 @@ function AccountMenu() {
     state=st.kind==="err"?"err":(signed?"on":"off");
     statusText=st.text||(signed?"เชื่อมต่อ Drive แล้ว ✓":"ยังไม่ได้เชื่อมต่อ Google Drive");
   }
+  const showWarn=hasFire&&fs&&fs.phase==="signedOut"&&fs.wasUsed;
   return (
     <div className="acct-wrap" ref={ref}>
+      {showWarn&&<button className="sync-warn" onClick={()=>window.FireSync.signIn()}><i className="fa-solid fa-triangle-exclamation"></i>ยังไม่ได้ล็อกอิน — ข้อมูลไม่ซิงก์ · แตะเพื่อเข้าสู่ระบบ</button>}
       <button className={`nav-icon-btn avatar acct-btn acct-${state}`} onClick={()=>setOpen(v=>!v)} title="บัญชีและการซิงก์">O<span className="acct-dot"></span></button>
       {open&&(
         <div className="acct-pop">
