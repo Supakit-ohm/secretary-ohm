@@ -35,5 +35,9 @@ var CONFIG = {
   HISTORY_TURNS: 6,            // จำบทสนทนาล่าสุดกี่รอบ (เก็บ 6 ชม.)
 
   // ---- LINE ----
-  QUICK_REPLY: true            // แนบปุ่ม "แก้ / ยกเลิก" หลังบันทึก
+  QUICK_REPLY: true,           // แนบปุ่ม "แก้ / ยกเลิก" หลังบันทึก
+
+  // ---- Rich Menu (ปุ่มลัดล่างแชท) — ติดตั้งด้วยฟังก์ชัน setupRichMenu() ----
+  APP_URL: "https://supakit-ohm.github.io/secretary-ohm/preview-dashboard.html",
+  RICHMENU_IMAGE_URL: "https://supakit-ohm.github.io/secretary-ohm/line-bot/assets/richmenu.png"
 };

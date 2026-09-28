@@ -112,8 +112,16 @@ const once = (calls, text) => (body, outs) => outs.length ? { text: text || "โ
 
 // ---------- Fake LINE ----------
 const lineLog = [];
+const richmenus = [{ richMenuId: "old1", name: "jack-main-v0" }, { richMenuId: "other", name: "manual-menu" }];
+let rmDefault = null, rmImage = null, rmSpec = null;
 function line(url, opt) {
+  const m = (opt.method || "get").toLowerCase();
   if (url.endsWith("/v2/bot/info")) return res(200, { displayName: "Jack", basicId: "@jack" });
+  if (url.endsWith("/v2/bot/richmenu/list")) return res(200, { richmenus: richmenus.slice() });
+  if (url.endsWith("/v2/bot/richmenu") && m === "post") { rmSpec = JSON.parse(opt.payload); richmenus.push({ richMenuId: "new1", name: rmSpec.name }); return res(200, { richMenuId: "new1" }); }
+  if (url.includes("api-data.line.me/v2/bot/richmenu/new1/content")) { assert.strictEqual(opt.contentType, "image/png"); rmImage = opt.payload; return res(200, {}); }
+  if (url.endsWith("/v2/bot/user/all/richmenu/new1") && m === "post") { assert.ok(!opt.payload); rmDefault = "new1"; return res(200, {}); }
+  if (m === "delete") { const id = url.split("/").pop(); const i = richmenus.findIndex((r) => r.richMenuId === id); if (i >= 0) richmenus.splice(i, 1); return res(200, {}); }
   lineLog.push({ path: url.replace("https://api.line.me", ""), body: JSON.parse(opt.payload || "{}") });
   return res(200, {});
 }
@@ -136,7 +144,8 @@ const ctx = {
     opt = opt || {};
     if (url.startsWith("https://firestore.googleapis.com/")) return firestore(url, opt);
     if (url.startsWith("https://api.openai.com/")) return openai(url, opt);
-    if (url.startsWith("https://api.line.me/")) return line(url, opt);
+    if (url.startsWith("https://api.line.me/") || url.startsWith("https://api-data.line.me/")) return line(url, opt);
+    if (url.startsWith("https://supakit-ohm.github.io/")) return { getResponseCode: () => 200, getContentText: () => "", getBlob: () => ({ getBytes: () => [137, 80, 78, 71] }) };
     throw new Error("unexpected fetch " + url);
   } },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in propsMap ? propsMap[k] : null), setProperty: (k, v) => { propsMap[k] = String(v); }, deleteProperty: (k) => { delete propsMap[k]; } }) },
@@ -498,6 +507,64 @@ test("ไม่มีเอกสาร k.journal (ตัวบอก key) → �
 test("ข้อความที่ไม่ใช่ตัวอักษร (รูป) → ตอบว่ายังอ่านไม่ได้", () => {
   post([{ type: "message", webhookEventId: "img1", replyToken: "rti", source: { type: "user", userId: "U_OHM" }, message: { type: "image", id: "1" } }]);
   assert.ok(lastReply().text.includes("รูป"));
+});
+
+test("Rich Menu: ติดตั้ง 6 ปุ่ม + อัปรูป + ตั้งเป็นเมนูหลัก + ลบเมนูเก่าของ Jack (ไม่แตะเมนูอื่น)", () => {
+  assert.strictEqual(ctx.setupRichMenu(), true);
+  assert.strictEqual(rmDefault, "new1");
+  assert.ok(rmImage && rmImage.length);
+  assert.strictEqual(rmSpec.areas.length, 6);
+  const covered = rmSpec.areas.reduce((a, x) => a + x.bounds.width * x.bounds.height, 0);
+  assert.strictEqual(covered, 2500 * 1686, "ปุ่มต้องเต็มพื้นที่พอดี");
+  rmSpec.areas.forEach((x) => { assert.ok(x.bounds.x + x.bounds.width <= 2500 && x.bounds.y + x.bounds.height <= 1686); });
+  assert.ok(rmSpec.chatBarText.length <= 14);
+  assert.ok(rmSpec.areas.every((x) => (x.action.label || "").length <= 20));
+  assert.ok(rmSpec.areas[5].action.uri.includes("openExternalBrowser=1"));
+  assert.deepStrictEqual(richmenus.map((r) => r.richMenuId).sort(), ["new1", "other"]);
+});
+
+test("ปุ่มเมนูเปิดคีย์บอร์ด (noop) → ไม่ตอบ ไม่เรียก AI", () => {
+  const nL = lineLog.length, nA = aiLog.length;
+  post([pb("a=noop")]);
+  assert.strictEqual(lineLog.length, nL);
+  assert.strictEqual(aiLog.length, nA);
+});
+
+test("ปุ่ม งานวันนี้ → ตอบทันทีไม่ใช้ AI + ปุ่ม ✓ ติ๊กเสร็จ → ติ๊กได้จริง + ยกเลิกได้", () => {
+  aiScript = once([{ name: "add_task", args: { title: "ส่งของให้ลูกค้า", dueDate: TODAY } }]);
+  post([msg("เพิ่มงาน ส่งของให้ลูกค้า")]);
+  const nA = aiLog.length;
+  post([pb("a=menu&m=tasks")]);
+  assert.strictEqual(aiLog.length, nA);
+  const r = lastReply();
+  if (process.env.SHOW) console.log(r.text + "\n---");
+  assert.ok(r.text.includes("งานเลยกำหนด") && r.text.includes("ส่งของให้ลูกค้า") && r.text.includes("เลยกำหนด"));
+  const btn = r.quickReply.items.find((i) => i.action.label.includes("ส่งของ"));
+  assert.ok(btn.action.label.length <= 20);
+  post([pb(btn.action.data)]);
+  assert.ok(lastReply().text.startsWith("เสร็จแล้ว ✓"));
+  const t = app().tasks.find((x) => x.title === "ส่งของให้ลูกค้า");
+  assert.strictEqual(t.status, "done");
+  assert.strictEqual(aiLog.length, nA);
+  post([pb(lastReply().quickReply.items[0].action.data)]);   // ยกเลิก
+  assert.strictEqual(app().tasks.find((x) => x.title === "ส่งของให้ลูกค้า").status, "pending");
+  post([pb(btn.action.data)]);
+  post([pb(btn.action.data)]);
+  assert.ok(lastReply().text.includes("ติ๊กไว้แล้ว"));
+});
+
+test("ปุ่ม ยอดเดือนนี้ → สรุปไม่ใช้ AI ตัวเลขตรง + ปุ่มวิเคราะห์ต่อ", () => {
+  const nA = aiLog.length;
+  post([pb("a=menu&m=month")]);
+  assert.strictEqual(aiLog.length, nA);
+  const r = lastReply();
+  const exp = app().finance.expenses.filter((e) => String(e.date).slice(0, 7) === MONTH).reduce((s, e) => s - e.amount, 0);
+  const fmt = (n) => { const x = Math.round(n * 100) / 100; const [a, b] = String(Math.abs(x)).split("."); return (x < 0 ? "-" : "") + a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (b ? "." + b : ""); };
+  assert.ok(r.text.includes("รายจ่าย " + fmt(exp) + " บาท / งบ 6,500"), r.text);
+  assert.ok(r.text.includes("อาหาร"));
+  assert.ok(!/NaN|undefined/.test(r.text), r.text);
+  assert.strictEqual(r.quickReply.items[0].action.type, "message");
+  if (process.env.SHOW) console.log(r.text);
 });
 
 test("checkAll ผ่านทุกข้อกับของปลอม", () => { assert.strictEqual(ctx.checkAll(), true); });

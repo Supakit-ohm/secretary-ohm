@@ -123,6 +123,21 @@ function simple_(t) { return { text: t, records: [], messages: [textMsg_(t)] }; 
 
 function handlePostback_(ev) {
   var data = parseQuery_(ev.postback && ev.postback.data);
+  if (data.a === "noop") return;                            // ปุ่มเมนูที่แค่เปิดคีย์บอร์ด — รอข้อความที่โอมพิมพ์
+  if (data.a === "menu") {                                  // ปุ่มเมนูที่ตอบได้เลยโดยไม่ใช้ AI (ฟรี + ทันที)
+    var ctx0 = newCtx_();
+    if (data.m === "tasks") { var t = menuTasks_(ctx0); lineReply_(ev.replyToken, [textMsg_(t.text, t.quick)]); return; }
+    if (data.m === "month") { var m = menuMonth_(ctx0); lineReply_(ev.replyToken, [textMsg_(m.text, m.quick)]); return; }
+    return;
+  }
+  if (data.a === "done") {                                  // ปุ่ม "✓ ชื่องาน" ใต้รายการงาน
+    var ctx1 = newCtx_();
+    var res = toolCompleteTask_({ ref: data.ref }, ctx1);
+    var txt = !res.ok ? "ติ๊กไม่ได้ครับ: " + res.error : res.already ? "อันนี้ติ๊กไว้แล้วครับ: " + res.title : "เสร็จแล้ว ✓ " + res.title;
+    rememberRecords_(ctx1.records);
+    lineReply_(ev.replyToken, [textMsg_(txt, quickItemsFor_(ctx1.records))]);
+    return;
+  }
   var rec = data.r ? cacheGetJson_("rec_" + data.r) : null;
   if (data.a === "canceledit") {
     CacheService.getScriptCache().remove("editing");
@@ -722,6 +737,63 @@ function quickItemsFor_(records) {
   return items.length ? items : null;
 }
 
+// ---------- ปุ่มเมนู (ไม่ใช้ AI) ----------
+var TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function thDate_(iso) { return Number(iso.slice(8, 10)) + " " + TH_MONTHS[Number(iso.slice(5, 7)) - 1]; }
+
+function menuTasks_(ctx) {
+  var t = toolListTasks_({ scope: "all" }, ctx);
+  var lines = ["📋 งาน · วัน" + TH_DAYS[ctx.weekday] + " " + thDate_(ctx.today)];
+  var tick = [];
+  if (t.overdue.length) {
+    lines.push("", "เลยกำหนด");
+    t.overdue.forEach(function (x) { lines.push("• " + x.title + " (" + thDate_(x.dueDate) + ")"); tick.push(x); });
+  }
+  if (t.today.length) {
+    lines.push("", "วันนี้");
+    t.today.forEach(function (x) { lines.push("• " + x.title + (x.project ? " · " + x.project : "")); tick.push(x); });
+  }
+  if (t.recurringToday.length) {
+    lines.push("", "งานประจำที่ยังไม่ติ๊ก");
+    t.recurringToday.forEach(function (x) { lines.push("• " + x.title); tick.push(x); });
+  }
+  if (!tick.length) lines.push("", "วันนี้ว่างครับ ไม่มีงานค้าง 🎉");
+  if (t.upcoming7d.length) {
+    var next = t.upcoming7d.map(function (x) { return x.dueDate; }).sort()[0];
+    lines.push("", "อีก 7 วันข้างหน้า: " + t.upcoming7d.length + " งาน (ใกล้สุด " + thDate_(next) + ")");
+  }
+  if (tick.length) lines.push("", "แตะปุ่มด้านล่างเพื่อติ๊กว่าเสร็จ");
+  var quick = tick.slice(0, 12).map(function (x) {
+    return { type: "action", action: { type: "postback", label: ("✓ " + x.title).slice(0, 20), data: "a=done&ref=" + x.ref, displayText: "เสร็จแล้ว: " + String(x.title).slice(0, 200) } };
+  });
+  return { text: lines.join("\n"), quick: quick };
+}
+
+function menuMonth_(ctx) {
+  var s = toolGetSummary_({}, ctx);
+  var mi = Number(s.month.slice(5, 7)) - 1;
+  var lines = ["💰 เดือน " + TH_MONTHS[mi] + " · เหลืออีก " + s.daysLeftInMonth + " วัน", ""];
+  var e = s.expenses;
+  lines.push("รายจ่าย " + fmt_(e.total) + " บาท" + (e.totalBudget ? " / งบ " + fmt_(e.totalBudget) + " (" + Math.round(e.total / e.totalBudget * 100) + "%)" : ""));
+  lines.push("รายรับ " + fmt_(s.income.total) + (s.savingsThisMonth ? " · ออม " + fmt_(s.savingsThisMonth) : ""));
+  lines.push("คงเหลือสุทธิ " + fmt_(s.netCashflow) + " บาท");
+  var cats = e.byCategory.filter(function (c) { return c.spent > 0; });
+  if (cats.length) {
+    lines.push("", "ใช้มากสุด");
+    cats.slice(0, 5).forEach(function (c) {
+      lines.push("• " + c.category + " " + fmt_(c.spent) + (c.budget ? " / " + fmt_(c.budget) + (c.spent > c.budget ? " ⚠️ เกิน" : c.pct >= 80 ? " (" + c.pct + "% ใกล้เต็ม)" : " (" + c.pct + "%)") : ""));
+    });
+    var overOthers = cats.slice(5).filter(function (c) { return c.budget && c.spent > c.budget; });
+    if (overOthers.length) lines.push("เกินงบอีก: " + overOthers.map(function (c) { return c.category; }).join(", "));
+  }
+  if (e.totalBudget && s.daysLeftInMonth > 0 && e.totalBudget > e.total) lines.push("", "งบที่เหลือเฉลี่ยวันละ " + fmt_(Math.floor((e.totalBudget - e.total) / s.daysLeftInMonth)) + " บาท");
+  var quick = [
+    { type: "action", action: { type: "message", label: "วิเคราะห์ให้หน่อย", text: "ช่วยวิเคราะห์การใช้เงินเดือนนี้หน่อย" } },
+    { type: "action", action: { type: "message", label: "พอร์ต / net worth", text: "สรุปพอร์ตกับ net worth ให้หน่อย" } }
+  ];
+  return { text: lines.join("\n"), quick: quick };
+}
+
 // ============================================================
 // 5) กฎข้อมูล / วันที่ / ตัวเลข
 // ============================================================
@@ -1046,6 +1118,12 @@ function lineApi_(path, payload) {
   });
   return { code: res.getResponseCode(), text: res.getContentText() };
 }
+function lineCall_(method, host, path, payload, contentType) {
+  var opt = { method: method, muteHttpExceptions: true, headers: { Authorization: "Bearer " + prop_("LINE_CHANNEL_ACCESS_TOKEN") } };
+  if (payload != null) { opt.contentType = contentType || "application/json"; opt.payload = contentType ? payload : JSON.stringify(payload); }
+  var res = UrlFetchApp.fetch("https://" + host + path, opt);
+  return { code: res.getResponseCode(), text: res.getContentText() };
+}
 function lineReply_(replyToken, messages) {
   if (!replyToken) return;
   var r = lineApi_("/v2/bot/message/reply", { replyToken: replyToken, messages: messages });
@@ -1161,6 +1239,7 @@ function lineApiGet_(path) {
 function showWebhookUrl() {
   var base = prop_("WEBAPP_URL");
   if (!base) { console.log("ใส่ Script Property WEBAPP_URL = URL ที่ได้ตอน Deploy (ลงท้าย /exec) ก่อนครับ"); return; }
+  if (!prop_("WEBHOOK_KEY")) props_().setProperty("WEBHOOK_KEY", Utilities.getUuid().replace(/-/g, ""));   // กัน k=null
   var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + "k=" + prop_("WEBHOOK_KEY");
   var token = prop_("LINE_CHANNEL_ACCESS_TOKEN");
   var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
@@ -1180,3 +1259,65 @@ function testChat() {
 
 // ล้าง LINE userId ที่ล็อกไว้ (ข้อความถัดไปที่เข้ามาจะถูกล็อกเป็นเจ้าของแทน)
 function resetOwner() { props_().deleteProperty("OWNER_LINE_USER_ID"); console.log("ล้างแล้ว — ส่งข้อความหา Jack จาก LINE ของโอมเพื่อผูกใหม่"); }
+
+// ตรวจอาการเมื่อ LINE ส่งข้อความแล้ว Jack เงียบ
+function diagnose() {
+  var key = prop_("WEBHOOK_KEY");
+  console.log("WEBHOOK_KEY: " + (key ? "มี" : "❌ ไม่มี — รัน setup ก่อน"));
+  console.log("WEBAPP_URL: " + (prop_("WEBAPP_URL") || "❌ ยังไม่ใส่"));
+  console.log("ผูก LINE โอมแล้ว: " + (prop_("OWNER_LINE_USER_ID") ? "ใช่" : "ยัง (= ยังไม่มีข้อความไหนมาถึงโค้ดเลย)"));
+  console.log("error ล่าสุด: " + (prop_("LAST_ERROR") || "-"));
+  var ep = JSON.parse(lineApiGet_("/v2/bot/channel/webhook/endpoint").text || "{}");
+  console.log("LINE ตั้ง webhook ไว้ที่: " + String(ep.endpoint || "❌ ว่าง").replace(/k=[^&]+/, "k=***") + " · เปิดใช้: " + ep.active);
+  console.log("รหัสลับใน webhook ตรงกับในสคริปต์: " + (key && String(ep.endpoint).indexOf("k=" + key) >= 0 ? "✅" : "❌ → รัน showWebhookUrl"));
+  var t = UrlFetchApp.fetch("https://api.line.me/v2/bot/channel/webhook/test", { method: "post", contentType: "application/json", muteHttpExceptions: true,
+    headers: { Authorization: "Bearer " + prop_("LINE_CHANNEL_ACCESS_TOKEN") }, payload: "{}" });
+  console.log("LINE ลองยิงมาที่สคริปต์: " + t.getContentText() + "  (302 = ถึงสคริปต์แล้ว ปกติ)");
+}
+
+// ============================================================
+// 12) Rich Menu — ปุ่มลัด 6 ปุ่มล่างแชท (รันครั้งเดียว · รันซ้ำได้ถ้าเปลี่ยนรูป/ปุ่ม)
+// รูปอยู่ใน repo: line-bot/assets/richmenu.png → ต้อง git push ขึ้น GitHub Pages ก่อน
+// ============================================================
+function richMenuSpec_() {
+  var W = 2500, H = 1686, cw = [0, 833, 1667, 2500], rh = [0, 843, 1686];
+  var a = function (c, r, action) { return { bounds: { x: cw[c], y: rh[r], width: cw[c + 1] - cw[c], height: rh[r + 1] - rh[r] }, action: action }; };
+  var appUrl = CONFIG.APP_URL + (CONFIG.APP_URL.indexOf("?") >= 0 ? "&" : "?") + "openExternalBrowser=1";   // เปิดใน Safari/Chrome แทนเบราว์เซอร์ใน LINE
+  return {
+    size: { width: W, height: H }, selected: true, name: "jack-main-v1", chatBarText: "เมนู Jack",
+    areas: [
+      a(0, 0, { type: "postback", label: "งานวันนี้", data: "a=menu&m=tasks", displayText: "งานวันนี้" }),
+      a(1, 0, { type: "postback", label: "ยอดเดือนนี้", data: "a=menu&m=month", displayText: "ยอดเดือนนี้" }),
+      a(2, 0, { type: "postback", label: "จดรายจ่าย", data: "a=noop", inputOption: "openKeyboard" }),
+      a(0, 1, { type: "postback", label: "เพิ่มงาน", data: "a=noop", inputOption: "openKeyboard", fillInText: "เพิ่มงาน " }),
+      a(1, 1, { type: "postback", label: "เขียนบันทึก", data: "a=noop", inputOption: "openKeyboard", fillInText: "journal วันนี้ " }),
+      a(2, 1, { type: "uri", label: "เปิดแอป", uri: appUrl })
+    ]
+  };
+}
+
+function setupRichMenu() {
+  var imgUrl = prop_("RICHMENU_IMAGE_URL") || CONFIG.RICHMENU_IMAGE_URL;
+  var img = UrlFetchApp.fetch(imgUrl, { muteHttpExceptions: true });
+  if (img.getResponseCode() !== 200) { console.log("❌ โหลดรูปเมนูไม่ได้ (" + img.getResponseCode() + ") — git push ขึ้น GitHub แล้วรอ 1–2 นาทีหรือยัง?\n" + imgUrl); return false; }
+  var old = JSON.parse(lineCall_("get", "api.line.me", "/v2/bot/richmenu/list").text || "{}").richmenus || [];
+  var c = lineCall_("post", "api.line.me", "/v2/bot/richmenu", richMenuSpec_());
+  if (c.code !== 200) { console.log("❌ สร้างเมนูไม่ได้: " + c.text); return false; }
+  var id = JSON.parse(c.text).richMenuId;
+  var u = lineCall_("post", "api-data.line.me", "/v2/bot/richmenu/" + id + "/content", img.getBlob().getBytes(), "image/png");
+  if (u.code !== 200) { console.log("❌ อัปรูปไม่ได้: " + u.text); lineCall_("delete", "api.line.me", "/v2/bot/richmenu/" + id); return false; }
+  var d = lineCall_("post", "api.line.me", "/v2/bot/user/all/richmenu/" + id);
+  if (d.code !== 200) { console.log("❌ ตั้งเป็นเมนูหลักไม่ได้: " + d.text); return false; }
+  old.filter(function (m) { return /^jack-/.test(m.name) && m.richMenuId !== id; })
+     .forEach(function (m) { lineCall_("delete", "api.line.me", "/v2/bot/richmenu/" + m.richMenuId); });
+  console.log("✅ ติดตั้งเมนู Jack แล้ว — ปิดแชทแล้วเปิดใหม่ใน LINE (อาจใช้เวลาสักครู่)");
+  return true;
+}
+
+// เอาเมนูออก (กลับไปไม่มีปุ่ม)
+function removeRichMenu() {
+  lineCall_("delete", "api.line.me", "/v2/bot/user/all/richmenu");
+  var list = JSON.parse(lineCall_("get", "api.line.me", "/v2/bot/richmenu/list").text || "{}").richmenus || [];
+  list.filter(function (m) { return /^jack-/.test(m.name); }).forEach(function (m) { lineCall_("delete", "api.line.me", "/v2/bot/richmenu/" + m.richMenuId); });
+  console.log("ลบเมนูแล้ว");
+}

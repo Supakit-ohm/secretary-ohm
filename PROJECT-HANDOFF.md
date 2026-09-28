@@ -1318,3 +1318,12 @@ js/app.js           — root + routing
 - ✅ **โอมยืนยันแล้ว (2026-09-28): ติดตั้งเสร็จ คุยกับ Jack ใน LINE ได้ + รายการขึ้นในแอปจริง → ขั้นที่ 6 ปิด**
   - บั๊กที่เจอตอนติดตั้ง: webhook เป็น `?k=null` เพราะรัน `showWebhookUrl` ก่อน `setup` (ยังไม่มี WEBHOOK_KEY) → ข้อความเข้าแต่ถูกทิ้งเงียบ · แก้แล้ว: `showWebhookUrl` สร้าง key เองถ้าไม่มี + เพิ่มฟังก์ชัน `diagnose()` (เช็ก key/URL/owner/LAST_ERROR + ถาม LINE ว่า webhook ชี้ไหน + ยิงทดสอบ — 302 = ถึงสคริปต์ปกติ) · Bot.gs ใน Apps Script ของโอมยังเป็นรุ่นก่อนแก้ (ทำงานได้เพราะรัน setup แล้ว) — วางทับตอนอัปเดตครั้งหน้าได้
   - UI Apps Script ของโอมเป็นภาษาไทย: Deploy = "การทำให้ใช้งานได้", Manage deployments = "จัดการการทำให้ใช้งานได้", Run = "เรียกใช้" · ห้ามกด "การทำให้ใช้งานได้รายการใหม่" (ได้ URL ใหม่ ต้องตั้ง webhook ใหม่)
+
+### ข้อ 55 ขั้นที่ 6.1 — Rich Menu ของ Jack (2026-09-28) · โค้ดเสร็จ รอโอม push + วางโค้ด + deploy เวอร์ชันใหม่ + รัน setupRichMenu
+- โอมขอ "ลูกเล่น" ก่อนเริ่มขั้นที่ 7 — เลือกแค่ **Rich Menu** (ไม่เอา Quick Reply หมวด / โปรไฟล์ / Flex card รอบนี้)
+- 6 ปุ่ม 3x2 (2500x1686) `line-bot/assets/richmenu.png` ธีม Dark Emerald + ทอง (สร้างด้วย `assets/make_richmenu.py` PIL + Noto Sans Thai จาก @fontsource แปลง woff→ttf) — ปุ่มจดรายจ่ายสีทองเด่น
+- ปุ่ม: งานวันนี้ (`postback a=menu&m=tasks`) · ยอดเดือนนี้ (`a=menu&m=month`) — **ตอบด้วยโค้ดล้วน ไม่ใช้ AI** (`menuTasks_`/`menuMonth_` ใช้ toolListTasks_/toolGetSummary_ เดิม) · จดรายจ่าย/เพิ่มงาน/เขียนบันทึก = postback `a=noop` + `inputOption:"openKeyboard"` (+ `fillInText` "เพิ่มงาน " / "journal วันนี้ ") · เปิดแอป = uri + `openExternalBrowser=1`
+- งานวันนี้มี Quick Reply "✓ ชื่องาน" (postback `a=done&ref=`) ติ๊กเสร็จได้เลย + ปุ่มยกเลิก · ยอดเดือนนี้มี Quick Reply ข้อความ "วิเคราะห์ให้หน่อย" (ไป gpt-6-sol) / "พอร์ต / net worth"
+- `setupRichMenu()` โหลดรูปจาก GitHub Pages (`CONFIG.RICHMENU_IMAGE_URL`, override ด้วย Script Property) → สร้าง → อัปรูป api-data.line.me → ตั้ง default ทุกคน → ลบเมนูเก่าชื่อ `jack-*` (ไม่แตะเมนูที่ตั้งใน OA Manager) · `removeRichMenu()` · helper ใหม่ `lineCall_(method, host, path, payload, contentType)`
+- เทสต์ **35/35** (+4: ติดตั้งเมนู/พื้นที่ปุ่มเต็มพอดี/label ≤20, noop ไม่ตอบ, งานวันนี้+ติ๊ก+ยกเลิก ไม่เรียก AI, ยอดเดือนตัวเลขตรง)
+- **โอมต้องทำ:** (1) `git push` (รูปต้องขึ้น Pages) (2) วาง Bot.gs + Config.gs ใหม่ใน Apps Script (3) จัดการการทำให้ใช้งานได้ → ✏️ → เวอร์ชันใหม่ (4) รัน `setupRichMenu` (5) ปิด-เปิดแชท Jack
