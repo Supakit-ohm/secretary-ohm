@@ -1,16 +1,32 @@
 rules_version = '2';
-// Security Rules ของ Firestore — เลขา Ohm (ข้อ 55 ขั้นที่ 2)
+// Security Rules ของ Firestore — เลขา Ohm (ข้อ 55 ขั้นที่ 4 — แยกข้อมูลเป็นหลายเอกสาร)
 // วิธีใช้: Firebase Console → Firestore Database → แท็บ Rules → ลบของเดิม วางทั้งไฟล์นี้ → Publish
-// อนุญาตเฉพาะ: ล็อกอินแล้ว + อ่าน/เขียนได้แค่ใต้ users/{uid ของตัวเอง} + อีเมลต้องเป็นของ ohm และยืนยันแล้ว
+// อนุญาตเฉพาะ: ล็อกอินแล้ว + อยู่ใต้ users/{uid ของตัวเอง} + อีเมลต้องเป็นของโอมและยืนยันแล้ว
 // ถ้าเปลี่ยนอีเมล ต้องแก้ทั้งที่นี่และ ALLOWED_EMAILS ใน config.js
+//
+// ขั้นที่ 4: ข้อมูลจริงอยู่ที่ users/{uid}/parts/{docId} (หลายเอกสาร) + users/{uid}/app/meta
+//   users/{uid}/app/data (เอกสารเดียวแบบเดิม) → อ่านได้อย่างเดียว เก็บไว้เป็นสำรอง
+//   เหตุผล: เครื่องที่ยังเปิดโค้ดเวอร์ชันเก่าค้างไว้จะเขียนลงเอกสารเดิมต่อ แล้วข้อมูลจะแยกกันเงียบๆ
+//   ปิดการเขียนไว้ → เครื่องนั้นขึ้นสีส้ม "ไม่มีสิทธิ์เขียน" แทน → รู้ว่าต้องรีเฟรช
+// ถ้าเพิ่ม collection ใหม่ (เช่นความจำบอต ขั้นที่ 7) ต้องเพิ่ม match ที่นี่ด้วย ไม่งั้นแอปเขียนไม่ได้
+// (บอตที่เขียนผ่าน service account ไม่ผ่าน Rules อยู่แล้ว)
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null
+    function isOhm(uid) {
+      return request.auth != null
         && request.auth.uid == uid
         && request.auth.token.email == "supakit6906@gmail.com"
         && request.auth.token.email_verified == true;
     }
-    // ที่อื่นทั้งหมด: ปิด (ค่าเริ่มต้นของ production mode อยู่แล้ว)
+    match /users/{uid}/{document=**} {
+      allow read: if isOhm(uid);
+    }
+    match /users/{uid}/parts/{partId} {
+      allow write: if isOhm(uid);
+    }
+    match /users/{uid}/app/meta {
+      allow write: if isOhm(uid);
+    }
+    // ที่อื่นทั้งหมด (รวม users/{uid}/app/data): เขียนไม่ได้
   }
 }

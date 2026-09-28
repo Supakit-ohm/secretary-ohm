@@ -257,31 +257,159 @@
 })();
 </script>
 
+<script>
+// ================== ข้อ 55 ขั้นที่ 4: แยกข้อมูลเป็นหลายเอกสาร (SecretaryParts) ==================
+// ฟังก์ชันล้วน ไม่แตะ Firebase — แปลง "ข้อมูลทั้งก้อน" ⇄ "ชุดเอกสาร {docId: สตริง JSON}" ใต้ users/{uid}/parts/
+// เหตุผล: (1) ไม่ชนเพดาน 1 MiB/เอกสาร (2) แก้อะไรส่งแค่เอกสารนั้น ไม่ต้องส่งทั้งก้อน
+//         (3) แก้คนละส่วนจาก 2 เครื่องพร้อมกัน รวมกันได้ ไม่ทับกัน (4) บอต LINE (ขั้นที่ 6) เพิ่มรายการได้โดยอ่าน/เขียนแค่เอกสารเล็กๆ
+// รูปแบบ docId (ชื่อ key ผ่าน esc() กัน . ~ / แปลกๆ):
+//   k.<key>                 ค่าของ key ชั้นบนสุด (tasks, projects, budgets, …)
+//   k.finance               "โครง" ของ finance — ทุก field ที่เป็น array ถูกแทนด้วย [] แล้วไปอยู่เอกสารของตัวเอง
+//   f.<sub>                 finance.<sub> ที่เป็น array (investments, debts, cryptoHoldings, …)
+//   fg.expenses.<YYYY-MM>   รายจ่ายแยกตามเดือนจาก date (ไม่มีวันที่ → .none)
+//   fg.income.<YYYY-MM>     รายรับแยกตามเดือน
+//   g.journal.<YYYY>        Journal แยกตามปี (k.journal เก็บแค่ [] เป็นตัวบอกว่ามี key นี้)
+//   <id>~2, <id>~3 …        ถ้า array ใหญ่เกิน CHUNK_BYTES ตัดเป็นหลายท่อนตามลำดับ
+// กติกาสำคัญ: split(assemble(p)) ต้องได้ p เดิมทุกตัวอักษร (ไม่งั้นซิงก์วนไม่จบ) — ลำดับรายการในกลุ่มเดียวกันคงเดิม
+//   ข้ามกลุ่มเรียงตามชื่อกลุ่ม (เดือนเก่า→ใหม่, none ท้ายสุด) · แอปเรียงตามวันที่ตอนแสดงผลอยู่แล้ว
+window.SecretaryParts = (function () {
+  var CHUNK_BYTES = 400 * 1024;          // เพดานเอกสาร Firestore 1 MiB — ตัดที่ 400KB เผื่อ field อื่น/ภาษาไทย 3 ไบต์
+  var GROUPED = { "finance.expenses": 7, "finance.income": 7, "journal": 4 };   // path → ความยาว prefix ของวันที่ (7=เดือน 4=ปี)
+  var enc = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+  function bytes(s) { return enc ? enc.encode(s).length : String(s).length * 3; }
+  function esc(k) { return encodeURIComponent(String(k)).replace(/\./g, "%2E").replace(/~/g, "%7E").replace(/\*/g, "%2A"); }
+  function isObj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
+  function groupOf(item, len) {
+    var d = item && typeof item === "object" ? (item.date || item.month) : null;
+    return typeof d === "string" && /^\d{4}-\d{2}/.test(d) ? d.slice(0, len) : "none";
+  }
+  function putArray(out, id, arr) {
+    var chunks = [], cur = [], size = 2;
+    for (var i = 0; i < arr.length; i++) {
+      var s = JSON.stringify(arr[i] === undefined ? null : arr[i]);
+      var b = bytes(s) + 1;
+      if (cur.length && size + b > CHUNK_BYTES) { chunks.push(cur); cur = []; size = 2; }
+      cur.push(arr[i]); size += b;
+    }
+    chunks.push(cur);
+    for (var n = 0; n < chunks.length; n++) out[n ? id + "~" + (n + 1) : id] = JSON.stringify(chunks[n]);
+  }
+  function putGrouped(out, prefix, arr, len) {
+    var groups = {}, order = [];
+    arr.forEach(function (it) { var g = groupOf(it, len); if (!groups[g]) { groups[g] = []; order.push(g); } groups[g].push(it); });
+    order.forEach(function (g) { putArray(out, prefix + g, groups[g]); });
+  }
+  function split(data) {
+    var out = {};
+    if (!isObj(data)) return out;
+    Object.keys(data).forEach(function (key) {
+      var v = data[key];
+      if (v === undefined) return;
+      var id = "k." + esc(key);
+      if (key === "finance" && isObj(v)) {
+        var skel = {};
+        Object.keys(v).forEach(function (sub) {
+          var sv = v[sub];
+          if (sv === undefined) return;
+          if (!Array.isArray(sv)) { skel[sub] = sv; return; }
+          skel[sub] = [];
+          var len = GROUPED["finance." + sub];
+          if (len) putGrouped(out, "fg." + esc(sub) + ".", sv, len); else putArray(out, "f." + esc(sub), sv);
+        });
+        out[id] = JSON.stringify(skel);
+      } else if (Array.isArray(v) && GROUPED[key]) {
+        out[id] = "[]";
+        putGrouped(out, "g." + esc(key) + ".", v, GROUPED[key]);
+      } else if (Array.isArray(v)) {
+        putArray(out, id, v);
+      } else {
+        out[id] = JSON.stringify(v);
+      }
+    });
+    return out;
+  }
+  function parse(s) { try { return JSON.parse(s); } catch (e) { console.warn("[SecretaryParts] อ่านเอกสารไม่ได้", e); return []; } }
+  function collect(parts, base) {
+    var arr = [];
+    if (parts[base] != null) arr = arr.concat(parse(parts[base]));
+    for (var n = 2; parts[base + "~" + n] != null; n++) arr = arr.concat(parse(parts[base + "~" + n]));
+    return arr;
+  }
+  function collectGroups(parts, prefix) {
+    var groups = {};
+    Object.keys(parts).forEach(function (id) {
+      if (id.indexOf(prefix) === 0) groups[id.slice(prefix.length).replace(/~\d+$/, "")] = 1;
+    });
+    var out = [];
+    Object.keys(groups).sort().forEach(function (g) { out = out.concat(collect(parts, prefix + g)); });
+    return out;
+  }
+  function assemble(parts) {
+    var data = {};
+    Object.keys(parts).sort().forEach(function (id) {
+      if (id.indexOf("k.") !== 0 || /~\d+$/.test(id)) return;
+      var key = decodeURIComponent(id.slice(2));
+      var v = parse(parts[id]);
+      if (Array.isArray(v)) {
+        v = GROUPED[key] ? collectGroups(parts, "g." + esc(key) + ".") : collect(parts, id);
+      } else if (key === "finance" && isObj(v)) {
+        Object.keys(v).forEach(function (sub) {
+          if (!Array.isArray(v[sub])) return;
+          v[sub] = GROUPED["finance." + sub] ? collectGroups(parts, "fg." + esc(sub) + ".") : collect(parts, "f." + esc(sub));
+        });
+      }
+      data[key] = v;
+    });
+    return data;
+  }
+  function same(a, b) {
+    var ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    for (var i = 0; i < ka.length; i++) if (a[ka[i]] !== b[ka[i]]) return false;
+    return true;
+  }
+  function diffIds(a, b) {
+    var ids = {};
+    Object.keys(a).forEach(function (k) { ids[k] = 1; });
+    Object.keys(b).forEach(function (k) { ids[k] = 1; });
+    return Object.keys(ids).filter(function (k) { return a[k] !== b[k]; });
+  }
+  return { split: split, assemble: assemble, same: same, diffIds: diffIds, bytes: bytes, CHUNK_BYTES: CHUNK_BYTES, GROUPED: GROUPED };
+})();
+</script>
+
 <script type="module">
-// ================== ข้อ 55 ขั้นที่ 2: Firestore sync (ESM จาก gstatic, ไม่มี build step) ==================
-// ที่เก็บหลัก = Firestore เอกสารเดียว users/{uid}/app/data  (เฟสแรก — ขั้นที่ 4 ค่อยแยกหลายเอกสาร)
-//   field: json (สตริง JSON ทั้งก้อน เหมือนใน localStorage ทุกตัวอักษร) · by (clientId เครื่องที่เขียน) · at (serverTimestamp)
-//          · size · lastDriveBackupAt (ISO) · lastDriveBackupFile
-// เก็บเป็นสตริงแทน map โดยตั้งใจ: เทียบ "ข้อมูลตรงกันไหม" ได้ตรงตัว (map ของ Firestore เรียง key ใหม่),
-// ไม่ติดข้อห้าม array ซ้อน array / key ว่าง, และ roundtrip กับ localStorage ได้เป๊ะ
-// localStorage ยังเป็นสำเนาในเครื่องให้แอปบูตเร็ว/ใช้ออฟไลน์ — Firestore เป็นตัวจริง
+// ================== ข้อ 55: Firestore sync (ESM จาก gstatic, ไม่มี build step) ==================
+// ขั้นที่ 4 (2026-09-28): ที่เก็บหลัก = หลายเอกสารใต้ users/{uid}/parts/{docId} (แบ่งด้วย window.SecretaryParts ด้านบน)
+//   แต่ละเอกสาร: json (สตริง JSON ของส่วนนั้น) · by (clientId) · at (serverTimestamp) · size
+//   users/{uid}/app/meta : layout · migratedAt · lastDriveBackupAt · lastDriveBackupFile
+//   users/{uid}/app/data : เอกสารเดียวแบบเดิม (ขั้นที่ 2-3) — อ่านครั้งเดียวตอนย้าย แล้วค้างไว้เป็นสำรอง ห้ามเขียนอีก
+//                          (firestore.rules ใหม่ปิดการเขียนเอกสารนี้ — เครื่องที่ยังเป็นโค้ดเก่าจะขึ้นสีส้ม "ไม่มีสิทธิ์เขียน" แทนที่จะแยกข้อมูลเงียบๆ)
+// React ไม่รู้เรื่องนี้เลย: ยังเห็นข้อมูลทั้งก้อนใน localStorage เหมือนเดิม — FireSync แตก/ประกอบให้เอง
+// ซิงก์แบบ 3 ทาง: base = ชุดเอกสารที่เชื่อว่าเซิร์ฟเวอร์มี · local = split(localStorage) · remote = snapshot ล่าสุด
+//   ส่งขึ้น: เฉพาะเอกสารที่ local ≠ base (writeBatch เดียว = atomic)
+//   รับลง: เอกสารที่ local แก้ค้างอยู่ → ของเราชนะ · นอกนั้นรับของ remote → แก้คนละส่วนจาก 2 เครื่องพร้อมกันไม่ทับกัน
 // ล็อกอิน: GIS token client (popup เดิมที่ยืนยันแล้วว่าใช้ได้บน iPhone ข้อ 54) → signInWithCredential
 //          ห้ามใช้ signInWithPopup/Redirect ของ Firebase (ติด cookie ข้ามโดเมนบน iOS)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, GoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, serverTimestamp, disableNetwork, enableNetwork } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, onSnapshot, setDoc, getDocFromServer, writeBatch, serverTimestamp, disableNetwork, enableNetwork } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 (function () {
   var cfg = window.APP_CONFIG || {};
   if (!cfg.FIREBASE) { console.warn("[FireSync] ไม่มี APP_CONFIG.FIREBASE — ข้าม"); return; }
+  var P = window.SecretaryParts;
+  if (!P) { console.error("[FireSync] ไม่มี SecretaryParts — ข้าม"); return; }
   var STORAGE_KEY = "secretary-dashboard-v1";
   var PRE_BACKUP_KEY = "secretary-pre-firestore-backup";   // สำเนาข้อมูลในเครื่องล่าสุดก่อนถูกข้อมูลจาก Firestore ทับ (เขียนทับทุกครั้งที่ทิ้งข้อมูลในเครื่อง)
   // ข้อ 55 แก้บั๊ก: ถ้าแก้ข้อมูลตอน "ยังไม่ได้ล็อกอิน" แล้วค่อยล็อกอิน ห้ามให้ Firestore ทับเงียบๆ — window.storage.set ตั้ง flag นี้ไว้
   var UNSYNCED_KEY = "secretary-unsynced-since";
   var USED_KEY = "secretary-fire-used";                     // เครื่องนี้เคยล็อกอิน Firestore แล้ว → ถ้าหลุดให้ขึ้นแถบเตือน
-  var WARN_BYTES = 700 * 1024;                                 // เอกสาร Firestore จำกัด 1 MiB
+  var WARN_BYTES = 700 * 1024;                                 // เอกสาร Firestore จำกัด 1 MiB (SecretaryParts ตัดที่ 400KB อยู่แล้ว เหลือแค่รายการเดี่ยวที่ใหญ่ผิดปกติ)
+  var MAX_BYTES = 1000 * 1024;
   var BACKUP_EVERY_MS = 7 * 24 * 3600 * 1000;
   var PUSH_DELAY = 700;
+  var LAYOUT = "parts-v1";
 
   // ข้อ 55 ขั้นที่ 3: ล้าง key ของ Drive sync แบบเดิมที่ไม่ใช้แล้ว (folder id ยังใช้ต่อสำหรับสำรอง)
   try { localStorage.removeItem("secretary-drive-file-id"); } catch (e) {}
@@ -312,9 +440,12 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     phase: "init",       // init | signedOut | connecting | synced | saving | offline | error | migrating
     text: "",
     lastBackupAt: null,
-    remoteLoaded: false
+    remoteLoaded: false,
+    docCount: 0
   };
-  var docRef = null, unsub = null, pushTimer = null, pendingText = null;
+  var partsRef = null, metaRef = null, legacyRef = null, unsubParts = null, unsubMeta = null;
+  var base = {};                 // {docId: json} ที่เชื่อว่าอยู่บนเซิร์ฟเวอร์แล้ว
+  var pushTimer = null, inflight = 0, metaLoaded = false;
   var tokenClient = null, accessToken = null, tokenExpiresAt = 0, pendingTokenCb = null;
   var migrating = false, backupRunning = false;
   var rejectedMsg = "";   // ข้อความตอนบัญชีอื่นล็อกอิน — ต้องค้างให้เห็น ไม่ให้ "ยังไม่ได้ล็อกอิน" ทับทันที
@@ -326,6 +457,11 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     try { window.dispatchEvent(new CustomEvent("sync-status", { detail: window.__syncStatus })); } catch (e) {}
   }
   function localText() { return localStorage.getItem(STORAGE_KEY) || ""; }
+  function localParts() {
+    var t = localText();
+    if (!t) return {};
+    try { return P.split(JSON.parse(t)); } catch (e) { console.error("[FireSync] ข้อมูลในเครื่องอ่านไม่ได้", e); return null; }
+  }
   function isAllowed(email) {
     var allow = (cfg.ALLOWED_EMAILS || []).map(function (s) { return String(s).toLowerCase(); });
     return !allow.length || allow.indexOf(String(email || "").toLowerCase()) >= 0;
@@ -337,33 +473,61 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
         " · งาน " + (d.tasks || []).length + " · โปรเจกต์ " + (d.projects || []).length + " · Journal " + (d.journal || []).length;
     } catch (e) { return "(อ่านไม่ได้)"; }
   }
+  function assembleText(parts) { return JSON.stringify(P.assemble(parts)); }
+  function sizeNote(parts) {
+    var big = 0;
+    Object.keys(parts || {}).forEach(function (id) { var b = P.bytes(parts[id]); if (b > big) big = b; });
+    return big > WARN_BYTES ? "ซิงก์แล้ว — แต่มีเอกสารใหญ่ " + Math.round(big / 1024) + "KB ใกล้เพดาน 1MB" : "";
+  }
+  function syncedText() { var n = Object.keys(base).length; return sizeNote(base) || ("ซิงก์แล้ว ✓" + (n ? " · " + n + " เอกสาร" : "")); }
 
   // ---------- เขียนขึ้น Firestore ----------
-  function writeRemote(text, extra) {
-    if (!docRef) return Promise.resolve();
-    var payload = Object.assign({ json: text, by: clientId, at: serverTimestamp(), size: text.length }, extra || {});
-    return setDoc(docRef, payload, { merge: true });
+  function commitParts(ids, parts) {
+    // writeBatch เดียว = ทุกเอกสารเปลี่ยนพร้อมกัน เครื่องอื่นไม่เห็นข้อมูลครึ่งๆ กลางๆ (เกิน 450 ค่อยแบ่ง — แทบไม่เกิด)
+    var groups = [];
+    for (var i = 0; i < ids.length; i += 450) groups.push(ids.slice(i, i + 450));
+    return Promise.all(groups.map(function (g) {
+      var b = writeBatch(db);
+      g.forEach(function (id) {
+        var ref = doc(partsRef, id);
+        if (parts[id] == null) b.delete(ref);
+        else b.set(ref, { json: parts[id], by: clientId, at: serverTimestamp(), size: parts[id].length });
+      });
+      return b.commit();
+    }));
   }
   function doPush() {
     pushTimer = null;
-    var text = pendingText; pendingText = null;
-    if (text == null || !docRef) return Promise.resolve();
-    if (text.length > WARN_BYTES) console.warn("[FireSync] ข้อมูลใหญ่ " + Math.round(text.length / 1024) + "KB ใกล้เพดาน 1 MiB ต่อเอกสาร");
-    emit(navigator.onLine === false ? "offline" : "saving", navigator.onLine === false ? "ออฟไลน์ — บันทึกในเครื่องแล้ว จะซิงก์เมื่อออนไลน์" : "กำลังบันทึก…");
-    // setDoc จะ resolve เมื่อเซิร์ฟเวอร์รับแล้ว — ออฟไลน์ก็ยังเข้าคิวใน IndexedDB ไม่หาย
-    return writeRemote(text).then(function () {
-      if (!pendingText) emit("synced", sizeNote(text) || "ซิงก์แล้ว ✓");
+    if (!partsRef || !state.remoteLoaded || migrating) return Promise.resolve();
+    var lp = localParts();
+    if (!lp) { emit("error", "ข้อมูลในเครื่องเสีย อ่านไม่ได้ — ไม่ได้ส่งขึ้นคลาวด์"); return Promise.resolve(); }
+    var ids = P.diffIds(lp, base);
+    if (!ids.length) { if (!inflight) emit("synced", syncedText()); return Promise.resolve(); }
+    var tooBig = ids.filter(function (id) { return lp[id] != null && P.bytes(lp[id]) > MAX_BYTES; });
+    if (tooBig.length) {
+      emit("error", "ข้อมูลส่วน " + tooBig[0] + " ใหญ่เกิน 1MB — บันทึกขึ้นคลาวด์ไม่ได้ (ข้อมูลยังอยู่ในเครื่อง)");
+      return Promise.resolve();
+    }
+    // อัปเดต base ล่วงหน้า (snapshot ของเราเองที่กลับมาจะได้ไม่ถูกนับว่า "เครื่องอื่นแก้") — ถ้าล้มค่อยคืนค่า
+    var prev = {};
+    ids.forEach(function (id) { prev[id] = base[id]; if (lp[id] == null) delete base[id]; else base[id] = lp[id]; });
+    state.docCount = Object.keys(base).length;
+    var off = navigator.onLine === false;
+    emit(off ? "offline" : "saving", off ? "ออฟไลน์ — บันทึกในเครื่องแล้ว จะซิงก์เมื่อออนไลน์" : "กำลังบันทึก…");
+    inflight++;
+    // commit จะ resolve เมื่อเซิร์ฟเวอร์รับแล้ว — ออฟไลน์ก็ยังเข้าคิวใน IndexedDB ไม่หาย
+    return commitParts(ids, lp).then(function () {
+      inflight--;
+      if (!pushTimer && !inflight) emit("synced", syncedText());
     }).catch(function (e) {
+      inflight--;
+      ids.forEach(function (id) { if (base[id] === lp[id]) { if (prev[id] == null) delete base[id]; else base[id] = prev[id]; } });
       console.error("[FireSync] write", e);
       emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์เขียน (เช็ก Security Rules/อีเมล)" : "บันทึกขึ้น Firestore ไม่สำเร็จ");
     });
   }
-  function sizeNote(text) {
-    return text && text.length > WARN_BYTES ? "ซิงก์แล้ว — แต่ข้อมูลใหญ่ " + Math.round(text.length / 1024) + "KB ใกล้เพดาน 1MB" : "";
-  }
-  function schedulePush(text) {
-    if (!docRef || !state.remoteLoaded || migrating) return;   // ก่อนโหลดของจริงจาก Firestore ห้ามเขียนทับ
-    pendingText = text;
+  function schedulePush() {
+    if (!partsRef || !state.remoteLoaded || migrating) return;   // ก่อนโหลดของจริงจาก Firestore ห้ามเขียนทับ
     clearTimeout(pushTimer);
     pushTimer = setTimeout(doPush, PUSH_DELAY);
     emit(state.phase === "error" ? "error" : "saving", state.phase === "error" ? state.text : "กำลังบันทึก…");
@@ -391,68 +555,122 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     localStorage.setItem(STORAGE_KEY, text);
     try { window.dispatchEvent(new CustomEvent("secretary-remote-data", { detail: { text: text, why: why || "remote" } })); } catch (e) {}
   }
-  function onSnap(snap) {
-    if (snap.metadata.hasPendingWrites) return;          // echo จากการเขียนของเครื่องนี้เอง
-    if (!snap.exists()) {
+  function readParts(snap) {
+    var out = {};
+    snap.forEach(function (d) { var j = (d.data() || {}).json; if (typeof j === "string") out[d.id] = j; });
+    return out;
+  }
+  function onParts(snap) {
+    if (snap.metadata.hasPendingWrites || migrating) return;   // echo จากการเขียนของเครื่องนี้เอง / กำลังย้ายอยู่
+    var remote = readParts(snap);
+    var firstLoad = !state.remoteLoaded;
+    if (firstLoad && snap.empty) {
       if (snap.metadata.fromCache) { emit("connecting", "กำลังเชื่อมต่อ Firestore…"); return; }   // ยังไม่รู้จริงว่าไม่มี
-      firstMigration();
+      migrate();
       return;
     }
-    var d = snap.data() || {};
-    state.lastBackupAt = d.lastDriveBackupAt || null;
-    var firstLoad = !state.remoteLoaded;
-    state.remoteLoaded = true;
-    if (typeof d.json === "string" && d.json) {
-      if (pendingText != null) {
-        // เครื่องนี้มีของแก้ค้างอยู่ (ยังไม่ส่ง) → ของเราชนะ ส่งทับไปเลย
-      } else if (d.by === clientId && !firstLoad) {
-        // เซิร์ฟเวอร์ยืนยันการเขียนของเราเอง — ไม่ต้องทำอะไร
-      } else if (d.json !== localText()) {
-        var unsynced = firstLoad && localText() && localStorage.getItem(UNSYNCED_KEY);
+    if (firstLoad) {
+      state.remoteLoaded = true;
+      var lp0 = localParts() || {};
+      if (!P.same(lp0, remote)) {
+        var remoteText = assembleText(remote);
+        var unsynced = localText() && localStorage.getItem(UNSYNCED_KEY);
         if (unsynced && !window.confirm(
           "เครื่องนี้มีข้อมูลที่แก้ตอนยังไม่ได้ล็อกอิน (ยังไม่เคยขึ้นคลาวด์) — จะใช้ชุดไหน?\n\n" +
-          "บนคลาวด์ (Firestore): " + summarize(d.json) + "\n" +
+          "บนคลาวด์ (Firestore): " + summarize(remoteText) + "\n" +
           "ในเครื่องนี้: " + summarize(localText()) + "\n\n" +
           "OK = ใช้ข้อมูลบนคลาวด์ (ของในเครื่องนี้เก็บสำรองไว้)\nCancel = ใช้ข้อมูลในเครื่องนี้ แล้วอัปขึ้นคลาวด์แทน")) {
           try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {}
-          pendingText = localText();
+          base = remote;
           doPush();
           return;
         }
-        if (firstLoad && localText()) { try { localStorage.setItem(PRE_BACKUP_KEY, localText()); } catch (e) {} }
-        applyRemote(d.json, firstLoad ? "first-load" : "remote");
+        if (localText()) { try { localStorage.setItem(PRE_BACKUP_KEY, localText()); } catch (e) {} }
+        applyRemote(remoteText, "first-load");
       }
-      if (firstLoad) { try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {} }
+      base = remote;
+      try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {}
+    } else {
+      // รวม 3 ทาง: เอกสารที่เครื่องนี้แก้ค้าง (local ≠ base) ใช้ของเรา · ที่เหลือใช้ของ remote
+      var lp = localParts();
+      if (!lp) { base = remote; return; }
+      var merged = {};
+      P.diffIds(remote, {}).concat(P.diffIds(base, {}), P.diffIds(lp, {})).forEach(function (id) {
+        if (id in merged) return;
+        var mine = lp[id] !== base[id];
+        var v = mine ? lp[id] : remote[id];
+        if (v != null) merged[id] = v;
+      });
+      base = remote;
+      if (!P.same(merged, lp)) applyRemote(assembleText(merged), "remote");
     }
-    if (pendingText == null && !pushTimer) {
-      emit(snap.metadata.fromCache ? "offline" : "synced",
-        snap.metadata.fromCache ? "ออฟไลน์ — ใช้ข้อมูลในเครื่อง" : (sizeNote(d.json) || "ซิงก์แล้ว ✓"));
+    // ของที่รับมาอาจไม่ได้อยู่ในรูปแบบมาตรฐาน (เช่นบอตเขียน JSON มีเว้นวรรค/ใส่ผิดเดือน) หรือเครื่องนี้มีของแก้ค้าง
+    // → ส่งฉบับมาตรฐานกลับทันที ไม่งั้นรอบหน้าจะนึกว่า "เครื่องนี้แก้เอกสารนั้นอยู่" แล้วไปทับของที่คนอื่นเพิ่มทีหลัง
+    if (!pushTimer && P.diffIds(localParts() || {}, base).length) schedulePush();
+    state.docCount = Object.keys(base).length;
+    if (!pushTimer && !inflight) {
+      emit(snap.metadata.fromCache ? "offline" : "synced", snap.metadata.fromCache ? "ออฟไลน์ — ใช้ข้อมูลในเครื่อง" : syncedText());
     }
-    maybeAutoBackup(d.json);
+    maybeAutoBackup();
+  }
+  function onMeta(snap) {
+    metaLoaded = true;
+    var d = snap.exists() ? (snap.data() || {}) : {};
+    if (d.lastDriveBackupAt) state.lastBackupAt = d.lastDriveBackupAt;
+    emit(null);
+    if (state.remoteLoaded) maybeAutoBackup();
   }
 
-  // ---------- ย้ายข้อมูลครั้งแรก (ยังไม่มีเอกสารใน Firestore) ----------
-  function firstMigration() {
+  // ---------- ย้ายข้อมูล (ยังไม่มีเอกสารใน parts) ----------
+  // มีเอกสารเดียวแบบเดิม (app/data) → ใช้อันนั้นเป็นตัวจริง · ไม่มี → ตั้งต้นจากข้อมูลในเครื่อง (ล็อกอินครั้งแรกสุด)
+  function migrate() {
     if (migrating) return;
     migrating = true;
-    emit("migrating", "ย้ายข้อมูลขึ้น Firestore ครั้งแรก…");
-    // ข้อ 55 ขั้นที่ 3: เลิกอ่าน data.json บน Drive แล้ว (ค้างเป็นของเก่าตั้งแต่ย้ายมา Firestore) → ตั้งต้นจากข้อมูลในเครื่องเสมอ
+    emit("migrating", "จัดเก็บข้อมูลรูปแบบใหม่ (แยกหลายเอกสาร)…");
     var local = localText();
-    var chosen = local || "{}";
-    Promise.resolve().then(function () {
-      return writeRemote(chosen).then(function () {
+    getDocFromServer(legacyRef).then(function (ls) {
+      var legacy = ls && ls.exists() ? (ls.data() || {}) : null;
+      var chosen = local || "{}";
+      if (legacy && typeof legacy.json === "string" && legacy.json) {
+        if (legacy.lastDriveBackupAt) state.lastBackupAt = legacy.lastDriveBackupAt;
+        var same = false;
+        try { same = P.same(P.split(JSON.parse(legacy.json)), localParts() || {}); } catch (e) {}
+        if (!same) {
+          var unsynced = local && localStorage.getItem(UNSYNCED_KEY);
+          var useCloud = !unsynced || window.confirm(
+            "เครื่องนี้มีข้อมูลที่แก้ตอนยังไม่ได้ล็อกอิน (ยังไม่เคยขึ้นคลาวด์) — จะใช้ชุดไหน?\n\n" +
+            "บนคลาวด์ (Firestore): " + summarize(legacy.json) + "\n" +
+            "ในเครื่องนี้: " + summarize(local) + "\n\n" +
+            "OK = ใช้ข้อมูลบนคลาวด์ (ของในเครื่องนี้เก็บสำรองไว้)\nCancel = ใช้ข้อมูลในเครื่องนี้ แล้วอัปขึ้นคลาวด์แทน");
+          if (useCloud) chosen = legacy.json;
+        }
+      }
+      var parts;
+      try { parts = P.split(JSON.parse(chosen)); } catch (e) { throw new Error("ข้อมูลตั้งต้นอ่านไม่ได้"); }
+      var ids = Object.keys(parts);
+      return commitParts(ids, parts).then(function () {
+        var meta = { layout: LAYOUT, migratedAt: new Date().toISOString(), migratedBy: clientId, docCount: ids.length };
+        if (legacy && legacy.lastDriveBackupAt) { meta.lastDriveBackupAt = legacy.lastDriveBackupAt; meta.lastDriveBackupFile = legacy.lastDriveBackupFile || ""; }
+        setDoc(metaRef, meta, { merge: true }).catch(function (e) { console.warn("[FireSync] meta", e); });
+        base = parts;
+        state.docCount = ids.length;
         state.remoteLoaded = true;
         try { localStorage.removeItem(UNSYNCED_KEY); } catch (e) {}
         if (chosen !== local) {
           try { if (local) localStorage.setItem(PRE_BACKUP_KEY, local); } catch (e) {}
+          // ถ้าระหว่างย้ายมีการแก้ในเครื่อง (local เปลี่ยน) ก็ยังใช้ชุดที่เลือก — ของเดิมอยู่ใน PRE_BACKUP
           applyRemote(chosen, "migration");
         }
-        emit("synced", "ย้ายข้อมูลขึ้น Firestore แล้ว ✓");
+        migrating = false;
+        emit("synced", "จัดเก็บรูปแบบใหม่แล้ว (" + ids.length + " เอกสาร) ✓");
+        if (P.diffIds(localParts() || {}, base).length) schedulePush();   // แก้ระหว่างย้าย → ส่งตาม
+        maybeAutoBackup();
       });
     }).catch(function (e) {
+      migrating = false;
       console.error("[FireSync] migration", e);
-      emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์เขียน (เช็ก Security Rules/อีเมล)" : "ย้ายข้อมูลไม่สำเร็จ");
-    }).then(function () { migrating = false; });
+      emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์เขียน (เช็ก Security Rules/อีเมล)" : "ย้ายข้อมูลไม่สำเร็จ — ลองโหลดหน้าใหม่");
+    });
   }
 
   // ---------- Google Drive (สำรองรายสัปดาห์เท่านั้น — ข้อ 55 ขั้นที่ 3 ลบ Drive sync แบบเดิมแล้ว) ----------
@@ -498,7 +716,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     }).then(function () {
       var at = new Date().toISOString();
       state.lastBackupAt = at;
-      if (docRef) setDoc(docRef, { lastDriveBackupAt: at, lastDriveBackupFile: name }, { merge: true }).catch(function () {});
+      if (metaRef) setDoc(metaRef, { lastDriveBackupAt: at, lastDriveBackupFile: name }, { merge: true }).catch(function () {});
       emit(null, "สำรองขึ้น Drive แล้ว (" + name + ") ✓");
       return true;
     }).finally(function () { backupRunning = false; });
@@ -506,8 +724,10 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
   function backupDue() {
     return !state.lastBackupAt || (Date.now() - Date.parse(state.lastBackupAt)) > BACKUP_EVERY_MS;
   }
-  function maybeAutoBackup(text) {
-    if (tokenValid() && backupDue() && !backupRunning) backupToDrive(text).catch(function (e) { console.warn("[FireSync] auto backup", e); });
+  function maybeAutoBackup() {
+    // รอ meta โหลดก่อน ไม่งั้นยังไม่รู้วันสำรองล่าสุด แล้วสำรองซ้ำทุกครั้งที่เปิดแอป
+    if (!metaLoaded || !state.remoteLoaded) return;
+    if (tokenValid() && backupDue() && !backupRunning) backupToDrive(localText()).catch(function (e) { console.warn("[FireSync] auto backup", e); });
   }
 
   // ---------- ล็อกอิน ----------
@@ -563,8 +783,10 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
   }
 
   onAuthStateChanged(auth, function (user) {
-    if (unsub) { unsub(); unsub = null; }
-    docRef = null; state.remoteLoaded = false;
+    if (unsubParts) { unsubParts(); unsubParts = null; }
+    if (unsubMeta) { unsubMeta(); unsubMeta = null; }
+    partsRef = metaRef = legacyRef = null; base = {}; metaLoaded = false;
+    state.remoteLoaded = false; state.docCount = 0;
     if (!user) {
       state.user = null;
       state.wasUsed = !!localStorage.getItem(USED_KEY);
@@ -573,7 +795,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
       return;
     }
     if (!isAllowed(user.email)) {
-      rejectedMsg = "บัญชี " + user.email + " ไม่มีสิทธิ์ใช้แอปนี้ — ล็อกอินด้วยบัญชีของโอห์ม";
+      rejectedMsg = "บัญชี " + user.email + " ไม่มีสิทธิ์ใช้แอปนี้ — ล็อกอินด้วยบัญชีของโอม";
       emit("error", rejectedMsg);
       signOut(auth);
       return;
@@ -581,17 +803,21 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
     state.user = { email: user.email, uid: user.uid };
     try { localStorage.setItem(USED_KEY, "1"); } catch (e) {}
     emit("connecting", "กำลังโหลดข้อมูลจาก Firestore…");
-    docRef = doc(db, "users", user.uid, "app", "data");
-    unsub = onSnapshot(docRef, { includeMetadataChanges: true }, onSnap, function (e) {
+    partsRef = collection(db, "users", user.uid, "parts");
+    metaRef = doc(db, "users", user.uid, "app", "meta");
+    legacyRef = doc(db, "users", user.uid, "app", "data");
+    var onErr = function (e) {
       console.error("[FireSync] snapshot", e);
       emit("error", e && e.code === "permission-denied" ? "ไม่มีสิทธิ์อ่าน (เช็ก Security Rules/อีเมล)" : "เชื่อมต่อ Firestore ไม่สำเร็จ");
-    });
+    };
+    unsubMeta = onSnapshot(metaRef, onMeta, function (e) { console.warn("[FireSync] meta", e); metaLoaded = true; });
+    unsubParts = onSnapshot(partsRef, { includeMetadataChanges: true }, onParts, onErr);
   });
   window.addEventListener("online", function () { if (state.user && state.phase === "offline") emit("connecting", "กลับมาออนไลน์ — กำลังซิงก์…"); });
 
   window.FireSync = {
     isSignedIn: function () { return !!state.user; },
-    isReady: function () { return !!docRef && state.remoteLoaded; },
+    isReady: function () { return !!partsRef && state.remoteLoaded; },
     schedulePush: schedulePush,
     flush: flush,
     signIn: signIn,
@@ -1392,11 +1618,18 @@ function prepareLoadedData(parsed) {
 function useSecretaryData() {
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
+  // ข้อ 55 ขั้นที่ 4 (บั๊กที่เจอตอนเทสต์): ข้อมูลจากคลาวด์มาถึง "ระหว่าง" render กับ useEffect ที่ค้างคิวอยู่
+  // (เช่น effect บันทึก progressLog ของหน้า Home) → effect นั้นยังถือ data ชุดเก่า (เช่นค่าตั้งต้นของเครื่องใหม่) แล้ว persist ทับ
+  // ของจริงทั้งก้อน แล้วส่งขึ้นคลาวด์ทับทุกเครื่อง → ระหว่างที่ข้อมูลจากคลาวด์ยังไม่ได้ render ให้ทิ้ง persist ทุกตัว
+  // (effect พวกนั้นจะรันใหม่เองด้วยข้อมูลจริงหลัง render เพราะ deps เปลี่ยน)
+  const remoteRef=useRef(null);
+  if (remoteRef.current && data===remoteRef.current) remoteRef.current=null;
   useEffect(()=>{
     // ข้อมูลจากเครื่องอื่น (Firestore onSnapshot) — FireSync เขียนลง localStorage แล้วค่อยยิง event นี้
     const onRemote=e=>{
       try {
         const {cleaned,needsSave}=prepareLoadedData(JSON.parse(e.detail.text));
+        remoteRef.current=cleaned;
         setData(cleaned);
         setLoading(false);
         if (needsSave) window.storage.set(STORAGE_KEY,JSON.stringify(cleaned)).catch(()=>{});
@@ -1415,7 +1648,10 @@ function useSecretaryData() {
     })();
     return ()=>window.removeEventListener("secretary-remote-data",onRemote);
   },[]);
-  const persist=async(next)=>{ setData(next); try{await window.storage.set(STORAGE_KEY,JSON.stringify(next));}catch{}; };
+  const persist=async(next)=>{
+    if (remoteRef.current && next!==remoteRef.current) { console.warn("[persist] ข้าม — มีข้อมูลใหม่จากคลาวด์ที่ยังไม่ได้แสดง (กันเขียนทับด้วยข้อมูลเก่า)"); return; }
+    setData(next); try{await window.storage.set(STORAGE_KEY,JSON.stringify(next));}catch{};
+  };
   return {data,loading,persist};
 }
 function greetingFor(h) {
@@ -1677,7 +1913,7 @@ function AccountMenu() {
       <button className={`nav-icon-btn avatar acct-btn acct-${state}`} onClick={()=>setOpen(v=>!v)} title="บัญชีและการซิงก์">O<span className="acct-dot"></span></button>
       {open&&(
         <div className="acct-pop">
-          <div className="acct-head">คุณโอห์ม</div>
+          <div className="acct-head">คุณโอม</div>
           {fireUser&&<div className="acct-email">{fs.user.email}</div>}
           <div className={`acct-status ${state}`}>{statusText}</div>
           {hasFire?(
