@@ -31,17 +31,19 @@ export function serverTimestamp(){return "TS";}
 export function onSnapshot(ref,opts,next,err){(subs[ref]=subs[ref]||[]).push(next);window.__srvGet(ref).then(d=>next({exists:()=>!!d,data:()=>d,metadata:{hasPendingWrites:false,fromCache:false}}));return()=>{subs[ref]=subs[ref].filter(f=>f!==next);};}
 export async function setDoc(ref,payload,opt){const cur=await window.__srvGet(ref);const merged=Object.assign({},cur||{},payload);window.__fsDeliver(ref,merged,true);await window.__srvSet(ref,payload);}
 `;
-async function device(browser,name,{local,user}={}){
+async function device(browser,name,{local,user,failFire}={}){
   const ctx=await browser.newContext({viewport:{width:1280,height:900}});
   await ctx.addInitScript(({local,user})=>{
     if(!sessionStorage.getItem("__init")){ sessionStorage.setItem("__init","1");
       if(local) localStorage.setItem("secretary-dashboard-v1",local);
-      if(user) localStorage.setItem("fake-user",JSON.stringify(user)); }
+      if(user) localStorage.setItem("fake-user",JSON.stringify(user));
+      localStorage.setItem("secretary-drive-file-id","legacy"); }
     window.google={accounts:{oauth2:{initTokenClient:(o)=>({requestAccessToken:()=>setTimeout(()=>o.callback({access_token:"tok",expires_in:3600}),10)})}}};
   },{local:local?JSON.stringify(local):null,user});
   await ctx.route(/gstatic\.com\/firebasejs\/.*firebase-app\.js/,r=>r.fulfill({contentType:"text/javascript",body:FAKE_APP}));
   await ctx.route(/gstatic\.com\/firebasejs\/.*firebase-auth\.js/,r=>r.fulfill({contentType:"text/javascript",body:FAKE_AUTH}));
   await ctx.route(/gstatic\.com\/firebasejs\/.*firebase-firestore\.js/,r=>r.fulfill({contentType:"text/javascript",body:FAKE_FS}));
+  if(failFire) await ctx.route(/gstatic\.com\/firebasejs\//,r=>r.abort());   // route ที่ลงทะเบียนทีหลังชนะ
   await ctx.route(/accounts\.google\.com/,r=>r.fulfill({contentType:"text/javascript",body:""}));
   await ctx.route(/googleapis\.com\/(upload\/)?drive/,async r=>{
     const u=r.request().url();
@@ -80,24 +82,29 @@ const DOC="users/u1/app/data";
   await sleep(1200);
   check("ยังไม่ล็อกอิน → ไม่เขียนขึ้น Firestore",SERVER.writes===writesBefore);
 
-  console.log("\n[2] คอม: ล็อกอินครั้งแรก → ย้ายข้อมูล (มี data.json บน Drive ต่างจากในเครื่อง → เลือก Cancel = ใช้ในเครื่อง)");
-  let dlg=null; pc.once('dialog',async d=>{dlg=d.message(); await d.dismiss();});
+  console.log("\n[2] คอม: ล็อกอินครั้งแรก → ย้ายข้อมูลในเครื่องขึ้น Firestore (ขั้นที่ 3: ไม่อ่าน data.json บน Drive แล้ว ต้องไม่ถาม)");
+  let dlg=null; const onDlg=async d=>{dlg=d.message(); await d.dismiss();}; pc.once('dialog',onDlg);
   await pc.click('.acct-item:has-text("เข้าสู่ระบบ Google")');
   await sleep(1500);
-  check("ถามเลือกชุดข้อมูล Drive vs เครื่องนี้",dlg&&dlg.includes("ย้ายข้อมูลขึ้น Firestore"),dlg&&dlg.split("\n")[2]);
+  pc.off('dialog',onDlg);
+  check("ไม่ถามเลือก Drive vs เครื่องนี้แล้ว",!dlg,dlg&&dlg.split("\n")[0]);
   const pcLocal=await pc.evaluate(()=>localStorage.getItem("secretary-dashboard-v1"));
   check("เอกสาร Firestore = ข้อมูลในเครื่อง",SERVER.docs[DOC]&&SERVER.docs[DOC].json===pcLocal);
+  check("ไม่ดึง data.json (ข้อมูลไดรฟ์ไม่โผล่)",!pcLocal.includes("ข้อมูลจากไดรฟ์"));
   s=await status(pc);
   check("สถานะ synced + อีเมลถูก",s.phase==="synced"&&s.user.email==="supakit6906@gmail.com",s.phase+" / "+s.text);
   check("สำรองขึ้น Drive อัตโนมัติรอบแรก (ยังไม่เคยสำรอง)",SERVER.backups.length===1&&!!SERVER.docs[DOC].lastDriveBackupAt);
-  check("__fireSignedIn → Drive แบบเดิมหยุด push",await pc.evaluate(()=>window.__fireSignedIn===true));
+  check("ลบ Drive sync แบบเดิมแล้ว (ไม่มี DriveSync/#driveConnectBtn/#driveStatus)",await pc.evaluate(()=>!window.DriveSync&&!document.getElementById("driveConnectBtn")&&!document.getElementById("driveStatus")));
+  check("ปุ่ม Export/Import ยังอยู่",await pc.evaluate(()=>!!document.getElementById("exportJsonBtn")&&!!document.getElementById("importJsonBtn")));
+  check("ล้าง key secretary-drive-file-id เดิม",await pc.evaluate(()=>!localStorage.getItem("secretary-drive-file-id")));
 
   console.log("\n[3] iPhone: ล็อกอินค้างไว้แล้ว ข้อมูลในเครื่องเป็นค่าตั้งต้น → ต้องได้ข้อมูลจริงจาก Firestore");
   const ph=await device(b,"iphone",{user:{uid:"u1",email:"supakit6906@gmail.com"}});
   await sleep(800);
   const phLocal=await ph.evaluate(()=>localStorage.getItem("secretary-dashboard-v1"));
   check("iPhone localStorage = Firestore",phLocal===SERVER.docs[DOC].json);
-  check("iPhone ไม่ถามอะไร และไม่เอาข้อมูลตั้งต้นทับคลาวด์",SERVER.docs[DOC].json===pcLocal&&ph.dialogs===0,"dialogs="+ph.dialogs);
+  const pcNow=await pc.evaluate(()=>localStorage.getItem("secretary-dashboard-v1"));   // คอมอาจ normalize แล้วบันทึกซ้ำหลังย้าย — เทียบกับค่าปัจจุบันของคอม
+  check("iPhone ไม่ถามอะไร และไม่เอาข้อมูลตั้งต้นทับคลาวด์",SERVER.docs[DOC].json===pcNow&&ph.dialogs===0,"dialogs="+ph.dialogs);
   check("เก็บสำเนาข้อมูลเดิมของ iPhone ไว้ก่อนทับ",await ph.evaluate(()=>!!localStorage.getItem("secretary-pre-firestore-backup")));
   await ph.click('.nav-pill-btn:has-text("Tracker")').catch(()=>{});
   await sleep(500);
@@ -179,6 +186,14 @@ const DOC="users/u1/app/data";
   await sleep(800);
   s=await status(other);
   check("บัญชีอื่น → ถูกออกจากระบบ + บอกว่าไม่มีสิทธิ์",s.phase==="signedOut"&&!(s.user)&&s.text.includes("ไม่มีสิทธิ์"),s.phase+" "+s.text);
+
+  console.log("\n[10] โหลด Firebase ไม่ขึ้น (ออฟไลน์ครั้งแรก) → แอปยังใช้ได้ + เมนูมีปุ่มโหลดใหม่ ไม่มีปุ่ม Drive แบบเดิม");
+  const off=await device(b,"offline",{local:LOCAL,failFire:true});
+  await off.click('.acct-btn'); await sleep(200);
+  const offTxt=await off.textContent('.acct-pop');
+  check("ไม่มี FireSync + สถานะบอกว่าข้อมูลอยู่ในเครื่อง",await off.evaluate(()=>!window.FireSync)&&offTxt.includes("ข้อมูลอยู่ในเครื่องนี้"));
+  check("มีปุ่มโหลดหน้าใหม่ · ไม่มีปุ่มเชื่อมต่อ Drive",offTxt.includes("โหลดหน้าใหม่")&&!offTxt.includes("เชื่อมต่อ Google Drive"));
+  off.errs=off.errs.filter(e=>!/firebasejs|Failed to fetch dynamically imported module|ERR_FAILED/.test(e));
 
   for(const p of pages) if(p.errs.length) console.log("ERR",p.__name,p.errs.slice(0,5));
   const errCount=pages.reduce((a,p)=>a+p.errs.length,0);

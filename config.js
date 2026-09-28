@@ -6,8 +6,7 @@
 // ดูขั้นตอนทั้งหมดได้ในไฟล์ SETUP.md
 window.APP_CONFIG = {
   CLIENT_ID: "1034065613880-ufoc34mqhi69a2lb841elmevaebarqhk.apps.googleusercontent.com",
-  DRIVE_FOLDER_NAME: "SecretaryOhmApp",
-  DATA_FILE_NAME: "data.json",
+  DRIVE_FOLDER_NAME: "SecretaryOhmApp",   // โฟลเดอร์ไฟล์สำรองรายสัปดาห์ backup-YYYY-MM-DD.json (ข้อ 55 ขั้นที่ 3 เลิกใช้ data.json แล้ว)
 
   // ข้อ 55: Firebase (ค่าสาธารณะ ใส่ในโค้ดได้ — ความปลอดภัยอยู่ที่ Security Rules ใน firestore.rules)
   FIREBASE: {
