@@ -149,13 +149,14 @@ function thumbFor_(msg, driveId) {
   return null;
 }
 function newFileId_() { return "f" + Date.now().toString(36) + uid_().slice(0, 4); }
-function saveLineFile_(msg, link) {
-  var blob;
+function fetchLineBlob_(msg) {
   if (msg.type === "image" && msg.contentProvider && msg.contentProvider.type === "external" && msg.contentProvider.originalContentUrl) {
-    blob = UrlFetchApp.fetch(msg.contentProvider.originalContentUrl).getBlob();
-  } else {
-    blob = lineContent_(msg.id, false);
+    return UrlFetchApp.fetch(msg.contentProvider.originalContentUrl).getBlob();
   }
+  return lineContent_(msg.id, false);
+}
+function saveLineFile_(msg, link, blob) {
+  blob = blob || fetchLineBlob_(msg);
   var mime = msg.type === "file" ? "application/pdf" : (blob.getContentType() || "image/jpeg");
   var name = msg.type === "file" ? String(msg.fileName || "file.pdf").replace(/[\\\/:*?"<>|]+/g, "_")
     : "LINE_" + Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd_HHmmss") + (msg.imageSet ? "_" + msg.imageSet.index : "") + (/png/.test(mime) ? ".png" : ".jpg");
@@ -249,6 +250,95 @@ function attachPendingTo_(records) {
   return res.changed ? res.changed : null;
 }
 
+// ---------- อ่านสลิป/ใบเสร็จ (ขั้นที่ 9) ----------
+// รูป → gpt-6-luna (vision + JSON schema) → {kind, amount, date, memo, category} → จดรายจ่าย/รายรับให้เอง
+// สลิปที่ยอดตรงกับรายการที่เพิ่งจดไว้ (ภายใน 10 นาที) = แนบกับรายการนั้น ไม่จดซ้ำ
+var OCR_SCHEMA = { name: "receipt", schema: {
+  type: "object", additionalProperties: false,
+  required: ["kind", "amount", "currency", "date", "memo", "category", "confidence"],
+  properties: {
+    kind: { type: "string", enum: ["expense", "income", "other"] },
+    amount: { type: ["number", "null"] },
+    currency: { type: ["string", "null"] },
+    date: { type: ["string", "null"] },
+    memo: { type: ["string", "null"] },
+    category: { type: ["string", "null"] },
+    confidence: { type: "string", enum: ["high", "low"] }
+  } } };
+
+function ocrInstructions_(ctx) {
+  var cats = categoryHints_();
+  return [
+    "คุณอ่านรูปสลิปโอนเงิน / สลิปจ่ายเงิน / ใบเสร็จ / บิลร้านค้า ของโอม แล้วตอบเป็น JSON ตามโครงที่กำหนดเท่านั้น",
+    "- kind: \"expense\" = โอม/ผู้ใช้จ่ายเงินออก (สลิปโอนไปหาคนอื่น, จ่ายบิล, ใบเสร็จร้านค้า) — ถ้าเป็นสลิปโอนให้ถือเป็น expense เสมอ เว้นแต่สลิปบอกชัดว่าเป็นการ \"รับเงิน/เงินเข้า\" จึงใช้ \"income\" · ถ้าไม่ใช่สลิป/ใบเสร็จ (รูปทั่วไป เอกสารอื่น ภาพหน้าจออื่น) หรืออ่านยอดไม่ได้ → \"other\" และ amount = null",
+    "- amount: ยอดรวมที่จ่ายจริงทั้งหมด (ตัวเลขบวก ไม่มีคอมมา) · ใบเสร็จให้ใช้ยอดสุทธิ/Total หลังส่วนลดและภาษี ไม่ใช่ยอดรายชิ้น · สลิปโอนให้ใช้ \"จำนวนเงิน\" (ไม่รวมค่าธรรมเนียมถ้าแยกบรรทัด)",
+    "- currency: รหัสสกุลเงิน เช่น THB (ไม่มีระบุแต่เป็นสลิปไทย = THB)",
+    "- date: วันที่ทำรายการเป็น YYYY-MM-DD ปีค.ศ. (สลิปไทยมักเป็นปี พ.ศ. เช่น 69 หรือ 2569 → ลบ 543 · เช่น 28 ก.ย. 69 = 2026-09-28) · อ่านไม่ได้ = null",
+    "- memo: สั้นๆ ไม่เกิน 60 ตัวอักษร · ถ้ามี \"บันทึกช่วยจำ/โน้ต\" บนสลิปให้ใช้ข้อความนั้นก่อน · ไม่มีก็ใช้ชื่อร้าน/ชื่อผู้รับเงิน (ตัดคำนำหน้า นาย/นาง/น.ส. และนามสกุลยาวๆ ได้)",
+    "- category: เลือกจากรายการนี้ที่ใกล้ที่สุดเท่านั้น ถ้าไม่เข้าเลยใช้ \"อื่นๆ\" — รายจ่าย: " + cats.expense.join(", ") + " · รายรับ: " + cats.income.join(", "),
+    "- confidence: \"high\" เมื่อยอดและวันที่ชัดเจน · \"low\" เมื่อภาพเบลอ/ถูกบัง/ไม่แน่ใจตัวเลขหรือหมวด",
+    "- ห้ามเดาตัวเลขที่มองไม่เห็น"
+  ].join("\n");
+}
+
+// คืน null = ปิดระบบ · {ok:false, why} = ใช้ไม่ได้ · {ok:true, kind, amount, date, memo, category, warn, dateGuess}
+function ocrReceipt_(blob, ctx) {
+  if (!CONFIG.OCR_ENABLED) return null;
+  var bytes = blob.getBytes();
+  if (!bytes.length || bytes.length > CONFIG.OCR_MAX_MB * 1024 * 1024) return { ok: false, why: "big" };
+  if (usageThisMonth_().usd >= CONFIG.MONTHLY_CAP_USD - 0.02) return { ok: false, why: "cap" };
+  var mime = blob.getContentType() || "image/jpeg";
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(mime)) return { ok: false, why: "type" };
+  var resp = llmCall_({
+    model: CONFIG.MODEL_SMALL, effort: CONFIG.EFFORT_OCR, instructions: ocrInstructions_(ctx), schema: OCR_SCHEMA, tools: [],
+    input: [{ role: "user", content: [
+      { type: "input_text", text: "วันนี้ " + ctx.today + " · อ่านรูปนี้" },
+      { type: "input_image", image_url: "data:" + mime + ";base64," + Utilities.base64Encode(bytes), detail: "high" }
+    ] }]
+  });
+  addUsage_(resp.model || CONFIG.MODEL_SMALL, resp.usage, false);
+  var j = null;
+  try { j = JSON.parse(resp.text); } catch (e) { return { ok: false, why: "parse" }; }
+  if (!j || j.kind === "other") return { ok: false, why: "other" };
+  var cur = String(j.currency || "THB").toUpperCase();
+  if (cur !== "THB" && cur !== "฿" && cur !== "บาท") return { ok: false, why: "currency", currency: cur };
+  var amt = money_(j.amount);
+  if (!amt) return { ok: false, why: "noamount" };
+  var date = validDate_(j.date);
+  if (date && Number(date.slice(0, 4)) >= 2400) date = validDate_((Number(date.slice(0, 4)) - 543) + date.slice(4));   // เผลอส่งปี พ.ศ.
+  var dateGuess = false;
+  if (!date || date > ctx.today) { date = ctx.today; dateGuess = true; }
+  var kind = j.kind === "income" ? "income" : "expense";
+  var cats = categoryHints_();
+  var list = kind === "income" ? cats.income : cats.expense;
+  var category = clean_(j.category, 40);
+  if (list.indexOf(category) < 0) category = "อื่นๆ";
+  return {
+    ok: true, kind: kind, amount: amt, date: date, dateGuess: dateGuess, memo: clean_(j.memo, 60), category: category,
+    warn: j.confidence === "low" || amt >= CONFIG.OCR_WARN_AMOUNT
+  };
+}
+
+// จดรายการจากผลอ่านสลิป → คืน {rec, res} (rec = record เดียวกับที่ใช้ทำปุ่มแก้/ยกเลิก) · ไม่สำเร็จ = null
+function createFromOcr_(o, ctx) {
+  var n0 = ctx.records.length;
+  var res = o.kind === "income"
+    ? toolAddIncome_({ amount: o.amount, source: o.category, note: o.memo, date: o.date }, ctx)
+    : toolAddExpense_({ amount: o.amount, category: o.category, memo: o.memo, date: o.date }, ctx);
+  if (!res.ok || ctx.records.length <= n0) return null;
+  return { rec: ctx.records[ctx.records.length - 1], res: res };
+}
+function labelHasAmount_(label, amount) {
+  return String(label || "").indexOf(" " + fmt_(amount) + " บาท") >= 0;
+}
+function ocrNote_(o) {
+  if (!o || o.ok) return "";
+  if (o.why === "cap") return "\n(เพดานค่า AI เดือนนี้เต็ม เลยยังไม่อ่านสลิปให้ — พิมพ์ยอดเองได้)";
+  if (o.why === "currency") return "\n(ยอดเป็นสกุล " + o.currency + " Jack ยังไม่จดอัตโนมัติ — พิมพ์ยอดเป็นบาทให้ได้เลย)";
+  if (o.why === "noamount") return "\n(อ่านยอดจากรูปนี้ไม่ได้ — พิมพ์ยอดมาได้เลย เช่น \"ข้าว 120\")";
+  return "";
+}
+
 // ---------- ข้อความรูป/ไฟล์จาก LINE ----------
 function handleFileMessage_(ev, userId) {
   var msg = ev.message;
@@ -260,35 +350,82 @@ function handleFileMessage_(ev, userId) {
     lineReply_(ev.replyToken, [textMsg_("ไฟล์ใหญ่เกิน " + CONFIG.FILE_MAX_MB + "MB ครับ อัปขึ้น Drive เองแล้ววางลิงก์ในหน้า Documents แทนนะ")]);
     return;
   }
-  if (userId) lineLoading_(userId, 20);
+  if (userId) lineLoading_(userId, 30);
   var ctx = newCtx_();
+  var blob = fetchLineBlob_(msg);
+
+  // 1) อ่านสลิป (เฉพาะรูป) — พังตรงไหนก็ตกกลับไปเก็บรูปเฉยๆ ไม่ให้เสียรูป
+  var ocr = null;
+  if (msg.type === "image") { try { ocr = ocrReceipt_(blob, ctx); } catch (err) { noteError_(err); ocr = { ok: false, why: "error" }; } }
+
+  // 2) ตัดสินว่าจะผูกกับอะไร
   var target = autoLinkTarget_();
-  var link = target ? { kind: target.kind, id: parseRef_(target.ref).id } : null;
-  var meta = saveLineFile_(msg, link);
+  var made = null, link = null, how = "none";       // how: ocr | matched | recent | none
+  if (ocr && ocr.ok && target && labelHasAmount_(target.label, ocr.amount)) {
+    link = { kind: target.kind, id: parseRef_(target.ref).id }; how = "matched";
+  } else if (ocr && ocr.ok) {
+    try { made = createFromOcr_(ocr, ctx); } catch (err) { noteError_(err); made = null; }
+    if (made && (made.rec.kind === "expense" || made.rec.kind === "income")) { link = { kind: made.rec.kind, id: parseRef_(made.rec.ref).id }; how = "ocr"; }
+    else if (made) how = "ocr";                       // เช่น กบข. → เงินออม (ไม่มีที่ผูกรูป)
+    else if (target) { link = { kind: target.kind, id: parseRef_(target.ref).id }; how = "recent"; }
+  } else if (target) {
+    link = { kind: target.kind, id: parseRef_(target.ref).id }; how = "recent";
+  }
+
+  // 3) เก็บรูปลง Drive — ถ้าพังหลังจดรายการไปแล้ว ถอยรายการกลับ ไม่ให้เหลือรายการลอยๆ ที่ไม่มีรูป
+  var meta;
+  try { meta = saveLineFile_(msg, link, blob); }
+  catch (err) { if (made) { try { undoRecord_(made.rec); } catch (e2) { noteError_(e2); } } throw err; }
+  if (made) rememberRecords_([made.rec]);
   if (!link) setPendingFiles_(pendingFiles_().concat([{ id: meta.id, at: Date.now() }]));
 
+  // 4) สรุปบรรทัดของรูปนี้
+  var o = { how: how, rec: made && made.rec, ocr: ocr };
+  if (how === "ocr") {
+    o.line = "🧾 " + made.rec.label + (ocr.dateGuess ? " (อ่านวันที่ไม่ได้ ใช้วันนี้)" : "");
+    var bd = made.res.budget;
+    if (bd && bd.budget && bd.pct >= 80) o.line += "\n⚠️ งบ " + bd.category + " ใช้ไป " + bd.pct + "% แล้ว";
+    if (ocr.warn) o.line += "\n❓ ไม่ค่อยมั่นใจ เช็กยอด/หมวดอีกทีนะครับ (กดแก้ได้)";
+  } else if (how === "matched") {
+    o.line = "📎 แนบกับ" + target.label + " (ยอดตรงกับที่จดไว้ เลยไม่จดซ้ำ)";
+  } else if (how === "recent") {
+    o.line = "📎 แนบกับ" + target.label;
+  } else {
+    o.line = "📎 เก็บไว้ใน Drive (รอผูกรายการ)";
+  }
+
   // ส่งหลายรูปพร้อมกัน (imageSet) → ตอบครั้งเดียวเมื่อครบชุด
-  var ids = [meta.id], set = msg.imageSet;
+  var ids = [meta.id], set = msg.imageSet, lines = [o.line], recs = made ? [made.rec] : [], pending = !link;
   if (set && set.id && Number(set.total) > 1) {
-    var key = "iset_" + set.id, st = cacheGetJson_(key) || { ids: [], replied: false };
-    st.ids.push(meta.id);
+    var key = "iset_" + set.id, st = cacheGetJson_(key) || { ids: [], replied: false, lines: [], recs: [], pending: false };
+    st.ids.push(meta.id); st.lines.push(o.line); if (made) st.recs.push(made.rec); if (!link) st.pending = true;
     var done = !st.replied && (st.ids.length >= Number(set.total) || Number(set.index) === Number(set.total));
     if (done) st.replied = true;
     CacheService.getScriptCache().put(key, JSON.stringify(st), 3600);
     if (!done) return;
-    ids = st.ids;
+    ids = st.ids; lines = st.lines; recs = st.recs; pending = st.pending;
   }
-  var what = ids.length > 1 ? ids.length + " รูป" : (msg.type === "file" ? "ไฟล์ " + meta.name : "รูป");
-  var text;
-  if (link) {
-    text = "📎 แนบ" + what + "กับ" + target.label + " แล้วครับ";
-    saveHistory_("[ส่ง" + what + "]", text);
-    lineReply_(ev.replyToken, [textMsg_(text, fileQuick_(ids, ctx, false))]);
+  var many = ids.length > 1;
+  var what = many ? ids.length + " รูป" : (msg.type === "file" ? "ไฟล์ " + meta.name : "รูป");
+  var text, quick;
+  if (many && recs.length) {
+    text = "📎 เก็บ" + what + "แล้วครับ\n" + lines.map(function (l) { return "• " + l; }).join("\n");
+    quick = (quickItemsFor_(recs) || []).concat(fileQuick_(ids, ctx, false).slice(0, 3));
+  } else if (many) {
+    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ" + (pending ? "\nพิมพ์รายการตามมาภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาที (เช่น \"ข้าว 120\") Jack จะแนบให้เอง หรือเลือกด้านล่าง" : "\n" + lines.join("\n"));
+    quick = fileQuick_(ids, ctx, pending);
+  } else if (how === "ocr") {
+    text = "อ่านสลิปแล้ว จดให้ครับ\n" + o.line + "\n📎 แนบรูปไว้แล้ว";
+    quick = (quickItemsFor_(recs) || []).concat(fileQuick_(ids, ctx, false).slice(0, 3));
+  } else if (link) {
+    text = "📎 แนบ" + what + "กับ" + target.label + " แล้วครับ" + (how === "matched" ? "\n(ยอดตรงกับที่จดไว้ เลยไม่จดซ้ำ — ถ้าเป็นคนละรายการ พิมพ์บอกได้)" : "") + ocrNote_(ocr);
+    quick = fileQuick_(ids, ctx, false);
   } else {
-    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ\nพิมพ์รายการตามมาภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาที (เช่น \"ข้าว 120\") Jack จะแนบให้เอง หรือเลือกด้านล่าง";
-    saveHistory_("[ส่ง" + what + "]", text);
-    lineReply_(ev.replyToken, [textMsg_(text, fileQuick_(ids, ctx, true))]);
+    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ\nพิมพ์รายการตามมาภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาที (เช่น \"ข้าว 120\") Jack จะแนบให้เอง หรือเลือกด้านล่าง" + ocrNote_(ocr);
+    quick = fileQuick_(ids, ctx, true);
   }
+  saveHistory_("[ส่ง" + what + "]", text);
+  lineReply_(ev.replyToken, [textMsg_(text, quick)]);
 }
 
 // ---------- ปุ่มใต้ข้อความไฟล์ (postback a=flink/frelink/fdoc/fkeep/ftrash) ----------

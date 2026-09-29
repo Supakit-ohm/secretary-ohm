@@ -7093,8 +7093,8 @@ function JournalPage({data,persist}) {
             <div style={{maxHeight:300,overflowY:"auto"}}>
               {journal.slice().reverse().map(j=>(
                 <div key={j.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,borderLeft:"3px solid var(--accent)"}}>
-                  <div style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4}}>{j.date}</div>
-                  <div style={{fontSize:12.5,lineHeight:1.5}}>{j.entry}</div>
+                  <div style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4}}>{j.date}{j.mood>=1&&j.mood<=5?" · "+["😩","😕","😐","🙂","🤩"][j.mood-1]:""}</div>
+                  <div style={{fontSize:12.5,lineHeight:1.5}}>{j.entry||<span style={{color:"var(--ink-2)"}}>(กดอารมณ์ไว้ ยังไม่ได้เขียน)</span>}</div>
                 </div>
               ))}
             </div>
