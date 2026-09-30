@@ -229,16 +229,13 @@ function handlePostback_(ev) {
 var RULES = [
   "กติกาการทำงาน (สำคัญ):",
   "- ทุกอย่างที่เกี่ยวกับข้อมูลของโอม (บันทึก/ถามยอด/ถามงาน) ต้องเรียกเครื่องมือ ห้ามเดาตัวเลขเอง ห้ามบอกว่าบันทึกแล้วถ้ายังไม่ได้เรียกเครื่องมือ",
-  "- จำนวนเงินส่งเป็นเลขบวกเสมอ ระบบใส่เครื่องหมายเอง",
-  "- รายจ่าย: เลือกหมวดจาก \"หมวดรายจ่ายที่มีอยู่\" ที่ใกล้ที่สุด ไม่เข้าเลยใช้ \"อื่นๆ\" · ไม่ต้องถามยืนยันก่อน บันทึกเลย (โอมมีปุ่มแก้/ยกเลิก)",
-  "- memo ของรายจ่าย = สิ่งที่ซื้อ/ร้าน สั้นๆ ตามที่โอมพิมพ์",
-  "- เงินสะสม กบข./กสจ. ใช้ add_expense ได้ ระบบจะย้ายไปเป็นเงินออมให้เอง (ไม่ใช่รายจ่าย)",
-  "- ข้อความเดียวมีหลายรายการ → เรียกเครื่องมือหลายครั้ง",
-  "- วันที่: ถ้าโอมไม่บอก ใช้วันนี้ · \"เมื่อวาน\" \"วันศุกร์ที่แล้ว\" ให้แปลงเป็น YYYY-MM-DD จากวันนี้",
-  "- จะแก้/ลบรายการ ต้องใช้ ref จากผลเครื่องมือ หรือจาก \"รายการที่บันทึกล่าสุด\" · ถ้าไม่รู้ ref ให้ค้นด้วย search_expenses ก่อน · ลบเฉพาะเมื่อโอมสั่งชัดเจน",
-  "- ถ้าผลลัพธ์มี budget ของหมวดนั้น บอกสั้นๆ ว่าใช้ไปเท่าไหร่จากงบ (เตือนตรงๆ ถ้าเกิน 80%)",
-  "- เรื่องที่ยังไม่มีเครื่องมือ (นัดหมาย, สุขภาพ, หนังสือ, ตั้งเตือน) บอกตรงๆ ว่าเฟสนี้ Jack ยังทำไม่ได้ ให้เปิดแอปแทน",
-  "- รูป/PDF: โอมส่งรูปหรือ PDF มาในแชทได้เลย (สลิป ใบเสร็จ เอกสาร) Jack เก็บลง Google Drive และแนบกับรายจ่าย/รายรับที่เพิ่งจดให้เอง มีปุ่มเปลี่ยน/เก็บเป็นเอกสาร/ลบใต้ข้อความ · Jack อ่านสลิปโอนเงิน/ใบเสร็จจากรูปได้เอง (ระบบอ่านยอด วันที่ ร้าน แล้วจดเป็นรายจ่ายพร้อมแนบรูปให้ทันที มีปุ่มแก้/ยกเลิก — ไม่ต้องเรียกเครื่องมือ ไม่ต้องพูดถึง) · ถ้าโอมถามว่าอ่านรูปได้ไหม บอกว่าได้ครับ ส่งรูปสลิปมาเลย · PDF ยังอ่านไม่ได้ (เก็บเฉยๆ)",
+  "- เรื่องเงิน Jack \"อ่านอย่างเดียว\": ไม่จด/แก้/ลบรายรับ-รายจ่าย ไม่มีเครื่องมือทำเรื่องนี้ · โอมลงรายการเงินด้วยการ import CSV KBank ในแอปเดือนละครั้ง · ถ้าโอมพิมพ์จดรายจ่าย/รายรับ (เช่น \"ข้าว 60\") หรือสั่งแก้/ลบรายการเงิน ให้บอกสั้นๆ ว่า Jack ไม่จดเงินแล้ว ให้ import CSV ในแอป (ห้ามแกล้งบอกว่าบันทึกแล้ว)",
+  "- ตอบเรื่องเงิน (ยอดใช้จ่าย รายรับ งบ เงินออม พอร์ต หนี้ net worth) ต้องเรียก get_summary หรือ search_expenses แล้วเล่าตามตัวเลขในผลลัพธ์เท่านั้น ห้ามคิดเลขเอง ห้ามเดา · ทุกคำตอบเรื่องเงินต้องบอก \"ข้อมูลถึงวันที่ …\" (ค่า dataAsOf ในผลลัพธ์) เพราะข้อมูลอัปเดตเดือนละครั้ง · ถ้า dataAsOf ว่าง บอกว่ายังไม่มีข้อมูลที่ import",
+  "- ถ้าผลลัพธ์มี budget ของหมวดนั้น บอกสั้นๆ ว่าใช้ไปเท่าไหร่จากงบ (เตือนตรงๆ ถ้าเกิน 80%) แต่จำไว้ว่าเป็นตัวเลขถึง dataAsOf ไม่ใช่ถึงวันนี้",
+  "- วันที่: \"เมื่อวาน\" \"วันศุกร์ที่แล้ว\" ให้แปลงเป็น YYYY-MM-DD จากวันนี้ (ใช้กับงาน/Journal/โน้ต)",
+  "- จะแก้/ลบงาน โน้ต Journal ต้องใช้ ref จากผลเครื่องมือ หรือจาก list_tasks · ลบเฉพาะเมื่อโอมสั่งชัดเจน",
+  "- เรื่องที่ยังไม่มีเครื่องมือ (นัดหมาย, สุขภาพ, หนังสือ, ตั้งเตือน, ลงรายการเงิน) บอกตรงๆ ว่า Jack ยังทำไม่ได้ ให้เปิดแอปแทน",
+  "- รูป/PDF: โอมส่งรูปหรือ PDF มาในแชทได้เลย (สลิป ใบเสร็จ เอกสาร) Jack เก็บลง Google Drive ให้ (ไปจัดหมวด/ผูกทีหลังในหน้า Documents ของแอป) · Jack ไม่อ่านสลิปและไม่จดรายจ่ายจากรูป — เก็บไฟล์เฉยๆ · PDF ก็เก็บเฉยๆ",
   "- ถ้าข้อความก่อนหน้าของ Jack เป็นการชวนเขียน Journal แล้วโอมตอบเป็นเรื่องเล่าของวัน (หรือขึ้นต้นด้วย journal) → บันทึกด้วย add_journal · แต่ถ้าอยู่ในโหมดวางแผนพรุ่งนี้ (ดู \"ข้อมูลตอนนี้\") และโอมตอบเป็นสิ่งที่จะทำ → เป็นงาน ไม่ใช่ Journal",
   "- ความจำระยะยาว (\"สิ่งที่ Jack จำเกี่ยวกับโอม\" ด้านล่าง): ใช้ประกอบคำตอบอย่างเป็นธรรมชาติ ไม่ต้องพูดว่า \"จากความจำ\"",
   "  • remember ได้เฉพาะเมื่อโอมสั่ง (\"จำไว้ว่า…\", \"จำไว้นะ\") หรือโอมตอบตกลงหลัง Jack ถาม · ห้ามจำเองโดยไม่ถาม",
@@ -283,14 +280,12 @@ function runAgent_(text, ctx, editing, capLeft) {
 }
 
 function contextBlock_(ctx, editing) {
-  var cats = categoryHints_();
   var lines = [
     "ข้อมูลตอนนี้:",
-    "- วันนี้: วัน" + TH_DAYS[ctx.weekday] + " " + ctx.today + " เวลา " + ctx.time + " (เมื่อวาน = " + addDays_(ctx.today, -1) + ")",
-    "- หมวดรายจ่ายที่มีอยู่: " + cats.expense.join(", "),
-    "- หมวดรายรับที่มีอยู่: " + cats.income.join(", ")
+    "- วันนี้: วัน" + TH_DAYS[ctx.weekday] + " " + ctx.today + " เวลา " + ctx.time + " (เมื่อวาน = " + addDays_(ctx.today, -1) + ")"
   ];
   var recent = cacheGetJson_("recent") || [];
+  recent = recent.filter(function (r) { return r.kind !== "expense" && r.kind !== "income" && r.kind !== "investment"; });   // ขั้นที่ 1: Jack ไม่แตะรายการเงินแล้ว
   if (recent.length) {
     lines.push("- รายการที่บันทึกล่าสุด (ใหม่สุดก่อน):");
     recent.forEach(function (r) { lines.push("  • " + r.label + " (ref=" + r.ref + ")"); });
@@ -298,13 +293,9 @@ function contextBlock_(ctx, editing) {
   var mem = memoryItems_();
   lines.push(mem.length ? "- สิ่งที่ Jack จำเกี่ยวกับโอม (เลขข้อตรงกับที่โอมเห็นในรายการ \"jack จำอะไรบ้าง\"):" : "- สิ่งที่ Jack จำเกี่ยวกับโอม: (ยังไม่มี)");
   mem.forEach(function (m, i) { lines.push("  • ข้อ " + (i + 1) + " (id=" + m.id + "): " + m.text); });
-  try {
-    var pend = pendingFiles_().length;
-    if (pend) lines.push("- มีรูป/ไฟล์ " + pend + " อันที่โอมเพิ่งส่งมารอแนบ → ถ้าข้อความนี้จดรายจ่าย/รายรับ ระบบแนบให้อัตโนมัติและบอกโอมเอง (ไม่ต้องพูดถึงรูป)");
-  } catch (e) {}
   var plan = cacheGetJson_("plan");
-  if (plan) lines.push("- โหมดวางแผนพรุ่งนี้: Jack เพิ่งทักตอน 20:00 ถามว่าพรุ่งนี้ (" + plan.target + ") ต้องทำ/อยากทำอะไร → ข้อความที่โอมตอบเป็นรายการสิ่งที่จะทำ ให้แยกทีละงานแล้วเรียก add_task ทีละงานด้วย dueDate=" + plan.target + " และ kind: \"must\" = ต้องทำ/ต้องส่ง/ต้องไป · \"want\" = อยากทำ/ถ้ามีเวลา/ไม่บังคับ (โอมไม่บอกชัดให้ใช้ must) · หลังเพิ่มตอบสั้นๆ แยกบรรทัด \"ต้องทำ:\" กับ \"อยากทำ:\" · ถ้าโอมตอบว่าไม่มี/ไม่มีอะไร ไม่ต้องเพิ่มงาน ตอบรับสั้นๆ · ข้อความที่ไม่เกี่ยวกับแผน (จดรายจ่าย ถามยอด ฯลฯ) ทำตามปกติ");
-  if (editing) lines.push("- โอมเพิ่งกดปุ่ม \"แก้\" ที่รายการ: " + editing.label + " (ref=" + editing.ref + ") → ข้อความถัดไปคือสิ่งที่จะแก้ ใช้ update_entry กับ ref นี้ (ถ้าข้อความไม่เกี่ยวกับการแก้ ให้ทำตามปกติ)");
+  if (plan) lines.push("- โหมดวางแผนพรุ่งนี้: Jack เพิ่งทักตอน 20:00 ถามว่าพรุ่งนี้ (" + plan.target + ") ต้องทำ/อยากทำอะไร → ข้อความที่โอมตอบเป็นรายการสิ่งที่จะทำ ให้แยกทีละงานแล้วเรียก add_task ทีละงานด้วย dueDate=" + plan.target + " และ kind: \"must\" = ต้องทำ/ต้องส่ง/ต้องไป · \"want\" = อยากทำ/ถ้ามีเวลา/ไม่บังคับ (โอมไม่บอกชัดให้ใช้ must) · หลังเพิ่มตอบสั้นๆ แยกบรรทัด \"ต้องทำ:\" กับ \"อยากทำ:\" · ถ้าโอมตอบว่าไม่มี/ไม่มีอะไร ไม่ต้องเพิ่มงาน ตอบรับสั้นๆ · ข้อความที่ไม่เกี่ยวกับแผน (ถามยอด ถามงาน ฯลฯ) ทำตามปกติ");
+  if (editing && ["expense", "income", "investment"].indexOf(editing.kind) < 0) lines.push("- โอมเพิ่งกดปุ่ม \"แก้\" ที่รายการ: " + editing.label + " (ref=" + editing.ref + ") → ข้อความถัดไปคือสิ่งที่จะแก้ ใช้ update_entry กับ ref นี้ (ถ้าข้อความไม่เกี่ยวกับการแก้ ให้ทำตามปกติ)");
   return lines.join("\n");
 }
 
@@ -328,18 +319,6 @@ function newCtx_() {
 // 4) เครื่องมือ (tool calling)
 // ============================================================
 var TOOLS = [
-  { name: "add_expense", description: "บันทึกรายจ่าย 1 รายการ (เงินสะสม กบข./กสจ. ก็ใช้ตัวนี้ได้ ระบบย้ายไปเงินออมเอง)",
-    parameters: { type: "object", properties: {
-      amount: { type: "number", description: "จำนวนเงินบาท (เลขบวก)" },
-      category: { type: "string", description: "หมวดจากรายการหมวดที่มีอยู่" },
-      memo: { type: "string", description: "ซื้ออะไร/ร้านไหน สั้นๆ" },
-      date: { type: "string", description: "YYYY-MM-DD ไม่ใส่ = วันนี้" } }, required: ["amount", "category", "memo"] } },
-  { name: "add_income", description: "บันทึกรายรับ 1 รายการ",
-    parameters: { type: "object", properties: {
-      amount: { type: "number", description: "จำนวนเงินบาท (เลขบวก)" },
-      source: { type: "string", description: "หมวดรายรับ เช่น เงินเดือน, อื่นๆ" },
-      note: { type: "string", description: "รายละเอียดสั้นๆ" },
-      date: { type: "string", description: "YYYY-MM-DD ไม่ใส่ = วันนี้" } }, required: ["amount", "source"] } },
   { name: "add_task", description: "เพิ่มงาน/สิ่งที่ต้องทำ",
     parameters: { type: "object", properties: {
       title: { type: "string" },
@@ -358,27 +337,22 @@ var TOOLS = [
       date: { type: "string", description: "YYYY-MM-DD ไม่ใส่ = วันนี้" } }, required: ["text"] } },
   { name: "add_note", description: "จดโน้ตสั้นๆ (ไอเดีย สิ่งที่ต้องจำ)",
     parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
-  { name: "get_summary", description: "สรุปการเงินของเดือน (รายจ่ายตามหมวดเทียบงบ รายรับ เงินออม) + พอร์ตลงทุน/เงินสด/หนี้/ความมั่งคั่งสุทธิ + งานค้าง + นัดวันนี้/พรุ่งนี้",
+  { name: "get_summary", description: "สรุปการเงินของเดือน (อ่านอย่างเดียว · ระบบคำนวณให้แล้ว: รายจ่ายตามหมวดเทียบงบและเดือนก่อน รายรับ เงินออม อัตราออม) + พอร์ตลงทุน/เงินสด/หนี้/ความมั่งคั่งสุทธิ + งานค้าง + นัดวันนี้/พรุ่งนี้ · ผลลัพธ์มี dataAsOf = วันที่รายการล่าสุดที่ import ต้องบอกโอมทุกครั้ง",
     parameters: { type: "object", properties: { month: { type: "string", description: "YYYY-MM ไม่ใส่ = เดือนนี้" } } } },
-  { name: "search_expenses", description: "ค้นรายการรายจ่ายในเดือนหนึ่ง (ใช้หา ref ก่อนแก้/ลบ หรือตอบว่าจ่ายอะไรไปบ้าง)",
+  { name: "search_expenses", description: "ค้นรายการรายจ่ายในเดือนหนึ่ง (อ่านอย่างเดียว ใช้ตอบว่าจ่ายอะไรไปบ้าง) · ผลลัพธ์มี dataAsOf ต้องบอกโอมทุกครั้ง",
     parameters: { type: "object", properties: {
       month: { type: "string", description: "YYYY-MM ไม่ใส่ = เดือนนี้" },
       keyword: { type: "string", description: "คำใน memo หรือหมวด" },
       date: { type: "string", description: "YYYY-MM-DD เฉพาะวันนั้น" },
       limit: { type: "number" } } } },
-  { name: "update_entry", description: "แก้รายการที่บันทึกไว้ ใส่เฉพาะช่องที่จะเปลี่ยน",
+  { name: "update_entry", description: "แก้งาน/โน้ต/Journal ที่บันทึกไว้ ใส่เฉพาะช่องที่จะเปลี่ยน (แก้รายการเงินไม่ได้)",
     parameters: { type: "object", properties: {
       ref: { type: "string" },
-      amount: { type: "number", description: "เลขบวก" },
-      category: { type: "string", description: "หมวดรายจ่าย" },
-      memo: { type: "string" },
-      source: { type: "string", description: "หมวดรายรับ" },
       note: { type: "string" },
-      date: { type: "string", description: "YYYY-MM-DD" },
       title: { type: "string", description: "ชื่องาน" },
       dueDate: { type: "string", description: "กำหนดส่งงาน YYYY-MM-DD" },
       text: { type: "string", description: "ข้อความโน้ต/Journal ใหม่ทั้งหมด" } }, required: ["ref"] } },
-  { name: "delete_entry", description: "ลบรายการ (เฉพาะเมื่อโอมสั่งลบชัดเจน)",
+  { name: "delete_entry", description: "ลบงาน/โน้ต/Journal (เฉพาะเมื่อโอมสั่งลบชัดเจน · ลบรายการเงินไม่ได้)",
     parameters: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"] } },
   { name: "remember", description: "จำเรื่องเกี่ยวกับโอมไว้ระยะยาว (เฉพาะเมื่อโอมสั่ง หรือตกลงหลัง Jack ถาม)",
     parameters: { type: "object", properties: { text: { type: "string", description: "ประโยคเดียวสั้นๆ เช่น \"โอมกำลังเก็บเงินดาวน์รถ เป้า 200,000 ภายในปี 2027\"" } }, required: ["text"] } },
@@ -389,8 +363,6 @@ var TOOLS = [
 function runTool_(name, args, ctx) {
   args = args || {};
   switch (name) {
-    case "add_expense": return toolAddExpense_(args, ctx);
-    case "add_income": return toolAddIncome_(args, ctx);
     case "add_task": return toolAddTask_(args, ctx);
     case "list_tasks": return toolListTasks_(args, ctx);
     case "complete_task": return toolCompleteTask_(args, ctx);
@@ -407,6 +379,7 @@ function runTool_(name, args, ctx) {
 }
 
 // ---------- รายจ่าย ----------
+// ขั้นที่ 1: ไม่ได้อยู่ใน TOOLS แล้ว (Jack ไม่จดเงิน) — เหลือไว้ให้ Files.gs ส่วนอ่านสลิป (OCR_ENABLED:false) เรียกเท่านั้น
 function toolAddExpense_(a, ctx) {
   var amt = money_(a.amount);
   if (!amt) return { ok: false, error: "จำนวนเงินไม่ถูกต้อง" };
@@ -585,7 +558,8 @@ function toolAddNote_(a, ctx) {
 // ---------- สรุป ----------
 function toolGetSummary_(a, ctx) {
   var month = validMonth_(a.month) || ctx.today.slice(0, 7);
-  var ids = ["k.finance", "k.budgets", "fg.expenses." + month, "fg.income." + month, "f.investments", "f.cryptoHoldings", "f.cashAccounts", "f.debts", "k.tasks", "k.events"];
+  var prevM = addMonths_(month, -1);
+  var ids = ["k.finance", "k.budgets", "fg.expenses." + month, "fg.income." + month, "fg.expenses." + prevM, "fg.income." + prevM, "f.investments", "f.cryptoHoldings", "f.cashAccounts", "f.debts", "k.tasks", "k.events"];
   var G = readGroups_(ids.map(function (id) { return { id: id, def: (id === "k.finance" || id === "k.budgets") ? null : [] }; }));
   var fin = G["k.finance"].chunks[0].value || {};
   var budgets = G["k.budgets"].chunks[0].value || {};
@@ -595,12 +569,16 @@ function toolGetSummary_(a, ctx) {
 
   var byCat = {}, totalExp = 0;
   exp.forEach(function (e) { var v = expOut_(e); totalExp += v; byCat[e.category || "อื่นๆ"] = (byCat[e.category || "อื่นๆ"] || 0) + v; });
+  var prevExp = arrAll_(G["fg.expenses." + prevM]), prevInc = arrAll_(G["fg.income." + prevM]);
+  var prevByCat = {}, prevTotalExp = 0;
+  prevExp.forEach(function (e) { var v = expOut_(e); prevTotalExp += v; prevByCat[e.category || "อื่นๆ"] = (prevByCat[e.category || "อื่นๆ"] || 0) + v; });
   var cats = Object.keys(byCat).map(function (c) {
     var b = budgets[c] && Number(budgets[c].amount) > 0 ? Number(budgets[c].amount) : null;
-    return { category: c, spent: round2_(byCat[c]), budget: b, pct: b ? Math.round(byCat[c] / b * 100) : null };
+    var pv = prevByCat[c] || 0;
+    return { category: c, spent: round2_(byCat[c]), budget: b, pct: b ? Math.round(byCat[c] / b * 100) : null, prevMonthSpent: round2_(pv), changeVsPrevPct: pv > 0 ? Math.round((byCat[c] - pv) / pv * 100) : null };
   }).sort(function (x, y) { return y.spent - x.spent; });
   Object.keys(budgets).forEach(function (c) {
-    if (!byCat[c] && Number(budgets[c] && budgets[c].amount) > 0) cats.push({ category: c, spent: 0, budget: Number(budgets[c].amount), pct: 0 });
+    if (!byCat[c] && Number(budgets[c] && budgets[c].amount) > 0) cats.push({ category: c, spent: 0, budget: Number(budgets[c].amount), pct: 0, prevMonthSpent: round2_(prevByCat[c] || 0), changeVsPrevPct: null });
   });
   var totalBudget = Object.keys(budgets).reduce(function (s, c) { return s + (Number(budgets[c] && budgets[c].amount) || 0); }, 0);
   var totalInc = inc.reduce(function (s, i) { return s + (Number(i.amount) || 0); }, 0);
@@ -628,19 +606,42 @@ function toolGetSummary_(a, ctx) {
 
   var isCurrent = month === ctx.today.slice(0, 7);
   var daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  var prevInv = inv.filter(function (v) { return String(v.date || "").slice(0, 7) === prevM; }).reduce(function (s, v) { return s + (Number(v.amount) || 0); }, 0);
+  var prevTotalInc = prevInc.reduce(function (s, i) { return s + (Number(i.amount) || 0); }, 0);
+  // อัตราออม = สูตรเดียวกับ buildMonthReview ในแอป: (เงินออม + เงินเหลือที่ไม่ติดลบ) ÷ รายรับ
+  var rate = function (income, saved, spent) { return income > 0 ? Math.round((saved + Math.max(0, income - spent - saved)) / income * 1000) / 10 : null; };
   return {
+    dataAsOf: financeDataAsOf_([exp, inc, prevExp, prevInc, inv], ctx.today),
+    dataAsOfNote: "ข้อมูลเงินมาจาก import CSV KBank เดือนละครั้ง — ตัวเลขถึงวันที่ dataAsOf เท่านั้น ไม่ใช่ถึงวันนี้",
     month: month,
     daysLeftInMonth: isCurrent ? daysInMonth - Number(ctx.today.slice(8, 10)) + 1 : 0,
     expenses: { total: round2_(totalExp), count: exp.length, totalBudget: totalBudget || null, byCategory: cats.slice(0, 25) },
     income: { total: round2_(totalInc), count: inc.length },
     savingsThisMonth: round2_(invMonth),
     netCashflow: round2_(totalInc - totalExp - invMonth),
+    savingRatePct: rate(totalInc, invMonth, totalExp),
+    prevMonth: { month: prevM, expenses: round2_(prevTotalExp), income: round2_(prevTotalInc), savings: round2_(prevInv), savingRatePct: rate(prevTotalInc, prevInv, prevTotalExp), expensesChangePct: prevTotalExp > 0 ? Math.round((totalExp - prevTotalExp) / prevTotalExp * 100) : null },
     portfolio: { total: round2_(portfolio), byType: byType, crypto: holdings.length ? { value: round2_(cryptoValue), cost: round2_(cryptoCost), pnl: round2_(cryptoValue - cryptoCost), usdThbRate: fx || null } : null },
-    cash: round2_(cash), debt: round2_(debt), netWorth: round2_(cash + portfolio - debt),
+    cash: round2_(cash), debt: round2_(debt), debtCount: arrAll_(G["f.debts"]).filter(function (d) { return nv_(d.currentBalance) > 0; }).length, netWorth: round2_(cash + portfolio - debt),
     tasks: tl,
     events: events
   };
 }
+
+// วันที่รายการล่าสุดที่ import เข้าแอป (ไม่นับรายการที่ Jack เคยจดเองผ่าน LINE ก่อนขั้นที่ 1 · ไม่นับวันอนาคต)
+function financeDataAsOf_(lists, today) {
+  var best = null;
+  lists.forEach(function (arr) {
+    (arr || []).forEach(function (x) {
+      if (!x || x.via === "line") return;
+      var d = String(x.date || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > today) return;
+      if (!best || d > best) best = d;
+    });
+  });
+  return best;
+}
+function addMonths_(month, n) { var d = new Date(month + "-01T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); }
 
 function toolListTasksFrom_(tasks, today) {
   var overdue = 0, due = 0, titles = [];
@@ -658,7 +659,8 @@ function toolSearchExpenses_(a, ctx) {
   var date = validDate_(a.date);
   var month = date ? date.slice(0, 7) : (validMonth_(a.month) || ctx.today.slice(0, 7));
   var doc = "fg.expenses." + month;
-  var G = readGroups_([{ id: doc, def: [] }]);
+  var G = readGroups_([{ id: doc, def: [] }, { id: "fg.expenses." + addMonths_(month, -1), def: [] }, { id: "fg.income." + month, def: [] }, { id: "fg.income." + addMonths_(month, -1), def: [] }]);
+  var asOf = financeDataAsOf_([arrAll_(G[doc]), arrAll_(G["fg.expenses." + addMonths_(month, -1)]), arrAll_(G["fg.income." + month]), arrAll_(G["fg.income." + addMonths_(month, -1)])], ctx.today);
   var kw = String(a.keyword || "").trim().toLowerCase();
   var list = arrAll_(G[doc]).filter(function (e) {
     if (date && e.date !== date) return false;
@@ -670,15 +672,18 @@ function toolSearchExpenses_(a, ctx) {
   var items = list.slice(-limit).reverse().map(function (e) {
     return { ref: doc + "#" + e.id, date: e.date, amount: round2_(expOut_(e)), category: e.category, memo: e.memo || "" };
   });
-  return { month: month, matched: list.length, total: round2_(total), items: items, note: "amount บวก = จ่ายออก, ลบ = คืนเงิน" };
+  return { dataAsOf: asOf, month: month, matched: list.length, total: round2_(total), items: items, note: "amount บวก = จ่ายออก, ลบ = คืนเงิน · ข้อมูลถึง dataAsOf เท่านั้น" };
 }
 
-// ---------- แก้ / ลบ ----------
+// ---------- แก้ / ลบ (งาน/โน้ต/Journal เท่านั้น — รายการเงินแก้ในแอป) ----------
+var MONEY_READONLY_MSG = "Jack ไม่แก้/ลบรายการเงินแล้ว (ข้อมูลเงินมาจาก import CSV KBank) — ให้โอมแก้ในแอปหน้า Finance";
+function isMoneyKind_(k) { return k === "expense" || k === "income" || k === "investment"; }
 function toolUpdateEntry_(a, ctx) {
   var r = parseRef_(a.ref);
   if (!r) return { ok: false, error: "ref ไม่ถูกต้อง" };
   var kind = kindOfDoc_(r.doc);
   if (!kind) return { ok: false, error: "แก้รายการประเภทนี้ไม่ได้" };
+  if (isMoneyKind_(kind)) return { ok: false, error: MONEY_READONLY_MSG };
   var newDate = validDate_(a.date);
   var target = r.doc;
   if (newDate && (kind === "expense" || kind === "income")) target = (kind === "expense" ? "fg.expenses." : "fg.income.") + newDate.slice(0, 7);
@@ -734,6 +739,7 @@ function toolUpdateEntry_(a, ctx) {
 function toolDeleteEntry_(a, ctx) {
   var r = parseRef_(a.ref);
   if (!r || !kindOfDoc_(r.doc)) return { ok: false, error: "ref ไม่ถูกต้อง" };
+  if (isMoneyKind_(kindOfDoc_(r.doc))) return { ok: false, error: MONEY_READONLY_MSG };
   var out = mutate_([{ id: r.doc, def: [] }], function (G) {
     var f = arrFind_(G[r.doc], r.id);
     if (!f) return { ok: false, error: "ไม่พบรายการนี้" };
@@ -933,7 +939,7 @@ function menuTasks_(ctx) {
 function menuMonth_(ctx) {
   var s = toolGetSummary_({}, ctx);
   var mi = Number(s.month.slice(5, 7)) - 1;
-  var lines = ["💰 เดือน " + TH_MONTHS[mi] + " · เหลืออีก " + s.daysLeftInMonth + " วัน", ""];
+  var lines = ["💰 เดือน " + TH_MONTHS[mi] + " · เหลืออีก " + s.daysLeftInMonth + " วัน", "📅 ข้อมูลถึงวันที่ " + (s.dataAsOf ? thDate_(s.dataAsOf) : "— (ยังไม่มีข้อมูลที่ import)"), ""];
   var e = s.expenses;
   lines.push("รายจ่าย " + fmt_(e.total) + " บาท" + (e.totalBudget ? " / งบ " + fmt_(e.totalBudget) + " (" + Math.round(e.total / e.totalBudget * 100) + "%)" : ""));
   lines.push("รายรับ " + fmt_(s.income.total) + (s.savingsThisMonth ? " · ออม " + fmt_(s.savingsThisMonth) : ""));
@@ -947,7 +953,6 @@ function menuMonth_(ctx) {
     var overOthers = cats.slice(5).filter(function (c) { return c.budget && c.spent > c.budget; });
     if (overOthers.length) lines.push("เกินงบอีก: " + overOthers.map(function (c) { return c.category; }).join(", "));
   }
-  if (e.totalBudget && s.daysLeftInMonth > 0 && e.totalBudget > e.total) lines.push("", "งบที่เหลือเฉลี่ยวันละ " + fmt_(Math.floor((e.totalBudget - e.total) / s.daysLeftInMonth)) + " บาท");
   var quick = [
     { type: "action", action: { type: "message", label: "วิเคราะห์ให้หน่อย", text: "ช่วยวิเคราะห์การใช้เงินเดือนนี้หน่อย" } },
     { type: "action", action: { type: "message", label: "พอร์ต / net worth", text: "สรุปพอร์ตกับ net worth ให้หน่อย" } }
@@ -1315,33 +1320,11 @@ function replyError_(ev, err) {
 }
 
 // ============================================================
-// 9) โหมดไม่ใช้ AI (เพดานเต็ม / OpenAI ล่ม): จดรายจ่ายแบบ "ข้าวมันไก่ 60" ได้อย่างเดียว
+// 9) โหมดไม่ใช้ AI (เพดานเต็ม / OpenAI ล่ม): ตอบแค่ให้ใช้ปุ่มเมนู (ขั้นที่ 1 เลิกจดเงินแล้ว)
 // ============================================================
 function fallbackHandle_(text, ctx, why) {
-  var m = text.match(/^(.+?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:บาท|บ\.|฿)?$/);
-  if (m && !/^\d/.test(m[1].trim())) {
-    var memo = m[1].trim(), amt = money_(m[2]);
-    var isIncome = /^(รายรับ|รับเงิน|ได้เงิน)/.test(memo);
-    if (amt) {
-      if (isIncome) {
-        var ri = toolAddIncome_({ amount: amt, source: "อื่นๆ", note: memo.replace(/^(รายรับ|รับเงิน|ได้เงิน)\s*/, "") }, ctx);
-        if (ri.ok) return why + " — จดแบบง่ายให้แล้ว: รายรับ " + fmt_(amt) + " บาท (หมวดอื่นๆ) กดแก้ในแอปได้";
-      } else {
-        var cat = guessCategory_(memo);
-        var r = toolAddExpense_({ amount: amt, category: cat, memo: memo }, ctx);
-        if (r.ok) return why + " — จดแบบง่ายให้แล้ว: " + ctx.records[ctx.records.length - 1].label;
-      }
-    }
-  }
-  return why + "\nตอนนี้จดได้แค่แบบ \"ข้าวมันไก่ 60\" ครับ เรื่องอื่นเปิดแอปก่อนนะ";
-}
-function guessCategory_(memo) {
-  var cats = categoryHints_().expense;
-  var hit = cats.filter(function (c) { return c !== "อื่นๆ" && (memo.indexOf(c) >= 0 || c.split(" ").some(function (w) { return w.length > 1 && memo.indexOf(w) >= 0; })); })[0];
-  if (hit) return hit;
-  var map = [[/ข้าว|กิน|อาหาร|ก๋วยเตี๋ยว|ส้มตำ|หมูกระทะ|ชาบู/, "อาหาร"], [/กาแฟ|ชา|ลาเต้|คาเฟ่/, "ชา กาแฟ"], [/น้ำมัน|ปตท|บางจาก|เชลล์/, "น้ำมันรถ เดินทาง"], [/แท็กซี่|grab|bts|mrt|วิน/i, "เดินทาง รถ"], [/ขนม/, "ขนม"]];
-  for (var i = 0; i < map.length; i++) if (map[i][0].test(memo) && cats.indexOf(map[i][1]) >= 0) return map[i][1];
-  return "อื่นๆ";
+  // ขั้นที่ 1: Jack ไม่จดเงินแล้ว — ตอนนี้ AI ใช้ไม่ได้ก็ทำได้แค่ปุ่มเมนู (งานวันนี้/ยอดเดือนนี้ ฟรี ไม่ใช้ AI)
+  return why + "\nตอนนี้ Jack คุยเองไม่ได้ครับ แต่กดปุ่มเมนู \"งานวันนี้\" / \"ยอดเดือนนี้\" ด้านล่างได้ หรือเปิดแอปแทนนะ";
 }
 
 // ============================================================
@@ -1568,13 +1551,11 @@ function runPush_(kind, builder, force) {
 
 // ---------- สรุปเช้า ----------
 function morningFacts_(ctx) {
-  var s = toolGetSummary_({}, ctx);
   var t = toolListTasks_({ scope: "all" }, ctx);
   var y = addDays_(ctx.today, -1);
-  var yDoc = "fg.expenses." + y.slice(0, 7);
-  var ySpent = arrAll_(readGroups_([{ id: yDoc, def: [] }])[yDoc]).reduce(function (sum, e) { return e && e.date === y ? sum + expOut_(e) : sum; }, 0);
-  var e = s.expenses;
-  var cats = e.byCategory.filter(function (c) { return c.budget; });
+  var tomorrow = addDays_(ctx.today, 1);
+  var evs = arrAll_(readGroups_([{ id: "k.events", def: [] }])["k.events"]).filter(function (ev) { return ev && (ev.startDate === ctx.today || ev.startDate === tomorrow); })
+    .map(function (ev) { return { title: ev.title, date: ev.startDate, time: ev.startTime || "" }; });   // ขั้นที่ 1: ไม่อ่านข้อมูลเงินในสรุปเช้าแล้ว
   // แผนที่โอมวางไว้เมื่อคืน = งานที่ Jack เพิ่มตอน 20:00 (plannedOn = เมื่อวาน) และกำหนดวันนี้ ยังไม่เสร็จ
   var planned = { must: [], want: [] }, plannedRefs = {};
   arrAll_(readGroups_([{ id: "k.tasks", def: [] }])["k.tasks"]).forEach(function (x) {
@@ -1589,16 +1570,8 @@ function morningFacts_(ctx) {
     tasksToday: t.today.filter(function (x) { return !plannedRefs[x.ref]; }).slice(0, 8).map(function (x) { return x.title + (x.project ? " · " + x.project : ""); }),
     recurringToday: t.recurringToday.slice(0, 8).map(function (x) { return x.title; }),
     upcoming7dCount: t.upcoming7d.length,
-    eventsToday: s.events.filter(function (v) { return v.date === ctx.today; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; }),
-    eventsTomorrow: s.events.filter(function (v) { return v.date !== ctx.today; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; }),
-    month: {
-      spent: e.total, budget: e.totalBudget, daysLeft: s.daysLeftInMonth,
-      budgetLeft: e.totalBudget ? round2_(e.totalBudget - e.total) : null,
-      perDayLeft: e.totalBudget && s.daysLeftInMonth > 0 && e.totalBudget > e.total ? Math.floor((e.totalBudget - e.total) / s.daysLeftInMonth) : null,
-      overBudget: cats.filter(function (c) { return c.spent > c.budget; }).map(function (c) { return c.category + " (" + fmt_(c.spent) + "/" + fmt_(c.budget) + ")"; }),
-      nearBudget: cats.filter(function (c) { return c.spent <= c.budget && c.pct >= 80; }).map(function (c) { return c.category + " " + c.pct + "%"; })
-    },
-    yesterdaySpent: round2_(ySpent)
+    eventsToday: evs.filter(function (v) { return v.date === ctx.today; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; }),
+    eventsTomorrow: evs.filter(function (v) { return v.date !== ctx.today; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; })
   };
 }
 
@@ -1611,7 +1584,8 @@ function buildMorning_(ctx) {
       var mem = memoryItems_();
       var instructions = PERSONA + "\n\n" +
         "งานตอนนี้: Jack ส่งสรุปเช้าให้โอมอัตโนมัติ " + pad2_(CONFIG.MORNING_HOUR) + ":00 โดยระบบจัดรายการงาน/นัด/งบไว้ให้แล้ว (ข้อมูลเดียวกับ JSON ที่ให้) หน้าที่ของคุณคือเขียนคำพูดเพื่อนปิดท้าย 1-2 ประโยค (ไม่เกิน 2 บรรทัด)\n" +
-        "- ชี้สิ่งที่ควรทำก่อน / เตือนหมวดที่ใกล้เต็มงบหรือเกินงบ / ทวงแผนที่โอมวางไว้เมื่อคืน (plannedLastNight) ตามที่เห็นในข้อมูล เลือกเรื่องที่สำคัญที่สุดเรื่องเดียว\n" +
+        "- ชี้สิ่งที่ควรทำก่อน / ทวงแผนที่โอมวางไว้เมื่อคืน (plannedLastNight) ตามที่เห็นในข้อมูล เลือกเรื่องที่สำคัญที่สุดเรื่องเดียว\n" +
+        "- ห้ามพูดถึงเรื่องเงิน งบ รายจ่าย รายรับ การลงทุน\n" +
         "- ห้ามทักทาย ห้ามทวนตัวเลขหรือรายการทั้งหมด ใช้เฉพาะข้อเท็จจริงที่มีในข้อมูล ห้ามแต่งเพิ่ม · ไม่ใช้ Markdown ไม่ต้องขึ้นต้นด้วยสัญลักษณ์" +
         (mem.length ? "\n\nสิ่งที่ Jack จำเกี่ยวกับโอม (ใช้ถ้าเกี่ยว):\n" + mem.map(function (m) { return "• " + m.text; }).join("\n") : "");
       var resp = llmCall_({ model: CONFIG.MODEL_SMALL, effort: "low", instructions: instructions, input: [{ role: "user", content: JSON.stringify(f) }], tools: [] });
@@ -1621,8 +1595,7 @@ function buildMorning_(ctx) {
     } catch (err) { noteError_(err); }
   }
   return textMsg_(text.slice(0, 4900), [
-    { type: "action", action: { type: "postback", label: "📋 งานวันนี้", data: "a=menu&m=tasks", displayText: "งานวันนี้" } },
-    { type: "action", action: { type: "postback", label: "💰 ยอดเดือนนี้", data: "a=menu&m=month", displayText: "ยอดเดือนนี้" } }
+    { type: "action", action: { type: "postback", label: "📋 งานวันนี้", data: "a=menu&m=tasks", displayText: "งานวันนี้" } }
   ]);
 }
 
@@ -1648,13 +1621,6 @@ function morningTemplate_(f) {
     f.eventsToday.forEach(function (x) { L.push("• วันนี้ " + x); });
     f.eventsTomorrow.forEach(function (x) { L.push("• พรุ่งนี้ " + x); });
   }
-  var m = f.month;
-  L.push("", "💰 เงินเดือนนี้");
-  if (m.budget) L.push("• งบเดือนนี้เหลือ " + fmt_(m.budgetLeft) + " บาท" + (m.perDayLeft != null ? " (วันละ ~" + fmt_(m.perDayLeft) + ")" : "") + " · อีก " + m.daysLeft + " วัน");
-  else L.push("• เดือนนี้ใช้ไป " + fmt_(m.spent) + " บาท");
-  if (f.yesterdaySpent) L.push("• เมื่อวานใช้ " + fmt_(f.yesterdaySpent) + " บาท");
-  if (m.overBudget.length) L.push("• ⚠️ เกินงบ: " + m.overBudget.join(", "));
-  if (m.nearBudget.length) L.push("• ใกล้เต็ม: " + m.nearBudget.join(", "));
   return L.join("\n");
 }
 
@@ -1681,11 +1647,10 @@ var JOURNAL_QUESTIONS = [
 ];
 
 function buildEveningPlan_(ctx) {
-  var year = ctx.today.slice(0, 4), month = ctx.today.slice(0, 7);
-  var G = readGroups_([{ id: "g.journal." + year, def: [] }, { id: "fg.expenses." + month, def: [] }, { id: "k.tasks", def: [] }]);
+  var year = ctx.today.slice(0, 4);
+  var G = readGroups_([{ id: "g.journal." + year, def: [] }, { id: "k.tasks", def: [] }]);
   var todayJ = arrAll_(G["g.journal." + year]).filter(function (j) { return j && j.date === ctx.today; })[0] || null;
   var wrote = !!(todayJ && String(todayJ.entry || "").trim());
-  var spent = arrAll_(G["fg.expenses." + month]).reduce(function (s, e) { return e && e.date === ctx.today ? s + expOut_(e) : s; }, 0);
   var done = arrAll_(G["k.tasks"]).filter(function (t) {
     if (!t) return false;
     if (isRecurring_(t)) return t.recurrence === "daily" && !!(t.completions || {})[ctx.today];
@@ -1696,12 +1661,14 @@ function buildEveningPlan_(ctx) {
   var left = tl.overdue.length + tl.today.length;
   var already = tl.upcoming7d.filter(function (x) { return x.dueDate === tomorrow; }).map(function (x) { return x.title; });
   var events = [];
-  try { events = toolGetSummary_({}, ctx).events.filter(function (v) { return v.date === tomorrow; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; }); } catch (err) { noteError_(err); }
+  try {
+    events = arrAll_(readGroups_([{ id: "k.events", def: [] }])["k.events"]).filter(function (ev) { return ev && ev.startDate === tomorrow; })
+      .map(function (ev) { return (ev.startTime ? ev.startTime + " " : "") + ev.title; });
+  } catch (err) { noteError_(err); }
 
   var L = ["🌙 สรุปวันนี้ · " + "วัน" + TH_DAYS[ctx.weekday] + " " + thDate_(ctx.today)];
   var sum = [];
   if (done) sum.push("• ✅ ทำงานเสร็จ " + done + " อย่าง");
-  if (spent) sum.push("• 💸 ใช้ไป " + fmt_(round2_(spent)) + " บาท");
   if (left) sum.push("• ⏳ งานค้างอยู่ " + left + " อย่าง");
   L = L.concat(sum.length ? sum : ["• วันนี้เงียบๆ ไม่มีบันทึกอะไรเลยครับ"]);
   if (left >= 5) L.push("ค้างเยอะนะครับ พรุ่งนี้เลือกเฉพาะที่ต้องเสร็จจริงๆ ก็พอ");

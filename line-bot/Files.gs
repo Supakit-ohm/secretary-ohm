@@ -335,7 +335,7 @@ function ocrNote_(o) {
   if (!o || o.ok) return "";
   if (o.why === "cap") return "\n(เพดานค่า AI เดือนนี้เต็ม เลยยังไม่อ่านสลิปให้ — พิมพ์ยอดเองได้)";
   if (o.why === "currency") return "\n(ยอดเป็นสกุล " + o.currency + " Jack ยังไม่จดอัตโนมัติ — พิมพ์ยอดเป็นบาทให้ได้เลย)";
-  if (o.why === "noamount") return "\n(อ่านยอดจากรูปนี้ไม่ได้ — พิมพ์ยอดมาได้เลย เช่น \"ข้าว 120\")";
+  if (o.why === "noamount") return "\n(อ่านยอดจากรูปนี้ไม่ได้)";
   return "";
 }
 
@@ -412,7 +412,7 @@ function handleFileMessage_(ev, userId) {
     text = "📎 เก็บ" + what + "แล้วครับ\n" + lines.map(function (l) { return "• " + l; }).join("\n");
     quick = (quickItemsFor_(recs) || []).concat(fileQuick_(ids, ctx, false).slice(0, 3));
   } else if (many) {
-    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ" + (pending ? "\nพิมพ์รายการตามมาภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาที (เช่น \"ข้าว 120\") Jack จะแนบให้เอง หรือเลือกด้านล่าง" : "\n" + lines.join("\n"));
+    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ" + (pending ? "\nเลือกแนบกับรายการด้านล่าง หรือไปจัดในหน้า Documents ของแอปทีหลังก็ได้" : "\n" + lines.join("\n"));
     quick = fileQuick_(ids, ctx, pending);
   } else if (how === "ocr") {
     text = "อ่านสลิปแล้ว จดให้ครับ\n" + o.line + "\n📎 แนบรูปไว้แล้ว";
@@ -421,7 +421,7 @@ function handleFileMessage_(ev, userId) {
     text = "📎 แนบ" + what + "กับ" + target.label + " แล้วครับ" + (how === "matched" ? "\n(ยอดตรงกับที่จดไว้ เลยไม่จดซ้ำ — ถ้าเป็นคนละรายการ พิมพ์บอกได้)" : "") + ocrNote_(ocr);
     quick = fileQuick_(ids, ctx, false);
   } else {
-    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ\nพิมพ์รายการตามมาภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาที (เช่น \"ข้าว 120\") Jack จะแนบให้เอง หรือเลือกด้านล่าง" + ocrNote_(ocr);
+    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ\nเลือกแนบกับรายการด้านล่าง หรือไปจัดในหน้า Documents ของแอปทีหลังก็ได้" + ocrNote_(ocr);
     quick = fileQuick_(ids, ctx, true);
   }
   saveHistory_("[ส่ง" + what + "]", text);
@@ -435,7 +435,7 @@ function handleFilePostback_(ev, data) {
   var ctx = newCtx_();
   var gone = "ไม่เจอไฟล์นี้แล้วครับ (อาจถูกลบในแอป)";
   if (data.a === "frelink") {
-    lineReply_(ev.replyToken, [textMsg_("จะแนบกับรายการไหนครับ (หรือพิมพ์รายการใหม่ภายใน " + CONFIG.ATTACH_WINDOW_MIN + " นาที)", fileQuick_(ids, ctx, true))]);
+    lineReply_(ev.replyToken, [textMsg_("จะแนบกับรายการไหนครับ ", fileQuick_(ids, ctx, true))]);
     setPendingFiles_(pendingFiles_().filter(function (p) { return ids.indexOf(p.id) < 0; }).concat(ids.map(function (id) { return { id: id, at: Date.now() }; })));
     return;
   }

@@ -233,6 +233,12 @@ const ctx = {
 vm.createContext(ctx);
 for (const f of ["Config.gs", "Persona.gs", "Bot.gs", "Files.gs"]) vm.runInContext(fs.readFileSync(path.join(DIR, f), "utf8"), ctx, { filename: f });
 
+// ขั้นที่ 1: Jack ไม่มีเครื่องมือจดเงินแล้ว (ไม่อยู่ใน TOOLS) — แต่เทสต์ส่วนไฟล์แนบ/ยกเลิก/OCR ยังต้องสร้างรายการเงินเป็นข้อมูลตั้งต้น
+// จึงต่อ "ทางลัดเฉพาะเทสต์" ให้ add_expense/add_income เรียกฟังก์ชันภายใน · เทสต์ขั้นที่ 1 ใช้ REAL_TOOLS ตรวจว่า AI มองไม่เห็นเครื่องมือเหล่านี้จริง
+const realRunTool = ctx.runTool_;
+ctx.runTool_ = (name, args, c) => name === "add_expense" ? ctx.toolAddExpense_(args || {}, c) : name === "add_income" ? ctx.toolAddIncome_(args || {}, c) : realRunTool(name, args, c);
+const withRealTools = (fn) => { const keep = ctx.runTool_; ctx.runTool_ = realRunTool; try { return fn(); } finally { ctx.runTool_ = keep; } };
+
 // ---------- helpers ----------
 let passed = 0;
 function test(name, fn) {
@@ -270,7 +276,7 @@ test("คนอื่นทักมา → เงียบ", () => {
   assert.strictEqual(lineLog.length, n);
 });
 
-test("จดรายจ่าย: ติดลบ + source manual + via line + activity + ปุ่มแก้/ยกเลิก + รูปแบบมาตรฐาน", () => {
+test("[ข้อมูลตั้งต้น ผ่านทางลัดเทสต์] จดรายจ่าย: ติดลบ + source manual + via line + activity + ปุ่มแก้/ยกเลิก + รูปแบบมาตรฐาน", () => {
   aiScript = once([{ name: "add_expense", args: { amount: 60, category: "อาหาร", memo: "ข้าวมันไก่" } }], "จดแล้วครับ ข้าวมันไก่ 60");
   post([msg("ข้าวมันไก่ 60")]);
   const e = month(MONTH).filter((x) => x.memo === "ข้าวมันไก่");
@@ -286,7 +292,7 @@ test("จดรายจ่าย: ติดลบ + source manual + via line + 
   canonical();
   // prompt มีหมวด + วันที่ + reasoning ส่งกลับ
   const b = aiLog[aiLog.length - 1];
-  assert.ok(b.instructions.includes("อาหาร") && b.instructions.includes(TODAY) && b.instructions.includes("Jack"));
+  assert.ok(b.instructions.includes(TODAY) && b.instructions.includes("Jack") && !b.instructions.includes("หมวดรายจ่ายที่มีอยู่"));
   assert.ok(b.input.some((x) => x.type === "reasoning"), "ต้องส่ง reasoning item กลับไปในรอบที่ 2");
   assert.deepStrictEqual(b.include, ["reasoning.encrypted_content"]);
   assert.strictEqual(b.model, "gpt-6-luna");
@@ -344,34 +350,23 @@ test("หลายรายการในข้อความเดียว �
   assert.strictEqual(month(MONTH).filter((x) => x.memo === "ลาเต้" || x.memo === "ส้มตำ").length, 2);
 });
 
-test("ปุ่มแก้ → ข้อความถัดไปแก้ยอด + ย้ายเดือนเมื่อเปลี่ยนวันที่", () => {
-  aiScript = once([{ name: "add_expense", args: { amount: 99, category: "อาหาร", memo: "ชาบู" } }]);
+test("ขั้นที่ 1: update_entry แก้รายการเงินไม่ได้ (คืนเงิน/รายจ่าย) — ข้อมูลไม่เปลี่ยน", () => {
+  aiScript = once([{ name: "add_expense", args: { amount: 99, category: "อาหาร", memo: "ชาบูขั้น1" } }]);
   post([msg("ชาบู 99")]);
-  const editTok = new URLSearchParams(lastReply().quickReply.items[0].action.data).get("r");
-  post([pb("a=edit&r=" + editTok)]);
-  assert.ok(lastReply().text.includes("จะแก้อะไร"));
-  let seenRef = null;
-  aiScript = (body, outs) => {
-    if (outs.length) return { text: "แก้แล้วครับ" };
-    assert.ok(body.instructions.includes("กดปุ่ม \"แก้\""), "ต้องบอก AI ว่ากำลังแก้");
-    seenRef = body.instructions.match(/ref=(fg\.expenses\.[^)]+)\)/)[1];
-    return { calls: [{ name: "update_entry", args: { ref: seenRef, amount: 459, date: PREV + "-28" } }] };
+  const ref = JSON.parse(cacheMap.recent)[0].ref;
+  let outs = [];
+  aiScript = (body) => {
+    outs = body.input.filter((x) => x.type === "function_call_output").map((o) => JSON.parse(o.output));
+    return outs.length ? { text: "ไม่ได้ครับ" } : { calls: [
+      { name: "update_entry", args: { ref, amount: 459 } },
+      { name: "update_entry", args: { ref: "fg.expenses." + MONTH + "#e_ref1", amount: 150 } }] };
   };
-  post([msg("459 เป็นของเดือนก่อน")]);
-  assert.strictEqual(month(MONTH).filter((x) => x.memo === "ชาบู").length, 0);
-  const moved = month(PREV).filter((x) => x.memo === "ชาบู");
-  assert.strictEqual(moved.length, 1);
-  assert.strictEqual(moved[0].amount, -459);
-  assert.ok(!cacheMap.editing, "โหมดแก้ต้องหมดหลังใช้ 1 ข้อความ");
+  post([msg("แก้ยอด")]);
+  assert.strictEqual(outs.length, 2);
+  assert.ok(outs.every((o) => o.ok === false && o.error.includes("ไม่แก้/ลบรายการเงิน")), JSON.stringify(outs));
+  assert.strictEqual(month(MONTH).find((x) => x.memo === "ชาบูขั้น1").amount, -99);
+  assert.strictEqual(month(MONTH).find((x) => x.id === "e_ref1").amount, 100);
   canonical();
-  // recent ถูกอัปเดตเป็น ref ใหม่
-  assert.ok(JSON.parse(cacheMap.recent).some((r) => r.ref.startsWith("fg.expenses." + PREV)));
-});
-
-test("แก้รายการคืนเงิน (บวก) → คงเป็นบวก", () => {
-  aiScript = once([{ name: "update_entry", args: { ref: "fg.expenses." + MONTH + "#e_ref1", amount: 150 } }]);
-  post([msg("คืนเงินจริงๆ 150")]);
-  assert.strictEqual(month(MONTH).find((x) => x.id === "e_ref1").amount, 150);
 });
 
 test("งาน: เพิ่ม → ดูรายการ → ทำเสร็จ (ครั้งเดียว + งานประจำ) → ยกเลิก", () => {
@@ -441,24 +436,20 @@ test("คำถามวิเคราะห์ → ใช้ gpt-6-sol effort 
   assert.strictEqual(aiLog[aiLog.length - 1].reasoning.effort, "medium");
 });
 
-test("ค้นรายจ่าย แล้วลบตาม ref", () => {
-  let found = null;
-  aiScript = (b, outs) => {
-    if (outs.length === 0) return { calls: [{ name: "search_expenses", args: { keyword: "ลาเต้" } }] };
-    if (!found) { found = outs[0]; return { calls: [{ name: "delete_entry", args: { ref: found.items[0].ref } }] }; }
-    return { text: "ลบแล้วครับ" };
-  };
-  // สคริปต์นี้เรียก 2 รอบ: นับ output ทั้งหมดใน input
-  aiScript = ((orig) => (b) => {
+test("ค้นรายจ่าย (อ่านอย่างเดียว) ได้ dataAsOf · สั่งลบตาม ref ถูกปฏิเสธ รายการยังอยู่", () => {
+  let found = null, delOut = null;
+  aiScript = (b) => {
     const outs = b.input.filter((x) => x.type === "function_call_output").map((o) => JSON.parse(o.output));
     if (outs.length === 0) return { calls: [{ name: "search_expenses", args: { keyword: "ลาเต้" } }] };
     if (outs.length === 1) { found = outs[0]; return { calls: [{ name: "delete_entry", args: { ref: found.items[0].ref } }] }; }
-    return { text: "ลบแล้วครับ" };
-  })();
+    delOut = outs[1];
+    return { text: "ลบไม่ได้ครับ" };
+  };
   post([msg("ลบลาเต้เมื่อกี้")]);
   assert.strictEqual(found.matched, 1);
-  assert.strictEqual(month(MONTH).filter((x) => x.memo === "ลาเต้").length, 0);
-  assert.strictEqual(lastReply().text, "ลบแล้วครับ");
+  assert.ok("dataAsOf" in found);
+  assert.strictEqual(delOut.ok, false);
+  assert.strictEqual(month(MONTH).filter((x) => x.memo === "ลาเต้").length, 1);
   canonical();
 });
 
@@ -515,21 +506,19 @@ test("สถานะ jack → ไม่เรียก AI", () => {
   assert.ok(lastReply().text.includes("$"));
 });
 
-test("เพดานเต็ม → ไม่เรียก AI แต่ยังจด \"ข้าว 50\" ได้ · เรื่องอื่นบอกให้เปิดแอป", () => {
+test("เพดานเต็ม → ไม่เรียก AI · ไม่จดเงิน (ขั้นที่ 1) · บอกให้ใช้ปุ่มเมนู/เปิดแอป", () => {
   const key = Object.keys(propsMap).find((k) => k.startsWith("usage_"));
   const u = JSON.parse(propsMap[key]); u.usd = 5.0; propsMap[key] = JSON.stringify(u);
-  const n = aiLog.length;
-  post([msg("ข้าวผัดกะเพรา 50")]);
-  assert.strictEqual(aiLog.length, n);
-  const e = month(MONTH).find((x) => x.memo === "ข้าวผัดกะเพรา");
-  assert.strictEqual(e.amount, -50);
-  assert.strictEqual(e.category, "อาหาร");
-  assert.ok(lastReply().text.includes("เพดาน"));
-  assert.ok(lastReply().quickReply, "โหมดสำรองก็มีปุ่มยกเลิก");
-  post([msg("สรุปงานให้หน่อย")]);
-  assert.ok(lastReply().text.includes("เปิดแอป"));
-  assert.strictEqual(aiLog.length, n);
-  u.usd = 0.5; propsMap[key] = JSON.stringify(u);
+  const n = aiLog.length, nExp = app().finance.expenses.length;
+  try {
+    post([msg("ข้าวผัดกะเพรา 50")]);
+    assert.strictEqual(aiLog.length, n);
+    assert.strictEqual(app().finance.expenses.length, nExp, "Jack ไม่จดเงินแล้ว แม้อยู่โหมดสำรอง");
+    assert.ok(lastReply().text.includes("เพดาน") && lastReply().text.includes("เปิดแอป"));
+    post([msg("สรุปงานให้หน่อย")]);
+    assert.ok(lastReply().text.includes("เปิดแอป"));
+    assert.strictEqual(aiLog.length, n);
+  } finally { u.usd = 0.5; propsMap[key] = JSON.stringify(u); }
 });
 
 test("OpenAI 401 → ถอยไปโหมดสำรอง + เก็บ LAST_ERROR", () => {
@@ -537,7 +526,7 @@ test("OpenAI 401 → ถอยไปโหมดสำรอง + เก็บ L
   post([msg("ลาเต้ 55")]);
   aiFail = null;
   assert.ok(lastReply().text.includes("API key ไม่ถูกต้อง"));
-  assert.ok(month(MONTH).find((x) => x.memo === "ลาเต้" && x.amount === -55));
+  assert.ok(!month(MONTH).find((x) => x.memo === "ลาเต้" && x.amount === -55), "โหมดสำรองไม่จดเงินแล้ว");
   assert.ok(propsMap.LAST_ERROR.includes("401"));
 });
 
@@ -753,17 +742,15 @@ test("สรุปเช้า (AI): ส่ง push หาโอม + ข้อ�
   assert.ok(f.tasksOverdue.some((x) => x.startsWith("งานเลยกำหนด")));
   assert.ok(f.recurringToday.includes("อ่านหนังสือ") || f.recurringToday.length === 0);
   assert.deepStrictEqual(f.eventsToday, ["14:00 นัดลูกค้า"]);
-  const spent = month(MONTH).reduce((s, e) => s - e.amount, 0);
-  assert.strictEqual(f.month.budget, 6500);
-  assert.ok(Math.abs(f.month.spent - spent) < 0.01);
-  assert.ok(Math.abs(f.month.budgetLeft - (6500 - spent)) < 0.01);
+  assert.ok(!("month" in f) && !("yesterdaySpent" in f), "ขั้นที่ 1: ข้อมูลที่ส่งให้ AI ตอนเช้าไม่มีเรื่องเงิน");
+  assert.ok(b.instructions.includes("ห้ามพูดถึงเรื่องเงิน"));
   const p = lastPush();
   assert.strictEqual(pushCount() - p0, 1);
   assert.strictEqual(p.to, "U_OHM");
   const mt = p.messages[0].text;
-  assert.ok(mt.startsWith("☀️ อรุณสวัสดิ์ครับโอม ·") && mt.includes("\n\n📋 งานวันนี้") && mt.includes("\n\n💰 เงินเดือนนี้"), mt);
+  assert.ok(mt.startsWith("☀️ อรุณสวัสดิ์ครับโอม ·") && mt.includes("\n\n📋 งานวันนี้") && !mt.includes("💰") && !mt.includes("งบ"), mt);
   assert.ok(mt.endsWith("\n\n💬 งานเลยกำหนดทำก่อนเลยนะครับ (AI)"), mt);
-  assert.deepStrictEqual(p.messages[0].quickReply.items.map((i) => i.action.data), ["a=menu&m=tasks", "a=menu&m=month"]);
+  assert.deepStrictEqual(p.messages[0].quickReply.items.map((i) => i.action.data), ["a=menu&m=tasks"]);
   assert.strictEqual(ctx.morningPush(), "already");
   assert.strictEqual(pushCount() - p0, 1);
   const hist = JSON.parse(cacheMap.hist);
@@ -771,20 +758,19 @@ test("สรุปเช้า (AI): ส่ง push หาโอม + ข้อ�
   assert.ok(!b.instructions.includes("ยาวไม่เกิน 10 บรรทัด") && b.instructions.includes("คำพูดเพื่อนปิดท้าย"));
 });
 
-test("สรุปเช้า: เพดานเต็ม → แม่แบบไม่ใช้ AI · ตัวเลขตรง ไม่มี NaN", () => {
+test("สรุปเช้า: เพดานเต็ม → แม่แบบไม่ใช้ AI · ไม่มีเรื่องเงินเลย ไม่มี NaN", () => {
   const key = Object.keys(propsMap).find((k) => k.startsWith("usage_"));
   const u = JSON.parse(propsMap[key]); const was = u.usd; u.usd = 5; propsMap[key] = JSON.stringify(u);
-  const n = aiLog.length;
-  assert.strictEqual(ctx.testMorningPush(), "sent");
-  assert.strictEqual(aiLog.length, n);
-  const t = lastPush().messages[0].text;
-  if (process.env.SHOW) console.log(t + "\n---");
-  const spent = month(MONTH).reduce((s, e) => s - e.amount, 0);
-  const fmt = (x) => { x = Math.round(x * 100) / 100; const [a, b] = String(Math.abs(x)).split("."); return (x < 0 ? "-" : "") + a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (b ? "." + b : ""); };
-  assert.ok(t.includes("อรุณสวัสดิ์") && t.includes("งานเลยกำหนด") && t.includes("14:00 นัดลูกค้า"), t);
-  assert.ok(t.includes("งบเดือนนี้เหลือ " + fmt(6500 - spent)), t);
-  assert.ok(!/NaN|undefined|null/.test(t), t);
-  u.usd = was; propsMap[key] = JSON.stringify(u);
+  try {
+    const n = aiLog.length;
+    assert.strictEqual(ctx.testMorningPush(), "sent");
+    assert.strictEqual(aiLog.length, n);
+    const t = lastPush().messages[0].text;
+    if (process.env.SHOW) console.log(t + "\n---");
+    assert.ok(t.includes("อรุณสวัสดิ์") && t.includes("งานเลยกำหนด") && t.includes("14:00 นัดลูกค้า"), t);
+    assert.ok(!/NaN|undefined|null/.test(t), t);
+    assert.ok(!/💰|บาท|งบ|รายจ่าย|รายรับ|ใช้ไป/.test(t), "ขั้นที่ 1: สรุปเช้าไม่มีเรื่องเงิน\n" + t);
+  } finally { u.usd = was; propsMap[key] = JSON.stringify(u); }
 });
 
 test("สรุปเช้า: OpenAI ล่ม → ยังส่งแม่แบบ · ปิด MORNING_USE_AI → ไม่เรียก AI", () => {
@@ -799,17 +785,17 @@ test("สรุปเช้า: OpenAI ล่ม → ยังส่งแม่
   ctx.CONFIG.MORNING_USE_AI = true;
 });
 
-test("สรุปเช้า: ต้นเดือน (เมื่อวาน = เดือนก่อน) อ่านรายจ่ายเมื่อวานจากเอกสารเดือนก่อน", () => {
+test("สรุปเช้า: แม้เมื่อวานมีรายจ่าย ก็ไม่อ่าน/ไม่พูดถึงเงิน (ข้อ 56 ข้อ 1)", () => {
   const c = { today: MONTH + "-01", time: "07:00", hour: 7, weekday: 1, records: [] };
   const y = ctx.addDays_(c.today, -1);
   const yDoc = "fg.expenses." + y.slice(0, 7);
   const arr = JSON.parse(store[yDoc] ? store[yDoc].json : "[]");
-  arr.push({ id: "y1", date: y, amount: -123, category: "อาหาร", memo: "เมื่อวาน", source: "manual" });
+  arr.push({ id: "y1", date: y, amount: -123, category: "อาหาร", memo: "เมื่อวาน", source: "kbank-csv" });
   store[yDoc] = { json: JSON.stringify(arr), by: "app", updateTime: ts() };
   const f = ctx.morningFacts_(c);
-  const exp = arr.filter((e) => e.date === y).reduce((s, e) => s - e.amount, 0);
-  assert.strictEqual(f.yesterdaySpent, Math.round(exp * 100) / 100);
-  assert.ok(f.yesterdaySpent >= 123);
+  assert.ok(!("yesterdaySpent" in f) && !("month" in f));
+  const t = ctx.morningTemplate_(f);
+  assert.ok(!/123|💰|บาท|งบ/.test(t), t);
 });
 
 function clearTodayJournal() {
@@ -829,16 +815,14 @@ const todayJournal = () => (app().journal || []).find((j) => j.date === TODAY);
 
 test("20:00 วางแผนพรุ่งนี้: ยังไม่เขียน Journal → สรุปวันนี้ + ถามต้องทำ/อยากทำ + 5 ปุ่มอารมณ์ + ชวน Journal + ปุ่มข้าม · ไม่ใช้ AI", () => {
   aiScript = once([{ name: "add_expense", args: { amount: 80, category: "อาหาร", memo: "ข้าวเย็น journal" } }]);
-  post([msg("ข้าวเย็น 80")]);
+  post([msg("ข้าวเย็น 80")]);      // ข้อมูลตั้งต้น: มีรายจ่ายวันนี้ → ข้อความ 20:00 ต้องไม่พูดถึง
   clearTodayJournal();
   const n = aiLog.length;
   assert.strictEqual(ctx.eveningJournalPush(), "sent");
   assert.strictEqual(aiLog.length, n);
   const m = lastPush().messages[0];
   if (process.env.SHOW) console.log(m.text + "\n---");
-  const todaySpent = month(MONTH).filter((e) => e.date === TODAY).reduce((s, e) => s - e.amount, 0);
-  const fmt = (x) => String(Math.round(x * 100) / 100).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  assert.ok(m.text.startsWith("🌙 สรุปวันนี้ ·") && m.text.includes("💸 ใช้ไป " + fmt(todaySpent) + " บาท"), m.text);
+  assert.ok(m.text.startsWith("🌙 สรุปวันนี้ ·") && !/💸|ใช้ไป|บาท/.test(m.text), "ขั้นที่ 1: 20:00 ไม่มีเรื่องเงิน\n" + m.text);
   assert.ok(m.text.includes("📌 พรุ่งนี้") && m.text.includes("1) พรุ่งนี้ต้องทำอะไรบ้าง?") && m.text.includes("2) อยากทำอะไรบ้าง?"), m.text);
   assert.ok(m.text.includes("😌 วันนี้รู้สึกยังไงครับ?") && m.text.includes("📝 ถ้าอยากเขียน Journal (ไม่บังคับ)"), m.text);
   assert.ok(!/NaN|undefined|null/.test(m.text), m.text);
@@ -1115,16 +1099,16 @@ test("ไฟล์: ส่งรูปหลังยกเลิกรายก
   post([pb("a=ftrash&f=" + f.id)]);
 });
 
-test("ไฟล์: สั่งลบรายการ (delete_entry) → ไฟล์ที่แนบลงถังขยะ Drive", () => {
+test("ขั้นที่ 1: สั่งลบรายการเงินผ่าน delete_entry → ถูกปฏิเสธ · รายการกับไฟล์ที่แนบยังอยู่", () => {
   aiScript = once([{ name: "add_expense", args: { amount: 555, category: "อื่นๆ", memo: "ลบทั้งรูป" } }]);
   post([msg("ลบทั้งรูป 555")]);
   post([img("m7")]);
   const e = newestExp("ลบทั้งรูป");
   const f = files().find((x) => x.link && x.link.id === e.id);
-  aiScript = once([{ name: "delete_entry", args: { ref: "fg.expenses." + MONTH + "#" + e.id } }], "ลบแล้วครับ");
+  aiScript = once([{ name: "delete_entry", args: { ref: "fg.expenses." + MONTH + "#" + e.id } }], "ลบไม่ได้ครับ");
   post([msg("ลบรายการลบทั้งรูปทิ้ง")]);
-  assert.ok(!newestExp("ลบทั้งรูป"));
-  assert.ok(!fstore[f.id] && drive.files[f.driveId].trashed);
+  assert.ok(newestExp("ลบทั้งรูป"), "รายการเงินต้องไม่ถูกลบโดย Jack");
+  assert.ok(fstore[f.id] && !drive.files[f.driveId].trashed);
   canonical();
 });
 
@@ -1166,6 +1150,8 @@ test("ไฟล์: setupFiles ใช้โฟลเดอร์เดิม ไ
 
 
 // =================== ข้อ 55 ขั้นที่ 9: อ่านสลิป/ใบเสร็จ (OCR) ===================
+// ข้อ 56: โอมปิด OCR ใน Config จริง (OCR_ENABLED:false) — โค้ดส่วนนี้ยังเหลืออยู่จึงเปิดเฉพาะในเทสต์กลุ่มนี้ เพื่อกันโค้ดเน่า (ปิดคืนท้ายไฟล์)
+vm.runInContext("CONFIG.OCR_ENABLED = true", ctx);
 const slip = (o) => Object.assign({ kind: "expense", amount: null, currency: "THB", date: TODAY, memo: null, category: "อื่นๆ", confidence: "high" }, o);
 const anyExp = (memo) => app().finance.expenses.find((x) => x.memo === memo);
 const usageUsd = () => JSON.parse(propsMap["usage_" + MONTH]).usd;
@@ -1400,6 +1386,91 @@ test("OCR: บันทึกรูปลง Drive พังหลังจด�
 test("OCR: ค่า AI ของ vision เข้าเพดานรายเดือน · สถานะ jack ยังทำงาน", () => {
   post([msg("สถานะ jack")]);
   assert.ok(lastReply().text.includes("ค่า AI เดือนนี้"));
+});
+
+
+vm.runInContext("CONFIG.OCR_ENABLED = false", ctx);   // กลับเป็นค่าจริงใน Config.gs (โอมปิดไว้)
+
+// =================== ข้อ 56 ขั้นที่ 1: Jack × การเงิน (อ่านอย่างเดียว) ===================
+test("ขั้นที่ 1: AI มองไม่เห็นเครื่องมือจด/แก้เงิน · เรียกตรงๆ ก็ไม่รู้จัก · prompt บอกกติกาอ่านอย่างเดียว + dataAsOf", () => {
+  aiScript = () => ({ text: "โอเคครับ" });
+  post([msg("ทดสอบรายการเครื่องมือ")]);
+  const b = aiLog[aiLog.length - 1];
+  const names = b.tools.map((t) => t.name);
+  assert.ok(!names.includes("add_expense") && !names.includes("add_income"), names.join(","));
+  ["get_summary", "search_expenses", "add_task", "complete_task", "add_journal", "add_note", "update_entry", "delete_entry", "remember", "forget"].forEach((n) => assert.ok(names.includes(n), n));
+  const upd = b.tools.find((t) => t.name === "update_entry").parameters.properties;
+  assert.ok(!upd.amount && !upd.category && !upd.memo && !upd.source, "update_entry ไม่มีช่องของเงินแล้ว");
+  assert.ok(b.instructions.includes("อ่านอย่างเดียว") && b.instructions.includes("import CSV KBank") && b.instructions.includes("ข้อมูลถึงวันที่") && b.instructions.includes("dataAsOf"));
+  assert.ok(!b.instructions.includes("หมวดรายจ่ายที่มีอยู่") && !b.instructions.includes("ใช้ add_expense"));
+  const r = withRealTools(() => ctx.runTool_("add_expense", { amount: 1, category: "อาหาร", memo: "x" }, ctx.newCtx_()));
+  assert.strictEqual(r.ok, false);
+  const r2 = withRealTools(() => ctx.runTool_("add_income", { amount: 1, source: "อื่นๆ" }, ctx.newCtx_()));
+  assert.strictEqual(r2.ok, false);
+});
+
+test("ขั้นที่ 1: get_summary — dataAsOf = วันที่รายการล่าสุดที่ import (ไม่นับที่ Jack เคยจดเอง via:line) · เทียบเดือนก่อน · อัตราออม", () => {
+  const d = app();
+  const inMonths = (x) => [MONTH, PREV].includes(String(x.date).slice(0, 7));
+  const dates = [].concat(d.finance.expenses.filter(inMonths), d.finance.income.filter(inMonths), d.finance.investments)
+    .filter((x) => x.via !== "line" && x.date <= TODAY).map((x) => x.date).sort();
+  const expected = dates[dates.length - 1];
+  assert.ok(expected, "ข้อมูลตั้งต้นต้องมีรายการที่ import");
+  const lineToday = d.finance.expenses.filter((x) => x.via === "line" && x.date === TODAY).length;
+  assert.ok(lineToday > 0 && expected !== TODAY || lineToday === 0 || expected === TODAY, "มีรายการ via:line วันนี้ในข้อมูลเทสต์");
+  let out = null;
+  aiScript = (b, outs) => outs.length ? (out = outs[0], { text: "สรุปครับ" }) : { calls: [{ name: "get_summary", args: {} }] };
+  post([msg("เดือนนี้ใช้ไปเท่าไหร่")]);
+  assert.strictEqual(out.dataAsOf, expected);
+  assert.ok(out.dataAsOfNote.includes("ไม่ใช่ถึงวันนี้"));
+  const spend = (m) => d.finance.expenses.filter((e) => String(e.date).slice(0, 7) === m).reduce((a, e) => a - e.amount, 0);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  assert.strictEqual(out.prevMonth.month, PREV);
+  assert.strictEqual(out.prevMonth.expenses, r2(spend(PREV)));
+  assert.strictEqual(out.prevMonth.expensesChangePct, spend(PREV) > 0 ? Math.round((spend(MONTH) - spend(PREV)) / spend(PREV) * 100) : null);
+  const food = out.expenses.byCategory.find((c) => c.category === "อาหาร");
+  const foodPrev = d.finance.expenses.filter((e) => String(e.date).slice(0, 7) === PREV && e.category === "อาหาร").reduce((a, e) => a - e.amount, 0);
+  assert.strictEqual(food.prevMonthSpent, r2(foodPrev));
+  assert.strictEqual(food.changeVsPrevPct, foodPrev > 0 ? Math.round((food.spent - foodPrev) / foodPrev * 100) : null);
+  const inc = d.finance.income.filter((i) => (i.month || String(i.date).slice(0, 7)) === MONTH).reduce((a, i) => a + i.amount, 0);
+  const saved = d.finance.investments.filter((v) => String(v.date).slice(0, 7) === MONTH).reduce((a, v) => a + v.amount, 0);
+  const exp = spend(MONTH);
+  const rate = inc > 0 ? Math.round((saved + Math.max(0, inc - exp - saved)) / inc * 1000) / 10 : null;
+  assert.strictEqual(out.savingRatePct, rate);
+  assert.ok(typeof out.debtCount === "number");
+});
+
+test("ขั้นที่ 1: dataAsOf ไม่ขยับเพราะรายการ via:line · ข้อมูลว่าง = null · ไม่นับวันอนาคต", () => {
+  const f = ctx.financeDataAsOf_;
+  assert.strictEqual(f([[{ date: "2026-09-10", via: "line" }, { date: "2026-09-05" }]], "2026-09-30"), "2026-09-05");
+  assert.strictEqual(f([[{ date: "2026-09-10", via: "line" }]], "2026-09-30"), null);
+  assert.strictEqual(f([[], null, [{ date: "bad" }, {}]], "2026-09-30"), null);
+  assert.strictEqual(f([[{ date: "2026-10-05" }, { date: "2026-09-20" }]], "2026-09-30"), "2026-09-20");
+  assert.strictEqual(ctx.addMonths_("2026-01", -1), "2025-12");
+  assert.strictEqual(ctx.addMonths_("2026-03", -1), "2026-02");
+});
+
+test("ขั้นที่ 1: ปุ่มเมนู 'ยอดเดือนนี้' (ไม่ใช้ AI) บอก 'ข้อมูลถึงวันที่' · ตัดคำนวณงบเฉลี่ย/วันออก (ตัวเลขไม่สดพอ)", () => {
+  const n = aiLog.length;
+  post([pb("a=menu&m=month")]);
+  const t = lastReply().text;
+  assert.strictEqual(aiLog.length, n);
+  assert.ok(/📅 ข้อมูลถึงวันที่ /.test(t) && !t.includes("งบที่เหลือเฉลี่ยวันละ"), t);
+});
+
+test("ขั้นที่ 1: หมดเพดาน/AI ล่ม → โหมดสำรองไม่จดเงิน · บอกให้ใช้ปุ่มเมนู", () => {
+  const t = ctx.fallbackHandle_("ข้าว 60", ctx.newCtx_(), "AI ใช้ไม่ได้");
+  assert.ok(t.includes("งานวันนี้") && t.includes("ยอดเดือนนี้") && !t.includes("จดแบบง่าย"), t);
+});
+
+test("ขั้นที่ 1: ปุ่ม แก้ ของรายการเงินเก่า → prompt ไม่สั่งให้ AI แก้เงิน (ไม่มี recent เงิน/โหมดแก้เงิน)", () => {
+  aiScript = once([{ name: "add_expense", args: { amount: 25, category: "ขนม", memo: "ขนมทดสอบขั้น1" } }]);
+  post([msg("ขนม 25")]);
+  post([pb("a=edit&r=" + new URLSearchParams(lastReply().quickReply.items[0].action.data).get("r"))]);
+  aiScript = () => ({ text: "ครับ" });
+  post([msg("120")]);
+  const ins = aiLog[aiLog.length - 1].instructions;
+  assert.ok(!ins.includes("ขนมทดสอบขั้น1") && !ins.includes("กดปุ่ม \"แก้\""), ins.slice(-500));
 });
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));
