@@ -1333,3 +1333,60 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pf-badge{margin-left:auto;background:var(--gold);color:#1a1200;border-radius:999px;font-size:10.5px;font-weight:700;padding:1px 7px;}
 .pf-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin-bottom:12px;padding:11px 16px;border-radius:16px;border:1px solid rgba(217,178,106,.35);background:rgba(217,178,106,.09);color:var(--ink);font-family:'Noto Sans Thai',sans-serif;font-size:13px;cursor:pointer;text-align:left;}
 .pf-banner-go{color:var(--gold-soft,var(--gold));font-weight:600;white-space:nowrap;}
+
+/* ═══ ข้อ 56 ขั้นที่ 6: Journal ปฏิทินอารมณ์ ═══ */
+.jr-page{display:flex;flex-direction:column;gap:14px;padding:0;}
+.jr-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.jr-nav{display:flex;align-items:center;gap:10px;}
+.jr-month{font-weight:700;font-size:17px;min-width:130px;text-align:center;}
+.jr-refl-item{border-top:1px solid rgba(255,255,255,.06);}
+.jr-refl-head{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;background:none;border:none;color:var(--ink);font-family:'Noto Sans Thai',sans-serif;font-size:13px;padding:10px 2px;cursor:pointer;text-align:left;}
+.jr-refl-meta{font-size:11px;color:var(--ink-5);flex-shrink:0;}
+.jr-refl-text{white-space:pre-wrap;font-size:13.5px;line-height:1.7;color:var(--ink);padding:0 2px 12px;}
+.jr-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.jr-sum-item{background:rgba(23,38,32,.84);border:1px solid rgba(255,255,255,.075);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0;}
+.jr-sum-item b{font-size:20px;color:var(--accent-soft);}
+.jr-sum-item span{font-size:11.5px;color:var(--ink-5);}
+.jr-dist{flex-direction:row;align-items:center;justify-content:space-between;gap:4px;}
+.jr-dist span{display:flex;flex-direction:column;align-items:center;font-size:17px;color:var(--ink);}
+.jr-dist span.zero{opacity:.3;}
+.jr-dist i{font-style:normal;font-size:10.5px;color:var(--ink-2);}
+.jr-wk,.jr-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.jr-wk div{text-align:center;font-size:11px;color:var(--ink-5);padding-bottom:4px;}
+.jr-cell{aspect-ratio:1/1;min-height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;cursor:pointer;color:var(--ink);font-family:inherit;padding:2px;}
+.jr-cell.empty{background:none;border:none;cursor:default;}
+.jr-cell:hover:not(:disabled){background:rgba(255,255,255,.07);}
+.jr-cell.today{border-color:var(--accent);}
+.jr-cell.sel{background:var(--accent-dim);border-color:var(--accent);}
+.jr-cell.fut{opacity:.3;cursor:default;}
+.jr-dn{font-size:10.5px;color:var(--ink-2);line-height:1;}
+.jr-emo{font-size:20px;line-height:1.1;min-height:22px;display:flex;align-items:center;}
+.jr-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;}
+.jr-moods{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px;}
+.jr-mood{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;border-radius:12px;border:1px solid var(--line);background:transparent;cursor:pointer;color:var(--ink-2);font-family:inherit;}
+.jr-mood span{font-size:22px;}
+.jr-mood small{font-size:10.5px;}
+.jr-mood.on{background:var(--accent-dim);border-color:var(--accent);color:var(--ink);}
+.jr-parts{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.jr-ta{resize:vertical;line-height:1.55;font-family:'Noto Sans Thai',sans-serif;min-height:54px;}
+.jr-raw-toggle{background:none;border:none;color:var(--ink-2);font-family:inherit;font-size:12.5px;cursor:pointer;padding:10px 0 6px;text-align:left;}
+.jr-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;}
+.jr-hint{font-size:11px;color:var(--ink-5);}
+.jr-did{margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:8px;}
+.jr-did-lab{font-size:12px;font-weight:700;color:var(--ink-2);}
+.jr-did-g{display:flex;flex-direction:column;gap:4px;}
+.jr-did-row{display:flex;gap:8px;font-size:12.5px;padding-left:15px;color:var(--ink);}
+.jr-lesson-list{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto;}
+.jr-lesson{display:flex;gap:10px;align-items:baseline;text-align:left;background:rgba(255,255,255,.03);border:none;border-radius:12px;padding:9px 12px;cursor:pointer;color:var(--ink);font-family:inherit;}
+.jr-lesson-date{font-size:10.5px;color:var(--ink-5);flex-shrink:0;min-width:74px;}
+.jr-lesson-text{font-size:13px;line-height:1.5;}
+@media(max-width:760px){
+  .jr-sum{grid-template-columns:repeat(3,1fr);gap:8px;}
+  .jr-sum-item{padding:10px 12px;}
+  .jr-dist{grid-column:1/-1;order:5;}
+  .jr-parts{grid-template-columns:1fr;}
+  .jr-wk,.jr-grid{gap:4px;}
+  .jr-cell{min-height:40px;border-radius:10px;}
+  .jr-emo{font-size:18px;}
+  .jr-mood small{display:none;}
+}

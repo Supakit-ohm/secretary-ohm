@@ -198,7 +198,7 @@ function handlePostback_(ev) {
     var qm = [];
     try {
       var jrows = arrAll_(readGroups_([{ id: "g.journal." + (mr.date || cm.today).slice(0, 4), def: [] }])["g.journal." + (mr.date || cm.today).slice(0, 4)]);
-      var wroteJ = jrows.some(function (j) { return j && j.date === (mr.date || cm.today) && String(j.entry || "").trim(); });
+      var wroteJ = jrows.some(function (j) { return j && j.date === (mr.date || cm.today) && journalWritten_(j); });
       if (mr.ok && !wroteJ) qm.push({ type: "action", action: { type: "postback", label: "✍️ เขียน Journal", data: "a=noop", inputOption: "openKeyboard", fillInText: "journal วันนี้ " } });
     } catch (err) { noteError_(err); }
     lineReply_(ev.replyToken, [textMsg_(mt, qm.length ? qm : null)]);
@@ -253,6 +253,7 @@ var RULES = [
   "- จะแก้/ลบงาน โน้ต Journal ต้องใช้ ref จากผลเครื่องมือ หรือจาก list_tasks · ลบเฉพาะเมื่อโอมสั่งชัดเจน",
   "- เรื่องที่ยังไม่มีเครื่องมือ (นัดหมาย, สุขภาพ, หนังสือ, ตั้งเตือน, ลงรายการเงิน) บอกตรงๆ ว่า Jack ยังทำไม่ได้ ให้เปิดแอปแทน",
   "- รูป/PDF: โอมส่งรูปหรือ PDF มาในแชทได้เลย (สลิป ใบเสร็จ เอกสาร) Jack เก็บลง Google Drive ให้ (ไปจัดหมวด/ผูกทีหลังในหน้า Documents ของแอป) · Jack ไม่อ่านสลิปและไม่จดรายจ่ายจากรูป — เก็บไฟล์เฉยๆ · PDF ก็เก็บเฉยๆ",
+  "- Journal: โอมมักเล่ารวดเดียว → เรียก add_journal ครั้งเดียว ใส่ text = ข้อความดิบ และแยกลง did/highlight/feel/lesson เท่าที่โอมเล่าจริง (ไม่ครบก็ได้ ห้ามแต่งเติม ห้ามเดาอารมณ์/บทเรียนแทนโอม) · ตอบกลับสั้นๆ ว่าลงหัวข้อไหนบ้าง",
   "- ถ้าข้อความก่อนหน้าของ Jack เป็นการชวนเขียน Journal แล้วโอมตอบเป็นเรื่องเล่าของวัน (หรือขึ้นต้นด้วย journal) → บันทึกด้วย add_journal · แต่ถ้าอยู่ในโหมดวางแผนพรุ่งนี้ (ดู \"ข้อมูลตอนนี้\") และโอมตอบเป็นสิ่งที่จะทำ → เป็นงาน ไม่ใช่ Journal",
   "- ความจำระยะยาว (\"สิ่งที่ Jack จำเกี่ยวกับโอม\" ด้านล่าง): ใช้ประกอบคำตอบอย่างเป็นธรรมชาติ ไม่ต้องพูดว่า \"จากความจำ\"",
   "  • remember ได้เฉพาะเมื่อโอมสั่ง (\"จำไว้ว่า…\", \"จำไว้นะ\") หรือโอมตอบตกลงหลัง Jack ถาม · ห้ามจำเองโดยไม่ถาม",
@@ -355,9 +356,13 @@ var TOOLS = [
       scope: { type: "string", enum: ["today", "all"], description: "today = ค้าง+วันนี้ · all = รวมงานอนาคตและไม่มีกำหนด" } } } },
   { name: "complete_task", description: "ทำเครื่องหมายว่างานเสร็จแล้ว (ใช้ ref จาก list_tasks) · งานประจำที่ทำเมื่อวานแต่ลืมติ๊ก ใส่ date = เมื่อวาน (ย้อนได้ไม่เกิน 1 วัน)",
     parameters: { type: "object", properties: { ref: { type: "string" }, date: { type: "string", description: "YYYY-MM-DD วันนี้หรือเมื่อวานเท่านั้น ไม่ใส่ = วันนี้" } }, required: ["ref"] } },
-  { name: "add_journal", description: "เขียน Journal (ต่อท้ายบันทึกของวันนั้นถ้ามีอยู่แล้ว)",
+  { name: "add_journal", description: "เขียน Journal (ต่อท้ายบันทึกของวันนั้นถ้ามีอยู่แล้ว) · โอมเล่ารวดเดียว → เก็บข้อความดิบใน text และแยกลงหัวข้อที่มีในเรื่องเล่า (ไม่ต้องครบทุกหัวข้อ)",
     parameters: { type: "object", properties: {
-      text: { type: "string", description: "เนื้อหาตามที่โอมเล่า เรียบเรียงให้อ่านลื่นได้แต่ห้ามเติมเรื่องที่โอมไม่ได้พูด" },
+      text: { type: "string", description: "ข้อความดิบตามที่โอมเล่า (เกลาคำผิด/ตัดคำว่า journal ได้ แต่ห้ามเติมเรื่องที่โอมไม่ได้พูด)" },
+      did: { type: "string", description: "📍 วันนี้ทำอะไร — สรุปสั้นจากที่โอมเล่า ไม่มีให้เว้น" },
+      highlight: { type: "string", description: "✨ เจออะไร/เรื่องเด่นของวัน — ไม่มีให้เว้น" },
+      feel: { type: "string", description: "💭 รู้สึกยังไง — ตามที่โอมบอกเท่านั้น ห้ามเดาอารมณ์ ไม่มีให้เว้น" },
+      lesson: { type: "string", description: "💡 บทเรียนวันนี้ — เฉพาะที่โอมพูดเอง ห้ามคิดบทเรียนให้ ไม่มีให้เว้น" },
       date: { type: "string", description: "YYYY-MM-DD ไม่ใส่ = วันนี้" } }, required: ["text"] } },
   { name: "add_note", description: "จดโน้ตสั้นๆ (ไอเดีย สิ่งที่ต้องจำ)",
     parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
@@ -553,30 +558,56 @@ function toolCompleteTask_(a, ctx) {
 }
 
 // ---------- Journal / โน้ต ----------
+// ขั้นที่ 6 (ข้อ 56): Journal มีหัวข้อนำ 4 ข้อ เก็บที่ j.parts = {did, highlight, feel, lesson} + ข้อความดิบที่ j.entry (ข้อมูลเดิม {date,entry,mood} ใช้ต่อได้)
+var JOURNAL_PARTS = [
+  { k: "did", e: "📍", l: "วันนี้ทำอะไร" },
+  { k: "highlight", e: "✨", l: "เจออะไร/เรื่องเด่น" },
+  { k: "feel", e: "💭", l: "รู้สึกยังไง" },
+  { k: "lesson", e: "💡", l: "บทเรียนวันนี้" }
+];
+// เขียนแล้ว = มีข้อความดิบ หรือกรอกหัวข้อใดหัวข้อหนึ่ง (แอปกรอกแค่หัวข้อได้) · กดแค่อารมณ์ไม่นับ
+function journalWritten_(j) {
+  if (!j) return false;
+  if (String(j.entry || "").trim()) return true;
+  var p = j.parts || {};
+  return JOURNAL_PARTS.some(function (x) { return String(p[x.k] || "").trim(); });
+}
 function toolAddJournal_(a, ctx) {
   var text = clean_(a.text, 5000, true);
   if (!text) return { ok: false, error: "ไม่มีเนื้อหา" };
   var date = validDate_(a.date) || ctx.today;
   var doc = "g.journal." + date.slice(0, 4);
-  var id = uid_(), actId = uid_(), created = false;
+  var id = uid_(), actId = uid_(), created = false, prevParts = null;
+  var add = {};
+  JOURNAL_PARTS.forEach(function (p) { var v = clean_(a[p.k], 1500, true); if (v) add[p.k] = v; });
   mutate_([{ id: doc, def: [] }, { id: "k.journal", def: null }, { id: "k.activity", def: [] }], function (G) {
     var marker = G["k.journal"].chunks[0];
     if (marker.value == null) { marker.value = []; marker.dirty = true; }     // ตัวบอกว่ามี key journal (ปกติมีอยู่แล้ว)
     created = false;
     var g = G[doc], found = null;
     g.chunks.forEach(function (c) { c.value.forEach(function (j, i) { if (!found && j && j.date === date) found = { c: c, i: i }; }); });
+    var mergeParts = function (j) {
+      if (!Object.keys(add).length) return;
+      var parts = JSON.parse(JSON.stringify(j.parts || {}));
+      Object.keys(add).forEach(function (k) { parts[k] = parts[k] ? parts[k] + "\n" + add[k] : add[k]; });
+      j.parts = parts;
+    };
     if (found) {
       var j = JSON.parse(JSON.stringify(found.c.value[found.i]));
+      prevParts = j.parts ? JSON.parse(JSON.stringify(j.parts)) : null;
       j.entry = (j.entry ? j.entry + "\n" : "") + text;
+      mergeParts(j);
       found.c.value[found.i] = j; found.c.dirty = true; id = j.id;
     } else {
-      arrPush_(g, { id: id, date: date, entry: text });
+      var nj = { id: id, date: date, entry: text };
+      mergeParts(nj);
+      arrPush_(g, nj);
       created = true;
     }
     pushActivity_(G, actId, "journal", "บันทึก Journal \"" + text.slice(0, 32) + (text.length > 32 ? "…" : "") + "\" (LINE)");
   });
-  addRecord_(ctx, { kind: "journal", ref: doc + "#" + id, actId: actId, created: created, appended: text, label: "Journal วันที่ " + date + " \"" + text.slice(0, 30) + (text.length > 30 ? "…" : "") + "\"" });
-  return { ok: true, ref: doc + "#" + id, date: date, appendedToExisting: !created };
+  addRecord_(ctx, { kind: "journal", ref: doc + "#" + id, actId: actId, created: created, appended: text, prevParts: prevParts, label: "Journal วันที่ " + date + " \"" + text.slice(0, 30) + (text.length > 30 ? "…" : "") + "\"" });
+  return { ok: true, ref: doc + "#" + id, date: date, appendedToExisting: !created, parts: Object.keys(add) };
 }
 
 function toolAddNote_(a, ctx) {
@@ -848,6 +879,7 @@ function undoRecord_(rec) {
         var tail = "\n" + rec.appended;
         if (j.entry && j.entry.slice(-tail.length) === tail) j.entry = j.entry.slice(0, -tail.length);
         else if (j.entry === rec.appended) j.entry = "";
+        if (rec.prevParts) j.parts = rec.prevParts; else delete j.parts;          // ขั้นที่ 6: หัวข้อที่เพิ่งแยกลงก็ถอยกลับด้วย
         f.chunk.value[f.index] = j; f.chunk.dirty = true;
       } else {
         f.chunk.value.splice(f.index, 1); f.chunk.dirty = true;
@@ -1518,6 +1550,7 @@ function statusText_() {
     var sch = [];
     if (on.indexOf("morningPush") >= 0) sch.push("สรุปเช้า " + pad2_(CONFIG.MORNING_HOUR) + ":00");
     if (on.indexOf("eveningJournalPush") >= 0) sch.push("วางแผนพรุ่งนี้ " + pad2_(CONFIG.JOURNAL_HOUR) + ":00");
+    if (on.indexOf("weeklyReflectionPush") >= 0) sch.push("สะท้อนสัปดาห์ อา. " + pad2_(CONFIG.REFLECTION_HOUR) + ":30");
     var pushed = Number(prop_("push_" + Utilities.formatDate(new Date(), TZ, "yyyy-MM")) || 0);
     lines.push("• ทักก่อน: " + (sch.length ? sch.join(" · ") : "ปิดอยู่ (รัน setupSchedules)") + " · เดือนนี้ส่งไป " + pushed + " ครั้ง");
     var q = lineApiGet_("/v2/bot/message/quota/consumption");
@@ -1727,7 +1760,7 @@ function removeRichMenu() {
 // ติดตั้ง: รัน setupSchedules() ครั้งเดียว (ขอสิทธิ์ "จัดการทริกเกอร์" เพิ่ม) · เลิก: removeSchedules()
 // ทริกเกอร์เวลารันโค้ดล่าสุดที่บันทึกไว้ (ไม่ต้อง Deploy เวอร์ชันใหม่) · LINE push ฟรี ~300/เดือน ใช้ ~60
 // ============================================================
-var PUSH_HANDLERS = ["morningPush", "eveningJournalPush"];
+var PUSH_HANDLERS = ["morningPush", "eveningJournalPush", "weeklyReflectionPush"];
 
 function setupSchedules() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (PUSH_HANDLERS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
@@ -1739,6 +1772,10 @@ function setupSchedules() {
   if (CONFIG.JOURNAL_PUSH) {
     ScriptApp.newTrigger("eveningJournalPush").timeBased().atHour(CONFIG.JOURNAL_HOUR).nearMinute(0).everyDays(1).inTimezone(TZ).create();
     made.push("วางแผนพรุ่งนี้ " + pad2_(CONFIG.JOURNAL_HOUR) + ":00");
+  }
+  if (CONFIG.REFLECTION_PUSH) {
+    ScriptApp.newTrigger("weeklyReflectionPush").timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(CONFIG.REFLECTION_HOUR).nearMinute(30).inTimezone(TZ).create();
+    made.push("สะท้อนสัปดาห์ วันอาทิตย์ " + pad2_(CONFIG.REFLECTION_HOUR) + ":30");
   }
   if (!prop_("OWNER_LINE_USER_ID")) console.log("⚠️ ยังไม่ได้ผูก LINE ของโอม — ทัก Jack ใน LINE ก่อน ไม่งั้นส่งไม่ได้");
   console.log(made.length ? "✅ ตั้งเวลาแล้ว: " + made.join(" · ") + " (คลาดได้ ±15 นาที)" : "ปิดไว้ทั้งหมดใน Config.gs — ไม่ได้ตั้งอะไร");
@@ -1918,7 +1955,7 @@ function buildEveningPlan_(ctx) {
   var year = ctx.today.slice(0, 4);
   var G = readGroups_([{ id: "g.journal." + year, def: [] }, { id: "k.tasks", def: [] }]);
   var todayJ = arrAll_(G["g.journal." + year]).filter(function (j) { return j && j.date === ctx.today; })[0] || null;
-  var wrote = !!(todayJ && String(todayJ.entry || "").trim());
+  var wrote = !!(todayJ && journalWritten_(todayJ));
   var done = arrAll_(G["k.tasks"]).filter(function (t) {
     if (!t) return false;
     if (isRecurring_(t)) return t.recurrence === "daily" && !!(t.completions || {})[ctx.today];
@@ -1959,7 +1996,8 @@ function buildEveningPlan_(ctx) {
   L.push("", todayJ && todayJ.mood ? "🙂 อารมณ์วันนี้บันทึกไว้แล้ว (เปลี่ยนได้ด้วยปุ่มด้านล่าง)" : "😌 วันนี้รู้สึกยังไงครับ? กดปุ่มด้านล่างได้เลย");
   if (!wrote) {
     var dayNo = Math.floor(new Date(ctx.today + "T12:00:00Z").getTime() / 86400000);
-    L.push("", "📝 ถ้าอยากเขียน Journal (ไม่บังคับ)", JOURNAL_QUESTIONS[dayNo % JOURNAL_QUESTIONS.length], "เล่าสั้นๆ ก็พอ เดี๋ยว Jack จดให้");
+    L.push("", "📝 ถ้าอยากเขียน Journal (ไม่บังคับ)", JOURNAL_QUESTIONS[dayNo % JOURNAL_QUESTIONS.length],
+      "เล่ารวดเดียวได้เลย Jack แยกให้: " + JOURNAL_PARTS.map(function (p) { return p.e + " " + p.l; }).join(" · "));
   }
   var quick = MOODS.map(function (m) {
     return { type: "action", action: { type: "postback", label: m.e + " " + m.l, data: "a=mood&v=" + m.v + "&d=" + ctx.today, displayText: m.e + " " + m.l } };
@@ -2002,3 +2040,100 @@ function toolSetMood_(v, date, ctx) {
 }
 
 function pad2_(n) { return (n < 10 ? "0" : "") + n; }
+
+// ============================================================
+// 14) ขั้นที่ 6 (ข้อ 56): Jack สะท้อนสัปดาห์ทุกคืนวันอาทิตย์ — อ่าน Journal จันทร์–อาทิตย์นั้น
+// โค้ดรวบรวมข้อเท็จจริง (อารมณ์รายวัน วันที่เขียน บทเรียน งานที่เสร็จ) → AI เขียนสะท้อนสั้นๆ + เสนอเพิ่มแฟ้มตัวโอมได้ (รอโอมกดยืนยัน)
+// เก็บที่ parts/k.journalReflections = [{id, week(จันทร์), end, text, days, moodAvg, at}] → แอปโชว์บนหัวปฏิทิน Journal
+// ติดตั้ง: รัน setupSchedules() ใหม่ 1 ครั้ง (เพิ่มทริกเกอร์วันอาทิตย์)
+// ============================================================
+var REFLECTION_DOC = "k.journalReflections";
+function weeklyReflectionPush() { return runPush_("reflection", function (ctx) { return buildReflection_(ctx, false); }); }
+function testReflectionPush() { return runPush_("reflection", function (ctx) { return buildReflection_(ctx, false); }, true); }
+function previewReflection() { var m = buildReflection_(newCtx_(), true); console.log(m ? m.text : "(สัปดาห์นี้ไม่มี Journal — ไม่ทัก)"); }
+
+function reflectionFacts_(ctx) {
+  var mon = mondayOf_(ctx.today), sun = addDays_(mon, 6);
+  var years = {}; years[mon.slice(0, 4)] = 1; years[sun.slice(0, 4)] = 1;
+  var specs = Object.keys(years).map(function (y) { return { id: "g.journal." + y, def: [] }; }).concat([{ id: "k.tasks", def: [] }]);
+  var G = readGroups_(specs);
+  var rows = [];
+  Object.keys(years).forEach(function (y) { rows = rows.concat(arrAll_(G["g.journal." + y])); });
+  var days = [];
+  for (var i = 0; i < 7; i++) {
+    var d = addDays_(mon, i);
+    var j = rows.filter(function (x) { return x && x.date === d; })[0] || null;
+    var done = arrAll_(G["k.tasks"]).filter(function (t) {
+      if (!t) return false;
+      if (isRecurring_(t)) return t.recurrence === "daily" && !!(t.completions || {})[d];
+      return t.status === "done" && t.completedAt && Utilities.formatDate(new Date(t.completedAt), TZ, "yyyy-MM-dd") === d;
+    }).map(function (t) { return t.title; });
+    var mood = j && moodOf_(j.mood);
+    days.push({ date: d, weekday: "วัน" + TH_DAYS[(i + 1) % 7], mood: mood ? mood.e + " " + mood.l : null, moodValue: mood ? mood.v : null,
+      entry: j && journalWritten_(j) ? (String(j.entry || "").trim() || "(กรอกเป็นหัวข้อ)").slice(0, 700) : null, parts: j && j.parts ? j.parts : null, tasksDone: done.slice(0, 8) });
+  }
+  var mv = days.filter(function (x) { return x.moodValue; }).map(function (x) { return x.moodValue; });
+  var lessons = [];
+  days.forEach(function (x) { if (x.parts && x.parts.lesson) lessons.push(x.parts.lesson); });
+  return { weekStart: mon, weekEnd: sun, days: days, daysWritten: days.filter(function (x) { return x.entry; }).length, moodDays: mv.length,
+    moodAvg: mv.length ? Math.round(mv.reduce(function (a, b) { return a + b; }, 0) / mv.length * 10) / 10 : null, lessons: lessons };
+}
+
+function reflectionTemplate_(f) {                                  // ไม่ใช้ AI (เพดานเต็ม/AI ล่ม)
+  var L = [];
+  L.push("สัปดาห์นี้เขียน Journal " + f.daysWritten + " วัน" + (f.moodAvg != null ? " · อารมณ์เฉลี่ย " + f.moodAvg + "/5" : ""));
+  var best = f.days.filter(function (x) { return x.moodValue; }).sort(function (a, b) { return b.moodValue - a.moodValue; })[0];
+  if (best) L.push("วันที่ดีที่สุด: " + best.weekday + " " + best.mood);
+  if (f.lessons.length) L.push("บทเรียนที่จดไว้: " + f.lessons.slice(0, 3).join(" / "));
+  return L.join("\n");
+}
+
+function buildReflection_(ctx, dry) {
+  var f = reflectionFacts_(ctx);
+  if (!f.daysWritten && !f.moodDays) return null;                  // ไม่มีอะไรให้สะท้อน = ไม่ทัก
+  var text = "", proposals = [];
+  if (CONFIG.REFLECTION_USE_AI && usageThisMonth_().usd < CONFIG.MONTHLY_CAP_USD - 0.05) {
+    try {
+      var midOk = usageThisMonth_().usd < CONFIG.MONTHLY_CAP_USD * CONFIG.MID_MODEL_MAX_SHARE;
+      var model = midOk ? CONFIG.MODEL_MID : CONFIG.MODEL_SMALL;
+      var pf = profileBlock_(profileRead_());
+      var instructions = PERSONA + "\n\n" +
+        "งานตอนนี้: คืนวันอาทิตย์ Jack สะท้อนสัปดาห์ให้โอมจาก Journal จันทร์–อาทิตย์ (JSON ที่ให้) เขียน 3–6 บรรทัด ภาษาเพื่อน:\n" +
+        "- สิ่งที่เห็นเป็นรูปแบบ (อารมณ์ขึ้นลงวันไหน เพราะอะไรตามที่โอมเล่า) · เรื่องดีที่ควรชมตัวเอง · บทเรียนที่โอมจดไว้ (ถ้ามี) · ชวนลองสิ่งเล็กๆ 1 อย่างสัปดาห์หน้า\n" +
+        "- ใช้เฉพาะข้อเท็จจริงในข้อมูล ห้ามแต่ง ห้ามวินิจฉัยสุขภาพจิต ห้ามเทศนา · ไม่ใช้ Markdown\n" +
+        "- ถ้าเห็นเรื่องระดับเป้าหมาย/ค่านิยม/เรื่องที่โฟกัสที่ควรอยู่ในแฟ้มตัวโอมแต่ยังไม่มี เสนอได้ไม่เกิน 2 ข้อ (ไม่มีก็ไม่ต้อง)\n" +
+        "ตอบเป็น JSON เท่านั้น: {\"reflection\":\"…\",\"proposals\":[{\"section\":\"who|goals|values|focus\",\"text\":\"…\"}]}" +
+        (pf.length ? "\n\nแฟ้มตัวโอมตอนนี้:\n" + pf.join("\n") : "");
+      var resp = llmCall_({ model: model, effort: model === CONFIG.MODEL_MID ? CONFIG.EFFORT_MID : "low", instructions: instructions, input: [{ role: "user", content: JSON.stringify(f) }], tools: [] });
+      addUsage_(resp.model || model, resp.usage, false);
+      var raw = String(resp.text || "").trim(), js = null;
+      try { js = JSON.parse(raw.replace(/^```(json)?/, "").replace(/```$/, "").trim()); } catch (e) { js = null; }
+      if (js && js.reflection) { text = String(js.reflection).replace(/\*\*/g, "").trim(); proposals = Array.isArray(js.proposals) ? js.proposals.slice(0, 2) : []; }
+      else text = raw.replace(/\*\*/g, "");
+    } catch (err) { noteError_(err); }
+  }
+  if (!text) text = reflectionTemplate_(f);
+  text = text.slice(0, 1500);
+  var head = "🪞 สะท้อนสัปดาห์ · " + thDate_(f.weekStart) + " – " + thDate_(f.weekEnd);
+  var moodLine = f.days.map(function (x) { return x.mood ? x.mood.split(" ")[0] : "·"; }).join(" ");
+  var msgText = head + "\nอารมณ์ จ.–อา.: " + moodLine + (f.moodAvg != null ? " (เฉลี่ย " + f.moodAvg + "/5)" : "") + " · เขียน " + f.daysWritten + " วัน\n\n" + text;
+  var quick = [];
+  if (!dry) {
+    try {
+      mutate_([{ id: REFLECTION_DOC, def: [] }], function (G) {
+        var g = G[REFLECTION_DOC], item = { id: "wr" + f.weekStart, week: f.weekStart, end: f.weekEnd, text: text, days: f.daysWritten, moodAvg: f.moodAvg, at: new Date().toISOString() };
+        var ex = arrFind_(g, item.id);
+        if (ex) { ex.chunk.value[ex.index] = item; ex.chunk.dirty = true; } else arrPush_(g, item);
+      });
+    } catch (err) { noteError_(err); }
+    proposals.forEach(function (p) {
+      try { toolProposeProfile_({ section: p && p.section, text: p && p.text }, ctx); } catch (err) { noteError_(err); }
+    });
+    (ctx.profProposed || []).forEach(function (x) {
+      quick.push({ type: "action", action: { type: "postback", label: ("✅ ลงแฟ้ม: " + x.text).slice(0, 20), data: "a=pf&v=1&id=" + x.id, displayText: "ลงแฟ้มตัวโอม: " + x.text.slice(0, 200) } });
+      quick.push({ type: "action", action: { type: "postback", label: "ไม่ต้อง", data: "a=pf&v=0&id=" + x.id, displayText: "ไม่ต้องลงแฟ้ม" } });
+    });
+    if (quick.length) msgText += "\n\n🗂️ Jack เสนอเพิ่มแฟ้มตัวโอม:\n" + ctx.profProposed.map(function (x) { return "• " + x.text; }).join("\n");
+  }
+  return textMsg_(msgText.slice(0, 4900), quick.length ? quick : null);
+}

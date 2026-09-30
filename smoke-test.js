@@ -1133,7 +1133,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     base.bookQueue=[{id:"b1",title:"A",status:"done",finishedDate:d(-5),rating:8,reviewText:"1\n2\n3"},{id:"b2",title:"B",status:"done",finishedDate:d(-4),rating:8,reviewText:"สั้น"},
       {id:"b3",title:"C",status:"done",finishedDate:d(-4),rating:0,quotes:[{id:"q"}]},{id:"b4",title:"D",status:"done",finishedDate:d(-4),rating:7,reviewText:"x",quotes:[{id:"q"}]},{id:"b5",title:"E",status:"done",finishedDate:d(-60),rating:9,reviewText:"1\n2\n3"},{id:"b6",title:"F",status:"reading",finishedDate:d(-1)}];
     base.mediaReviews=[1,2,3].map(i=>({id:"m"+i,title:"ep"+i,type:"podcast",reviewText:"ดี",date:d(-2)})).concat([{id:"m4",title:"ไม่มีรีวิว",type:"video",reviewText:"",date:d(-1)},{id:"m5",title:"อนาคต",type:"video",reviewText:"x",date:d(3)}]);
-    base.journal=[{date:d(-1),entry:"x"},{date:d(-1),entry:"ซ้ำวันเดิม"},{date:d(-2),entry:"  "},{date:d(-2),mood:3},{date:d(-30),entry:"เก่า"}];
+    base.journal=[{date:d(-1),entry:"x"},{date:d(-1),entry:"ซ้ำวันเดิม"},{date:d(-2),entry:"  "},{date:d(-2),mood:3},{date:d(-3),parts:{lesson:"กรอกแค่หัวข้อ"}},{date:d(-30),entry:"เก่า"}];
     const X=computeXP(base,T);
     const by=(src)=>X.events.filter(e=>e.src===src);
     out.routine=by("routine").length; out.streak=by("streak").map(e=>e.date); out.task=by("task").map(e=>e.side+":"+e.pts);
@@ -1168,7 +1168,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('XP: งานครั้งเดียว +10 ตามหมวด (การเงิน→wealth) · เสร็จก่อนเริ่ม/ยังไม่เสร็จไม่นับ',JSON.stringify(U.task)==='["wealth:10"]',JSON.stringify(U.task));
   check('XP: หมุด +50 เฉพาะที่ถึงหลังเริ่ม · ปิดโปรเจกต์ +150 ("before" ไม่นับ)',JSON.stringify(U.ms)==='["wealth"]'&&JSON.stringify(U.proj)==='["wealth"]',JSON.stringify([U.ms,U.proj]));
   check('XP: หนังสือจบ +30 (จบก่อนเริ่มไม่นับ) · สรุป = ดาว + (รีวิว ≥3 บรรทัด หรือคำคม)',U.book===4&&JSON.stringify(U.sum)==='["สรุปหนังสือ · A","สรุปหนังสือ · D"]',JSON.stringify([U.book,U.sum]));
-  check('XP: รีวิววิดีโอ/พอดแคสต์ ≤2/วัน · ต้องมีรีวิว · อนาคตไม่นับ · Journal 5/วัน (ว่าง/มีแต่อารมณ์ไม่นับ)',U.media===2&&U.journal===1,JSON.stringify([U.media,U.journal]));
+  check('XP: รีวิววิดีโอ/พอดแคสต์ ≤2/วัน · ต้องมีรีวิว · อนาคตไม่นับ · Journal 5/วัน (ว่าง/มีแต่อารมณ์ไม่นับ · กรอกแค่หัวข้อนับ)',U.media===2&&U.journal===2,JSON.stringify([U.media,U.journal]));
   check('XP: ผลรวมแต่ละด้านตรงกับประวัติ · ได้เหรียญก้าวแรก/ติดกัน/ปิดจ๊อบ/นักสรุป',U.consistent&&['first','streak','project','book'].every(k=>U.badges.includes(k)),JSON.stringify([U.sides,U.badges]));
   check('XP Wealth รายเดือน: ออมถึงเป้า + net worth เพิ่ม + หนี้ลด (เดือนที่ปิดแล้ว) + รีวิวเดือน · เดือนนี้ที่ nw ลดไม่นับ · เหรียญเดือนทอง',U.wealth.length===4&&U.wealth.every(x=>x.startsWith(U.wealth[0].slice(0,7)))&&U.w4,JSON.stringify(U.wealth));
   check('XP Wealth: ปรับเป้าอัตราออมสูงขึ้น (40%) → ข้อออมไม่ผ่าน',U.wealthHi===3,String(U.wealthHi));
@@ -1195,6 +1195,28 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const pm3=await p.evaluate(()=>({focus:document.querySelectorAll('.pf-text')[3].value,banner:!!document.querySelector('.pf-banner')}));
   check('แก้แล้วบันทึก → เปิดใหม่ยังอยู่ · ไม่มีข้อเสนอรอ = แถบบน Home หาย',pm3.focus==='ขยายร้านออนไลน์'&&!pm3.banner,JSON.stringify(pm3));
   await p.locator('.pf-modal .modal-close').click(); await p.waitForTimeout(300);
+
+  console.log('\n[ข้อ 56 ขั้นที่ 6] Journal ปฏิทินอารมณ์ + หัวข้อนำ');
+  await mobileGo('Journal'); await p.waitForTimeout(800);
+  const jc=await p.evaluate(()=>{ const t=new Date(); const y=t.getFullYear(),m=t.getMonth(); const days=new Date(y,m+1,0).getDate(), lead=new Date(y,m,1).getDay();
+    return {cells:document.querySelectorAll('.jr-cell:not(.empty)').length,empty:document.querySelectorAll('.jr-cell.empty').length,days,lead,today:!!document.querySelector('.jr-cell.today.sel'),
+      parts:[...document.querySelectorAll('.jr-part .field-label')].map(x=>x.textContent),moods:document.querySelectorAll('.jr-mood').length,refl:(document.querySelector('.jr-refl .db-note')||{}).textContent||'',
+      sum:document.querySelectorAll('.jr-sum-item').length,sw:document.documentElement.scrollWidth,iw:window.innerWidth}; });
+  check('Journal: ปฏิทินเดือนนี้ครบทุกวัน (เริ่มวันอาทิตย์) · วันนี้ถูกเลือกไว้ · มือถือไม่ล้น',jc.cells===jc.days&&jc.empty===jc.lead&&jc.today&&jc.sw<=jc.iw+2,JSON.stringify(jc));
+  check('Journal: หัวข้อนำ 4 ข้อ + ปุ่มอารมณ์ 5 + แถบสรุปเดือน + การ์ดสะท้อนสัปดาห์ (ว่าง = บอกว่า Jack สรุปคืนวันอาทิตย์)',jc.parts.join('|')==='📍 วันนี้ทำอะไร|✨ เจออะไร/เรื่องเด่น|💭 รู้สึกยังไง|💡 บทเรียนวันนี้'&&jc.moods===5&&jc.sum===4&&/คืนวันอาทิตย์/.test(jc.refl),JSON.stringify(jc));
+  await p.locator('.jr-mood').nth(3).click(); await p.waitForTimeout(600);
+  const jm1=await p.evaluate(()=>({emo:(document.querySelector('.jr-cell.today .jr-emo')||{}).textContent,on:(document.querySelector('.jr-mood.on span')||{}).textContent,avg:document.querySelectorAll('.jr-sum-item b')[1].textContent}));
+  check('กดอารมณ์ 🙂 → บันทึกทันที · ปฏิทินวันนี้ขึ้น 🙂 · ค่าเฉลี่ยเดือนอัปเดต',jm1.emo==='🙂'&&jm1.on==='🙂'&&jm1.avg==='4.0',JSON.stringify(jm1));
+  await p.locator('.jr-part textarea').nth(3).fill('ทำทีละอย่างดีกว่า'); await p.locator('.jr-part textarea').nth(0).fill('ทดสอบระบบ');
+  await p.locator('.jr-actions .modal-btn-save').click(); await p.waitForTimeout(600);
+  await p.locator('.jr-lessons .db-head').click(); await p.waitForTimeout(300);
+  const jm2=await p.evaluate(()=>({lessons:[...document.querySelectorAll('.jr-lesson-text')].map(x=>x.textContent),written:document.querySelectorAll('.jr-sum-item b')[0].textContent,btn:document.querySelector('.jr-actions .modal-btn-save').disabled,did:!!document.querySelector('.jr-did-lab')}));
+  check('กรอกหัวข้อแล้วบันทึก → คลังบทเรียนมีบทเรียนใหม่ · นับเป็นวันที่เขียน · มีส่วน "สิ่งที่ทำจริงวันนั้น"',jm2.lessons.includes('ทำทีละอย่างดีกว่า')&&jm2.written==='1'&&jm2.btn&&jm2.did,JSON.stringify(jm2));
+  await p.locator('.jr-nav .db-chip').first().click(); await p.waitForTimeout(400);
+  const jm3=await p.evaluate(()=>({month:document.querySelector('.jr-month').textContent,back:[...document.querySelectorAll('.jr-top > .db-chip')].some(b=>b.textContent==='วันนี้')}));
+  await p.evaluate(()=>[...document.querySelectorAll('.jr-top > .db-chip')].find(b=>b.textContent==='วันนี้').click()); await p.waitForTimeout(400);
+  const jm4=await p.evaluate(()=>({today:!!document.querySelector('.jr-cell.today.sel'),part:document.querySelectorAll('.jr-part textarea')[0].value}));
+  check('เลื่อนเดือนก่อน → มีปุ่ม "วันนี้" · กดกลับมาแล้วเห็นบันทึกวันนี้เดิม',jm3.back&&jm4.today&&jm4.part==='ทดสอบระบบ',JSON.stringify([jm3,jm4]));
 
   console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
   await mobileGo('Home'); await p.waitForTimeout(600);

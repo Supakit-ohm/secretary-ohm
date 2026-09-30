@@ -7144,37 +7144,175 @@ function BookQueueTab({data,persist}) {
     </div>
   );
 }
+/* ═══ ข้อ 56 ขั้นที่ 6: Journal = ปฏิทินอารมณ์รายเดือน + หัวข้อนำ 4 ข้อ + สิ่งที่ทำจริงวันนั้น + คลังบทเรียน + สะท้อนสัปดาห์จาก Jack
+   ข้อมูล: journal[] = {id,date,entry(ข้อความดิบ),mood(1-5),parts:{did,highlight,feel,lesson}} — รูปเดิม {date,entry,mood} ใช้ต่อได้ ไม่ต้อง migrate
+   Jack (LINE) แยกหัวข้อให้ตอนโอมเล่ารวดเดียว · journalReflections[] = {id,week,end,text,days,moodAvg,at} เขียนโดย Jack คืนวันอาทิตย์
+   JOURNAL_PARTS/JOURNAL_MOODS ต้องตรงกับ JOURNAL_PARTS/MOODS ใน line-bot/Bot.gs */
+const JOURNAL_PARTS=[
+  {k:"did",e:"📍",l:"วันนี้ทำอะไร"},
+  {k:"highlight",e:"✨",l:"เจออะไร/เรื่องเด่น"},
+  {k:"feel",e:"💭",l:"รู้สึกยังไง"},
+  {k:"lesson",e:"💡",l:"บทเรียนวันนี้"},
+];
+const JOURNAL_MOODS=[{v:1,e:"😩",l:"แย่มาก"},{v:2,e:"😕",l:"ไม่ค่อยดี"},{v:3,e:"😐",l:"กลางๆ"},{v:4,e:"🙂",l:"ดี"},{v:5,e:"🤩",l:"ดีมาก"}];
+function journalMood(v){ return JOURNAL_MOODS.find(m=>m.v===Number(v))||null; }
+function journalWritten(j){ if(!j) return false; if(String(j.entry||"").trim()) return true; const p=j.parts||{}; return JOURNAL_PARTS.some(x=>String(p[x.k]||"").trim()); }
+function journalMap(data){ const m={}; (data.journal||[]).forEach(j=>{ if(j&&j.date&&!m[j.date]) m[j.date]=j; }); return m; }
+/* สิ่งที่ทำจริงวันนั้น (ดึงอัตโนมัติ) จัดกลุ่มตาม target — งานประจำนับเฉพาะรายวัน (รายสัปดาห์/เดือนไม่รู้วันที่ติ๊กจริง) */
+function journalDayActivity(data,date){
+  const projById={}; (data.projects||[]).forEach(p=>{ if(p&&p.id) projById[p.id]=p; });
+  const groups={}, push=(p,icon,text)=>{ const key=p?p.id:"_none"; (groups[key]||(groups[key]={key,project:p||null,items:[]})).items.push({icon,text}); };
+  (data.tasks||[]).forEach(t=>{
+    if(!t||!t.id) return;
+    const p=t.projectId?projById[t.projectId]:null;
+    if(isRecurring(t)){ if(t.recurrence==="daily"&&(t.completions||{})[date]) push(p,"🔁",t.title); }
+    else if(t.status==="done"&&xpLocalDate(t.completedAt)===date) push(p,"✅",t.title);
+  });
+  (data.projects||[]).forEach(p=>{ (p.milestones||[]).forEach(m=>{ if(m&&String(m.reachedAt||"").slice(0,10)===date) push(p,"🚩",`ถึงหมุด ${milestoneLabel(m)}`); }); });
+  (data.checkins||[]).forEach(c=>{ if(c&&c.date===date){ const p=projById[c.projectId]; push(p||null,"📈",`บันทึกความคืบหน้า ${Number(c.value).toLocaleString()}${p&&p.unit?" "+p.unit:""}`); } });
+  (data.bookQueue||[]).forEach(b=>{ if(b&&b.status==="done"&&String(b.finishedDate||"").slice(0,10)===date) push(null,"📚",`อ่านจบ ${b.title}`); });
+  (data.mediaReviews||[]).forEach(r=>{ if(r&&String(r.date||"").slice(0,10)===date) push(null,r.type==="podcast"?"🎧":"🎬",`รีวิว ${r.title}`); });
+  const order=(data.projects||[]).map(p=>p.id);
+  return Object.values(groups).sort((a,b)=>a.key==="_none"?1:b.key==="_none"?-1:order.indexOf(a.key)-order.indexOf(b.key));
+}
 function JournalPage({data,persist}) {
-  const [journal,setJournal]=useState(data.journal||[]);
-  const [form,setForm]=useState({date:todayISO(),entry:""});
-  const today=journal.find(j=>j.date===todayISO());
-  const saveEntry=()=>{ if(!form.entry.trim()) return; if(today) persist({...data,journal:journal.map(j=>j.date===form.date?{...j,entry:form.entry.trim()}:j)}); else persist({...data,journal:[...journal,{id:uid(),date:form.date,entry:form.entry.trim()}]}); };
-  useEffect(()=>{ const t=today; if(t) setForm({date:t.date,entry:t.entry}); else setForm({date:todayISO(),entry:""}); },[today]);
+  const today=todayISO();
+  const [month,setMonth]=useState(today.slice(0,7));
+  const [sel,setSel]=useState(today);
+  const jm=useMemo(()=>journalMap(data),[data.journal]);
+  const cur=jm[sel]||null;
+  const blank=()=>({mood:null,entry:"",parts:{did:"",highlight:"",feel:"",lesson:""}});
+  const fromEntry=(j)=>j?{mood:j.mood||null,entry:String(j.entry||""),parts:{did:"",highlight:"",feel:"",lesson:"",...(j.parts||{})}}:blank();
+  const [form,setForm]=useState(()=>fromEntry(cur));
+  const [dirty,setDirty]=useState(false);
+  const [showRaw,setShowRaw]=useState(false);
+  const [showLessons,setShowLessons]=useState(false);
+  const [openRefl,setOpenRefl]=useState(0);
+  useEffect(()=>{ if(!dirty){ setForm(fromEntry(cur)); } },[cur,sel]);          // ข้อมูลใหม่จาก Jack/เครื่องอื่นไหลเข้า ถ้ายังไม่ได้แก้ค้าง
+  const pick=(d)=>{ if(dirty&&!window.confirm("ยังไม่ได้บันทึกวันที่แก้อยู่ — ทิ้งการแก้ไข?")) return; setDirty(false); setSel(d); setForm(fromEntry(jm[d]||null)); setShowRaw(false); };
+  const upd=(patch)=>{ setForm(f=>({...f,...patch})); setDirty(true); };
+  const updPart=(k,v)=>{ setForm(f=>({...f,parts:{...f.parts,[k]:v}})); setDirty(true); };
+  const save=(override)=>{
+    const f=override||form;
+    const parts={}; JOURNAL_PARTS.forEach(p=>{ const v=String(f.parts[p.k]||"").trim(); if(v) parts[p.k]=v; });
+    const entry=String(f.entry||"").trim();
+    const list=data.journal||[];
+    const ex=list.find(j=>j.date===sel);
+    let next;
+    if(!entry&&!f.mood&&!Object.keys(parts).length){ next=list.filter(j=>j.date!==sel); }
+    else {
+      const item={...(ex||{id:uid(),date:sel}),entry,mood:f.mood||undefined,parts:Object.keys(parts).length?parts:undefined};
+      if(!item.mood) delete item.mood; if(!item.parts) delete item.parts;
+      next=ex?list.map(j=>j===ex?item:j):[...list,item];
+    }
+    persist({...data,journal:next,activity:!ex&&(entry||Object.keys(parts).length)?logActivity(data,{source:"journal",text:`เขียน Journal ${thaiDate(sel)}`}):data.activity});
+    setDirty(false);
+  };
+  const setMood=(v)=>{ const f={...form,mood:form.mood===v?null:v}; setForm(f); save(f); };   // กดอารมณ์ = บันทึกทันที (กดซ้ำ = เอาออก)
+  /* ปฏิทิน */
+  const [y,m]=month.split("-").map(Number);
+  const first=new Date(y,m-1,1), days=new Date(y,m,0).getDate(), lead=first.getDay();
+  const cells=[]; for(let i=0;i<lead;i++) cells.push(null); for(let d=1;d<=days;d++) cells.push(`${month}-${String(d).padStart(2,"0")}`);
+  const monthLabel=first.toLocaleDateString("th-TH",{month:"long",year:"numeric",calendar:"buddhist"});
+  const monthRows=Object.values(jm).filter(j=>j.date.slice(0,7)===month);
+  const written=monthRows.filter(journalWritten).length;
+  const moods=monthRows.map(j=>Number(j.mood)).filter(v=>v>=1&&v<=5);
+  const avg=moods.length?moods.reduce((a,b)=>a+b,0)/moods.length:null;
+  const dist=JOURNAL_MOODS.map(md=>({...md,n:moods.filter(v=>v===md.v).length}));
+  const lessonsAll=(data.journal||[]).filter(j=>j&&j.parts&&String(j.parts.lesson||"").trim()).sort((a,b)=>b.date.localeCompare(a.date));
+  const monthLessons=lessonsAll.filter(j=>j.date.slice(0,7)===month).length;
+  const refl=(data.journalReflections||[]).filter(r=>r&&r.week&&(r.week.slice(0,7)===month||String(r.end||"").slice(0,7)===month)).sort((a,b)=>b.week.localeCompare(a.week));
+  const activity=journalDayActivity(data,sel);
+  const selMood=journalMood(form.mood);
   return (
-    <div className="page-content">
-      <div className="card">
-        <div className="card-head"><PenTool size={15}/> Daily Journal</div>
-        <div style={{marginBottom:14}}>
-          <label className="field-label">วันนี้เป็นอย่างไรบ้าง?</label>
-          <textarea className="modal-input" rows={6} placeholder="เขียนบันทึกวันนี้สั้นๆ..." value={form.entry} onChange={e=>setForm({...form,entry:e.target.value})} style={{resize:"vertical"}}/>
-          <div style={{marginTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{fontSize:12.5,color:"var(--ink-2)"}}>{form.entry.length} ตัวอักษร</div>
-            <button className="modal-btn-save" onClick={saveEntry} disabled={!form.entry.trim()}>บันทึก</button>
-          </div>
+    <div className="page-content jr-page">
+      <div className="jr-top">
+        <div className="jr-nav">
+          <button className="db-chip" onClick={()=>setMonth(shiftISO(month+"-01",{m:-1}).slice(0,7))} aria-label="เดือนก่อน"><ChevronLeft size={13}/></button>
+          <div className="jr-month">{monthLabel}</div>
+          <button className="db-chip" onClick={()=>setMonth(shiftISO(month+"-01",{m:1}).slice(0,7))} aria-label="เดือนถัดไป"><ChevronRightIcon size={13}/></button>
         </div>
-        {journal.length>0&&(
-          <div>
-            <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:"var(--accent)"}}>บันทึกเดิม</div>
-            <div style={{maxHeight:300,overflowY:"auto"}}>
-              {journal.slice().reverse().map(j=>(
-                <div key={j.id} style={{padding:10,marginBottom:8,background:"var(--surface-sunken)",borderRadius:8,borderLeft:"3px solid var(--accent)"}}>
-                  <div style={{fontSize:12.5,color:"var(--ink-2)",marginBottom:4}}>{j.date}{j.mood>=1&&j.mood<=5?" · "+["😩","😕","😐","🙂","🤩"][j.mood-1]:""}</div>
-                  <div style={{fontSize:12.5,lineHeight:1.5}}>{j.entry||<span style={{color:"var(--ink-2)"}}>(กดอารมณ์ไว้ ยังไม่ได้เขียน)</span>}</div>
-                </div>
-              ))}
-            </div>
+        {(month!==today.slice(0,7)||sel!==today)&&<button className="db-chip" onClick={()=>{setMonth(today.slice(0,7));pick(today);}}>วันนี้</button>}
+      </div>
+      <div className="db-card jr-refl">
+        <div className="db-head"><div><div className="db-title">🪞 สะท้อนสัปดาห์จาก Jack</div><div className="db-note">{refl.length?`${refl.length} สัปดาห์ในเดือนนี้`:"Jack สรุปให้ทุกคืนวันอาทิตย์ ~21:30 จาก Journal สัปดาห์นั้น"}</div></div></div>
+        {refl.map((r,i)=>(
+          <div className={`jr-refl-item${openRefl===i?" open":""}`} key={r.id||r.week}>
+            <button className="jr-refl-head" onClick={()=>setOpenRefl(openRefl===i?-1:i)}>
+              <span>{thaiDate(r.week)} – {thaiDate(r.end||shiftISO(r.week,{d:6}))}</span>
+              <span className="jr-refl-meta db-mono">{r.moodAvg!=null?`${r.moodAvg}/5 · `:""}{r.days||0} วัน</span>
+            </button>
+            {openRefl===i&&<div className="jr-refl-text">{r.text}</div>}
           </div>
-        )}
+        ))}
+      </div>
+      <div className="jr-sum">
+        <div className="jr-sum-item"><b className="db-mono">{written}</b><span>วันที่เขียน</span></div>
+        <div className="jr-sum-item"><b className="db-mono">{avg!=null?avg.toFixed(1):"–"}</b><span>อารมณ์เฉลี่ย /5</span></div>
+        <div className="jr-sum-item jr-dist">{dist.map(md=><span key={md.v} className={md.n?"":"zero"} title={md.l}>{md.e}<i className="db-mono">{md.n}</i></span>)}</div>
+        <div className="jr-sum-item"><b className="db-mono">{monthLessons}</b><span>บทเรียน</span></div>
+      </div>
+      <div className="db-card jr-cal">
+        <div className="jr-wk">{DB_DAY_TH.map(d=><div key={d}>{d}</div>)}</div>
+        <div className="jr-grid">
+          {cells.map((d,i)=>{
+            if(!d) return <div key={"e"+i} className="jr-cell empty"/>;
+            const j=jm[d], md=j&&journalMood(j.mood), w=journalWritten(j), fut=d>today;
+            return (
+              <button key={d} type="button" disabled={fut} className={`jr-cell${d===sel?" sel":""}${d===today?" today":""}${fut?" fut":""}`} onClick={()=>pick(d)} aria-label={`${thaiDate(d)}${md?" "+md.l:""}${w?" มีบันทึก":""}`}>
+                <span className="jr-dn">{Number(d.slice(8))}</span>
+                <span className="jr-emo">{md?md.e:w?<span className="jr-dot"/>:""}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="db-card jr-day">
+        <div className="db-head">
+          <div><div className="db-title">{thaiDate(sel)}{sel===today?" · วันนี้":""}</div><div className="db-note">{selMood?`${selMood.e} ${selMood.l}`:"ยังไม่ได้เลือกอารมณ์"}{cur&&!dirty?" · บันทึกแล้ว":""}{dirty?" · ยังไม่บันทึก":""}</div></div>
+        </div>
+        <div className="jr-moods">
+          {JOURNAL_MOODS.map(md=><button key={md.v} type="button" className={`jr-mood${form.mood===md.v?" on":""}`} onClick={()=>setMood(md.v)} title={md.l}><span>{md.e}</span><small>{md.l}</small></button>)}
+        </div>
+        <div className="jr-parts">
+          {JOURNAL_PARTS.map(p=>(
+            <div key={p.k} className="jr-part">
+              <label className="field-label">{p.e} {p.l}</label>
+              <textarea className="modal-input jr-ta" rows={2} value={form.parts[p.k]||""} onChange={e=>updPart(p.k,e.target.value)} placeholder={p.k==="feel"?"คู่กับปุ่มอารมณ์ด้านบน":""}/>
+            </div>
+          ))}
+        </div>
+        <button type="button" className="jr-raw-toggle" onClick={()=>setShowRaw(v=>!v)}>{showRaw?"▾":"▸"} ข้อความดิบ / บันทึกอิสระ {form.entry.trim()?`(${form.entry.trim().length} ตัวอักษร)`:""}</button>
+        {showRaw&&<textarea className="modal-input jr-ta" rows={4} value={form.entry} onChange={e=>upd({entry:e.target.value})} placeholder="ที่โอมเล่าให้ Jack ฟังเก็บไว้ตรงนี้ — เขียนอิสระก็ได้"/>}
+        <div className="jr-actions">
+          <div className="jr-hint">ส่วนใหญ่เล่าให้ Jack ใน LINE รวดเดียวได้ Jack แยกหัวข้อให้</div>
+          <button className="modal-btn-save" onClick={()=>save()} disabled={!dirty}>บันทึก</button>
+        </div>
+        <div className="jr-did">
+          <div className="jr-did-lab">สิ่งที่ทำจริงวันนั้น</div>
+          {activity.length===0&&<div className="db-empty" style={{padding:"8px 0"}}>ไม่มีงาน/ความคืบหน้าที่บันทึกไว้วันนี้</div>}
+          {activity.map(g=>(
+            <div key={g.key} className="jr-did-g">
+              <div className="td-ghead"><span className="td-dot" style={{background:g.project?(g.project.color||"var(--accent)"):"var(--ink-5)"}}/><span className="td-gname">{g.project?g.project.title:"อื่นๆ"}</span></div>
+              {g.items.map((it,i)=><div key={i} className="jr-did-row"><span>{it.icon}</span><span>{it.text}</span></div>)}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="db-card jr-lessons">
+        <div className="db-head" role="button" onClick={()=>setShowLessons(v=>!v)} style={{cursor:"pointer",marginBottom:showLessons?12:0}}>
+          <div><div className="db-title">💡 คลังบทเรียน</div><div className="db-note">{lessonsAll.length} บทเรียนทั้งหมด</div></div>
+          <button className="db-chip">{showLessons?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
+        </div>
+        {showLessons&&(lessonsAll.length===0?<div className="db-empty">ยังไม่มีบทเรียน — เขียนในหัวข้อ 💡 หรือเล่าให้ Jack ฟัง</div>:
+          <div className="jr-lesson-list">
+            {lessonsAll.slice(0,100).map(j=>(
+              <button key={j.id||j.date} type="button" className="jr-lesson" onClick={()=>{setMonth(j.date.slice(0,7));pick(j.date);}}>
+                <span className="jr-lesson-date db-mono">{thaiDate(j.date)}</span>
+                <span className="jr-lesson-text">{j.parts.lesson}</span>
+              </button>
+            ))}
+          </div>)}
       </div>
     </div>
   );
@@ -7833,7 +7971,7 @@ function computeXP(data,today=todayISO()){
       .slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.id).localeCompare(String(b.id)))
       .forEach(r=>{ const d=String(r.date).slice(0,10); if(d<start||d>today) return; perDay[d]=(perDay[d]||0)+1; if(perDay[d]<=XP_MEDIA_PER_DAY) add(d,"growth",XP_PTS.media,`รีวิว${r.type==="podcast"?"พอดแคสต์":"วิดีโอ"} · ${r.title}`,"media"); });
     const jd=new Set();
-    (data.journal||[]).forEach(j=>{ if(j&&j.date&&String(j.entry||"").trim()) jd.add(String(j.date).slice(0,10)); });
+    (data.journal||[]).forEach(j=>{ if(j&&j.date&&journalWritten(j)) jd.add(String(j.date).slice(0,10)); });   // ขั้นที่ 6: กรอกแค่หัวข้อก็นับ
     jd.forEach(d=>add(d,"growth",XP_PTS.journal,"เขียน Journal","journal"));
     /* Wealth รายเดือน (75/เรื่อง): เดือนที่ปิดแล้วเท่านั้น (ข้อมูล import เดือนละครั้ง) ยกเว้นทำรีวิวเดือน */
     const cur=today.slice(0,7), sm=start.slice(0,7), snaps=xp.snapshots||{};

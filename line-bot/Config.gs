@@ -45,6 +45,9 @@ var CONFIG = {
   MORNING_USE_AI: true,        // true = gpt-6-luna เขียนสไตล์ Jack (~฿1/เดือน) · false = แม่แบบตายตัว ฟรี
   JOURNAL_PUSH: true,          // 20:00 วางแผนพรุ่งนี้ + ปุ่มอารมณ์ + ชวนเขียน Journal (ทักทุกคืน · เขียน Journal แล้ว = ตัดส่วนชวนเขียนออก)
   JOURNAL_HOUR: 20,            // 20:00
+  REFLECTION_PUSH: true,       // ขั้นที่ 6: สะท้อนสัปดาห์ทุกคืนวันอาทิตย์ (อ่าน Journal จันทร์–อาทิตย์) — แก้แล้วรัน setupSchedules() ใหม่
+  REFLECTION_HOUR: 21,         // 21:30 วันอาทิตย์
+  REFLECTION_USE_AI: true,     // true = gpt-6-sol เขียน (สัปดาห์ละครั้ง ~฿0.3) · false/เพดานเต็ม = สรุปตัวเลขแบบตายตัว
 
   // ---- LINE ----
   QUICK_REPLY: true,           // แนบปุ่ม "แก้ / ยกเลิก" หลังบันทึก

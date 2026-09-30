@@ -222,11 +222,12 @@ const ctx = {
   },
   ScriptApp: {
     getOAuthToken: () => "tok",
+    WeekDay: { SUNDAY: "SUNDAY" },
     getProjectTriggers: () => triggers.slice(),
     deleteTrigger: (t) => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
     newTrigger: (fn) => { const spec = { fn }; const b = {
       timeBased: () => b, atHour: (h) => { spec.hour = h; return b; }, nearMinute: (m) => { spec.minute = m; return b; },
-      everyDays: (d) => { spec.everyDays = d; return b; }, inTimezone: (tz) => { spec.tz = tz; return b; },
+      everyDays: (d) => { spec.everyDays = d; return b; }, inTimezone: (tz) => { spec.tz = tz; return b; }, onWeekDay: (w) => { spec.weekDay = w; return b; },
       create: () => { const t = { spec, getHandlerFunction: () => fn }; triggers.push(t); return t; } }; return b; },
   },
 };
@@ -721,13 +722,14 @@ test("ความจำ: rules ใน prompt ห้ามจำเองโด�
 test("setupSchedules → ทริกเกอร์ 07:00 + 20:00 เขต Asia/Bangkok · รันซ้ำไม่ซ้อน · removeSchedules ลบหมด", () => {
   ctx.setupSchedules(); ctx.setupSchedules();
   const sp = triggers.map((t) => t.spec).sort((a, b) => a.hour - b.hour);
-  assert.deepStrictEqual(sp, [{ fn: "morningPush", hour: 7, minute: 0, everyDays: 1, tz: "Asia/Bangkok" }, { fn: "eveningJournalPush", hour: 20, minute: 0, everyDays: 1, tz: "Asia/Bangkok" }]);
+  assert.deepStrictEqual(sp, [{ fn: "morningPush", hour: 7, minute: 0, everyDays: 1, tz: "Asia/Bangkok" }, { fn: "eveningJournalPush", hour: 20, minute: 0, everyDays: 1, tz: "Asia/Bangkok" },
+    { fn: "weeklyReflectionPush", weekDay: "SUNDAY", hour: 21, minute: 30, tz: "Asia/Bangkok" }]);   // ขั้นที่ 6: สะท้อนสัปดาห์
   triggers.push({ spec: { fn: "other" }, getHandlerFunction: () => "other" });
   ctx.removeSchedules();
   assert.deepStrictEqual(triggers.map((t) => t.getHandlerFunction()), ["other"]);
   triggers.length = 0;
   ctx.setupSchedules();
-  assert.strictEqual(triggers.length, 2);
+  assert.strictEqual(triggers.length, 3);
 });
 
 test("สรุปเช้า (AI): ส่ง push หาโอม + ข้อมูลที่ส่งให้ AI ครบ/ถูก + ความจำ + ปุ่มลัด + วันเดียวส่งครั้งเดียว", () => {
@@ -1682,6 +1684,104 @@ test("ขั้นที่ 5: target — % ความคืบหน้า/�
   aiScript = once([{ name: "complete_task", args: { ref: "k.tasks#w2" } }]);
   post([msg("เขียนโค้ดเสร็จแล้ว")]);
   assert.ok(!cacheMap.tgt || cacheMap.tgt !== "[]");
+});
+
+
+// =================== ข้อ 56 ขั้นที่ 6: Journal หัวข้อนำ + สะท้อนสัปดาห์ ===================
+const jDay = (d) => (app().journal || []).find((j) => j.date === d);
+test("ขั้นที่ 6: add_journal แยกหัวข้อ (did/highlight/feel/lesson) + เก็บข้อความดิบ · ต่อท้ายรวมหัวข้อ · ยกเลิก = หัวข้อถอยกลับ · ไม่ส่งหัวข้อ = แบบเดิม", () => {
+  const D = "2026-03-10";
+  aiScript = once([{ name: "add_journal", args: { text: "วันนี้ไปร้านทั้งวัน ลูกค้าเยอะ เหนื่อยแต่ดีใจ ได้รู้ว่าต้องเตรียมของก่อน", did: "ไปร้านทั้งวัน", highlight: "ลูกค้าเยอะ", feel: "เหนื่อยแต่ดีใจ", lesson: "ต้องเตรียมของก่อน", date: D } }], "จดลง 4 หัวข้อแล้วครับ");
+  post([msg("journal วันนี้ไปร้านทั้งวัน…")]);
+  let j = jDay(D);
+  assert.strictEqual(j.entry, "วันนี้ไปร้านทั้งวัน ลูกค้าเยอะ เหนื่อยแต่ดีใจ ได้รู้ว่าต้องเตรียมของก่อน");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(j.parts)), { did: "ไปร้านทั้งวัน", highlight: "ลูกค้าเยอะ", feel: "เหนื่อยแต่ดีใจ", lesson: "ต้องเตรียมของก่อน" });
+  aiScript = once([{ name: "add_journal", args: { text: "ตอนเย็นไปวิ่ง", did: "ไปวิ่ง", lesson: "", date: D } }]);
+  post([msg("เพิ่ม journal ตอนเย็นไปวิ่ง")]);
+  j = jDay(D);
+  assert.strictEqual(j.parts.did, "ไปร้านทั้งวัน\nไปวิ่ง"); assert.strictEqual(j.parts.lesson, "ต้องเตรียมของก่อน");
+  post([pb(lastReply().quickReply.items[1].action.data)]);                          // ยกเลิกอันที่ต่อ
+  j = jDay(D);
+  assert.strictEqual(j.parts.did, "ไปร้านทั้งวัน"); assert.ok(!j.entry.includes("ตอนเย็น"));
+  const D2 = "2026-03-11";
+  aiScript = once([{ name: "add_journal", args: { text: "บันทึกสั้นๆ", date: D2 } }]);
+  post([msg("journal บันทึกสั้นๆ")]);
+  assert.ok(!("parts" in jDay(D2)), "ไม่ส่งหัวข้อ = ไม่สร้าง parts (รูปเดิมใช้ต่อได้)");
+  const tool = aiLog[aiLog.length - 1].tools.find((t) => t.name === "add_journal").parameters.properties;
+  assert.ok(tool.did && tool.highlight && tool.feel && tool.lesson);
+  assert.ok(aiLog[aiLog.length - 1].instructions.includes("ห้ามเดาอารมณ์/บทเรียนแทนโอม"));
+  canonical();
+});
+
+test("ขั้นที่ 6: 20:00 ชวน Journal บอกหัวข้อนำ 4 ข้อ", () => {
+  clearTodayJournal();
+  assert.strictEqual(ctx.testEveningPush(), "sent");
+  const t = lastPush().messages[0].text;
+  assert.ok(t.includes("เล่ารวดเดียวได้เลย Jack แยกให้: 📍 วันนี้ทำอะไร · ✨ เจออะไร/เรื่องเด่น · 💭 รู้สึกยังไง · 💡 บทเรียนวันนี้"), t);
+});
+
+test("ขั้นที่ 6: สะท้อนสัปดาห์ — ข้อเท็จจริงจากโค้ด · AI ตอบ JSON → ข้อความ + เก็บ k.journalReflections + เสนอแฟ้ม (ปุ่มยืนยัน) · ไม่มี Journal = ไม่ทัก", () => {
+  const mon = ctx.mondayOf_(TODAY), sun = ctx.addDays_(mon, 6), dd = (i) => ctx.addDays_(mon, i);
+  const c = { today: sun, time: "21:30", hour: 21, weekday: 0, records: [] };
+  const yr = mon.slice(0, 4), id = "g.journal." + yr;
+  const keep = JSON.parse(store[id] ? store[id].json : "[]").filter((j) => j.date < mon || j.date > sun);
+  setDoc(id, keep);
+  if (sun.slice(0, 4) !== yr) setDoc("g.journal." + sun.slice(0, 4), []);
+  assert.strictEqual(ctx.buildReflection_(c, false), null, "สัปดาห์ว่าง = ไม่ทัก");
+  setDoc(id, keep.concat([
+    { id: "w1", date: dd(0), entry: "งานเยอะ", mood: 2, parts: { feel: "เครียด" } },
+    { id: "w2", date: dd(2), entry: "ขายดี", mood: 5, parts: { lesson: "โพสต์ตอนเย็นได้ผล" } },
+    { id: "w3", date: dd(4), entry: "", mood: 4 }]));
+  const f = ctx.reflectionFacts_(c);
+  assert.deepStrictEqual([f.weekStart, f.weekEnd, f.daysWritten, f.moodDays, f.moodAvg], [mon, sun, 2, 3, 3.7]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f.lessons)), ["โพสต์ตอนเย็นได้ผล"]);
+  assert.strictEqual(f.days[0].weekday, "วันจันทร์"); assert.strictEqual(f.days[6].weekday, "วันอาทิตย์");
+  // dry = ไม่เขียนอะไร
+  delete store["k.journalReflections"];
+  aiScript = () => ({ text: JSON.stringify({ reflection: "ต้นสัปดาห์เครียด แต่กลางสัปดาห์ขายดีมาก", proposals: [{ section: "focus", text: "ทำคอนเทนต์โพสต์ตอนเย็น" }] }) });
+  const dryMsg = ctx.buildReflection_(c, true);
+  assert.ok(dryMsg.text.includes("ต้นสัปดาห์เครียด") && !store["k.journalReflections"]);
+  // จริง
+  delete cacheMap.prof; setDoc("k.ohmProfile", { who: "", goals: "", values: "", focus: "", pending: [] });
+  const n = aiLog.length;
+  const m = ctx.buildReflection_(c, false);
+  assert.strictEqual(aiLog.length - n, 1);
+  const b = aiLog[aiLog.length - 1];
+  assert.strictEqual(b.model, "gpt-6-sol"); assert.ok(!b.tools);
+  assert.strictEqual(JSON.parse(b.input[0].content).moodAvg, 3.7);
+  assert.ok(m.text.startsWith("🪞 สะท้อนสัปดาห์ ·") && m.text.includes("อารมณ์ จ.–อา.: 😕 · 🤩 · 🙂 · ·") && m.text.includes("(เฉลี่ย 3.7/5) · เขียน 2 วัน") && m.text.includes("ต้นสัปดาห์เครียด"), m.text);
+  assert.ok(m.text.includes("🗂️ Jack เสนอเพิ่มแฟ้มตัวโอม:\n• ทำคอนเทนต์โพสต์ตอนเย็น"));
+  assert.ok(m.quickReply.items[0].action.data.startsWith("a=pf&v=1&id="));
+  const refl = app().journalReflections;
+  assert.strictEqual(refl.length, 1); assert.strictEqual(refl[0].week, mon); assert.strictEqual(refl[0].text, "ต้นสัปดาห์เครียด แต่กลางสัปดาห์ขายดีมาก");
+  assert.strictEqual(profNow().pending.length, 1);
+  // รันซ้ำสัปดาห์เดิม = แทนที่ ไม่ซ้อน · AI ตอบไม่ใช่ JSON = ใช้ข้อความดิบ
+  aiScript = () => ({ text: "สรุปแบบไม่ใช่ JSON" });
+  ctx.buildReflection_(c, false);
+  assert.strictEqual(app().journalReflections.length, 1); assert.strictEqual(app().journalReflections[0].text, "สรุปแบบไม่ใช่ JSON");
+  // เพดานเต็ม → แม่แบบไม่ใช้ AI
+  const key = Object.keys(propsMap).find((k) => k.startsWith("usage_"));
+  const u = JSON.parse(propsMap[key]); const was = u.usd; u.usd = 5; propsMap[key] = JSON.stringify(u);
+  try {
+    const n2 = aiLog.length;
+    const t = ctx.buildReflection_(c, true).text;
+    assert.strictEqual(aiLog.length, n2);
+    assert.ok(t.includes("สัปดาห์นี้เขียน Journal 2 วัน · อารมณ์เฉลี่ย 3.7/5") && t.includes("บทเรียนที่จดไว้: โพสต์ตอนเย็นได้ผล"), t);
+  } finally { u.usd = was; propsMap[key] = JSON.stringify(u); }
+  canonical();
+});
+
+test("ขั้นที่ 6: ทริกเกอร์วันอาทิตย์ส่ง push ได้จริง + วันละครั้ง", () => {
+  delete propsMap.PUSHED_reflection;
+  aiScript = () => ({ text: JSON.stringify({ reflection: "สัปดาห์นี้ดีครับ", proposals: [] }) });
+  const mon = ctx.mondayOf_(TODAY), id = "g.journal." + TODAY.slice(0, 4);
+  const arr = JSON.parse(store[id] ? store[id].json : "[]"); arr.push({ id: "wx", date: TODAY, entry: "วันนี้โอเค", mood: 4 }); setDoc(id, arr);
+  const p0 = pushCount();
+  assert.strictEqual(ctx.weeklyReflectionPush(), "sent");
+  assert.strictEqual(ctx.weeklyReflectionPush(), "already");
+  assert.strictEqual(pushCount() - p0, 1);
+  assert.ok(lastPush().messages[0].text.includes("สัปดาห์นี้ดีครับ"));
+  assert.ok(app().journalReflections.some((r) => r.week === mon));
 });
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));
