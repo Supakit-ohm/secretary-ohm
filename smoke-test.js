@@ -1056,19 +1056,62 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
 
   console.log('\n[จอมือถือ 390px] ห้ามล้นแนวนอน');
   await p.setViewportSize({width:390,height:844}); await p.waitForTimeout(1200);
-  await p.locator('button:has-text("Finance")').first().click().catch(()=>{}); await p.waitForTimeout(1200);
+  /* ข้อ 56 ขั้นที่ 2: มือถือไม่มีแถบล่างแล้ว — เปลี่ยนหน้าผ่านเมนู Jack (กดหัว → เลือกหน้า) */
+  const mobileGo=async(label)=>{ await p.locator('.brand-trigger').click(); await p.waitForTimeout(450); await p.locator(`.jm-item:has-text("${label}")`).click(); await p.waitForTimeout(500); };
+  await mobileGo('Finance'); await p.waitForTimeout(1200);
   for(const t of ['Overview','Review','Investments','Debts']){
     await p.locator(`button:has-text("${t}")`).first().click().catch(()=>{});
     await p.waitForTimeout(1500);
     const o=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
     check(`มือถือ · แท็บ ${t} ไม่ล้นแนวนอน`,o.sw<=o.iw+2,`scrollWidth ${o.sw} vs ${o.iw}`);
   }
-  await p.locator('button:has-text("Tracker")').first().click().catch(()=>{}); await p.waitForTimeout(1600);
+  await mobileGo('Tracker'); await p.waitForTimeout(1600);
   const mTrk=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
   check('มือถือ · หน้า Tracker ไม่ล้นแนวนอน',mTrk.sw<=mTrk.iw+2,`scrollWidth ${mTrk.sw} vs ${mTrk.iw}`);
   await p.locator('.prj-card').first().click().catch(()=>{}); await p.waitForTimeout(1600);
   const mDet=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
   check('มือถือ · หน้ารายละเอียดโปรเจกต์ไม่ล้นแนวนอน',mDet.sw<=mDet.iw+2,`scrollWidth ${mDet.sw} vs ${mDet.iw}`);
+
+  console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
+  await mobileGo('Home'); await p.waitForTimeout(600);
+  const hd=await p.evaluate(()=>{
+    const r=s=>{const e=document.querySelector(s); if(!e) return null; const b=e.getBoundingClientRect(); return {t:b.top,b:b.bottom,l:b.left,r:b.right,w:b.width,h:b.height,vis:getComputedStyle(e).display!=='none'};};
+    return {brand:r('.brand-trigger'),right:r('.topbar-right'),plus:r('.topbar-right .nav-icon-btn[title="Quick Capture"]'),avatar:r('.acct-btn'),search:r('.search-wrap'),
+      pageNav:!!document.querySelector('.page-nav'),navPill:getComputedStyle(document.querySelector('.nav-pill')).display,
+      name:document.querySelector('.brand-name').textContent,page:document.querySelector('.brand-page').textContent,title:document.title,sw:document.documentElement.scrollWidth,iw:window.innerWidth,
+      bodyPad:parseFloat(getComputedStyle(document.querySelector('.app')).paddingBottom)};
+  });
+  check('ส่วนหัวมือถือ: ชื่อ = Jack · ข้างๆ = ชื่อหน้า · <title> = Jack',hd.name==='Jack'&&hd.page==='Home'&&hd.title==='Jack',JSON.stringify([hd.name,hd.page,hd.title]));
+  check('ส่วนหัวมือถือ: อยู่แถวเดียว (Jack ซ้าย · 🔍 ＋ O ขวา) ไม่ล้น',hd.brand&&hd.search&&hd.plus&&hd.avatar&&Math.abs(hd.brand.t-hd.avatar.t)<12&&hd.brand.r<=hd.search.l+2&&hd.search.l<hd.plus.l&&hd.plus.l<hd.avatar.l&&hd.avatar.r<=hd.iw&&hd.sw<=hd.iw+2,JSON.stringify(hd));
+  check('มือถือ: ไม่มีแถบล่าง .page-nav · ไม่เว้นที่ล่างของ .app · แถบแคปซูลถูกซ่อน',!hd.pageNav&&hd.bodyPad<=24&&hd.navPill==='none',JSON.stringify([hd.pageNav,hd.bodyPad,hd.navPill]));
+  const closedVis=await p.evaluate(()=>getComputedStyle(document.querySelector('.jm-layer')).visibility);
+  check('เมนู Jack: ปิดอยู่ตอนเปิดหน้า (ไม่บังหน้า)',closedVis==='hidden',closedVis);
+  await p.locator('.brand-trigger').click(); await p.waitForTimeout(700);
+  const mo=await p.evaluate(()=>{
+    const items=[...document.querySelectorAll('.jm-item')]; const pan=document.querySelector('.jm-panel').getBoundingClientRect(); const br=document.querySelector('.brand-trigger').getBoundingClientRect();
+    return {labels:items.map(i=>i.textContent),active:items.filter(i=>i.classList.contains('active')).map(i=>i.textContent),op:items.map(i=>+getComputedStyle(i).opacity),panTop:pan.top,panB:pan.bottom,panR:pan.right,brB:br.bottom,ih:window.innerHeight,iw:window.innerWidth,
+      caret:getComputedStyle(document.querySelector('.brand-caret')).transform,exp:document.querySelector('.brand-trigger').getAttribute('aria-expanded'),vis:getComputedStyle(document.querySelector('.jm-layer')).visibility,
+      bf:getComputedStyle(document.querySelector('.jm-backdrop')).backdropFilter||getComputedStyle(document.querySelector('.jm-backdrop')).webkitBackdropFilter};
+  });
+  check('เมนู Jack: 7 หน้าครบตามลำดับ · หน้าปัจจุบันไฮไลต์',JSON.stringify(mo.labels)===JSON.stringify(['Home','Finance','Tracker','Health','Documents','Books','Journal'])&&JSON.stringify(mo.active)==='["Home"]',JSON.stringify([mo.labels,mo.active]));
+  check('เมนู Jack: เลื่อนลงจากหัว (ติดใต้ปุ่ม Jack) · รายการไล่โผล่ครบ · อยู่ในจอ',mo.vis==='visible'&&mo.panTop>=mo.brB-2&&mo.panTop<=mo.brB+24&&mo.panB<=mo.ih&&mo.panR<=mo.iw&&mo.op.every(o=>o>0.95)&&mo.exp==='true',JSON.stringify(mo));
+  check('เมนู Jack: ▾ หมุน · หน้าเดิมข้างหลังเบลอ/มืด',mo.caret&&mo.caret!=='none'&&/blur/.test(mo.bf||''),JSON.stringify([mo.caret,mo.bf]));
+  await p.mouse.click(mo.iw-8,mo.ih-8); await p.waitForTimeout(500);
+  const outVis=await p.evaluate(()=>getComputedStyle(document.querySelector('.jm-layer')).visibility);
+  check('เมนู Jack: แตะนอกเมนู → หุบ',outVis==='hidden',outVis);
+  await p.locator('.brand-trigger').click(); await p.waitForTimeout(500);
+  await p.keyboard.press('Escape'); await p.waitForTimeout(500);
+  check('เมนู Jack: กด Esc → หุบ',await p.evaluate(()=>getComputedStyle(document.querySelector('.jm-layer')).visibility)==='hidden');
+  await p.locator('.brand-trigger').click(); await p.waitForTimeout(500);
+  await p.locator('.jm-item:has-text("Journal")').click(); await p.waitForTimeout(800);
+  const jp=await p.evaluate(()=>({page:document.querySelector('.brand-page').textContent,vis:getComputedStyle(document.querySelector('.jm-layer')).visibility}));
+  check('เมนู Jack: เลือก Journal → เปลี่ยนหน้า + ชื่อหน้าข้าง Jack เปลี่ยนตาม + เมนูหุบ',jp.page==='Journal'&&jp.vis==='hidden',JSON.stringify(jp));
+  const man=JSON.parse(fs.readFileSync(path.join(__dirname,'manifest.json'),'utf8'));
+  check('manifest: name/short_name = Jack',man.name==='Jack'&&man.short_name==='Jack',JSON.stringify([man.name,man.short_name]));
+  check('apple-mobile-web-app-title = Jack',/apple-mobile-web-app-title" content="Jack"/.test(fs.readFileSync(path.join(__dirname,'preview-dashboard.html'),'utf8')));
+  await p.setViewportSize({width:1440,height:950}); await p.waitForTimeout(600);
+  const dk=await p.evaluate(()=>({pill:getComputedStyle(document.querySelector('.nav-pill')).display,caret:getComputedStyle(document.querySelector('.brand-caret')).display,pg:getComputedStyle(document.querySelector('.brand-page')).display,jm:getComputedStyle(document.querySelector('.jm-layer')).display,name:document.querySelector('.brand-name').textContent}));
+  check('คอม: ยังใช้แถบแคปซูลเดิม · ชื่อ Jack ไม่มี ▾/ชื่อหน้า · เมนูมือถือถูกซ่อน',dk.pill==='flex'&&dk.caret==='none'&&dk.pg==='none'&&dk.jm==='none'&&dk.name==='Jack',JSON.stringify(dk));
 
   /* ───────── สรุป ───────── */
   const failed=results.filter(r=>!r.ok);

@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>เลขา Ohm</title>
+<title>Jack</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="var(--bg-1)" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="เลขา Ohm" />
+<meta name="apple-mobile-web-app-title" content="Jack" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
 <link rel="icon" href="icons/icon-192.png" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
@@ -219,7 +219,7 @@
     var problems = validateShape(parsed);
     if (problems.length) {
       alert(
-        "ไฟล์นี้ไม่ใช่ไฟล์สำรองของแอปเลขา Ohm — ยกเลิกการนำเข้า\n\nสิ่งที่ตรวจไม่ผ่าน:\n• " +
+        "ไฟล์นี้ไม่ใช่ไฟล์สำรองของแอป Jack — ยกเลิกการนำเข้า\n\nสิ่งที่ตรวจไม่ผ่าน:\n• " +
         problems.join("\n• ") +
         "\n\nไฟล์ที่ถูกต้องต้องมี key finance (income/expenses), projects และ tasks ครบ"
       );
@@ -2023,16 +2023,6 @@ function CalendarModal({events,onClose,onEditEvent,onDeleteEvent}) {
     </div>
   );
 }
-function PageNav({page,setPage}) {
-  const pages=["Home","Finance","Tracker","Health","Docs","Books","Journal"];
-  return (
-    <div className="page-nav">
-      {pages.map((label,i)=>(
-        <button key={i} className={`page-nav-btn ${page===i?"active":""}`} onClick={()=>setPage(i)}>{label}</button>
-      ))}
-    </div>
-  );
-}
 /* เมนูบัญชี (วงกลม O มุมขวาบน)
    ข้อ 55: หลัก = ล็อกอิน Google → Firestore (window.FireSync, event "sync-status") · Drive เหลือแค่ "สำรองรายสัปดาห์"
    ขั้นที่ 3: ลบ Drive sync แบบเดิมแล้ว — ถ้าโมดูล Firebase โหลดไม่ขึ้น (เช่นเปิดครั้งแรกตอนออฟไลน์) แอปยังใช้ได้ (ข้อมูลอยู่ในเครื่อง) + ปุ่มโหลดใหม่
@@ -2103,9 +2093,28 @@ function AccountMenu() {
 }
 function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
   const [openSearch,setOpenSearch]=useState(false);
+  /* ข้อ 56 ขั้นที่ 2: มือถือ (≤900px) = กด "Jack ▾ ชื่อหน้า" เปิดเมนู 7 หน้าเลื่อนลงจากหัว · คอมยังใช้แถบแคปซูลเดิม (CSS ซ่อน/โชว์ตามจอ) */
+  const [menuOpen,setMenuOpen]=useState(false);
+  const [menuTop,setMenuTop]=useState(60);
+  const brandRef=useRef(null);
+  const toggleMenu=()=>{
+    if(!menuOpen&&brandRef.current) setMenuTop(Math.max(0,Math.round(brandRef.current.getBoundingClientRect().bottom))+8);
+    setMenuOpen(v=>!v);
+  };
+  useEffect(()=>{
+    if(!menuOpen) return;
+    const onKey=e=>{ if(e.key==="Escape") setMenuOpen(false); };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[menuOpen]);
   return (
     <div className="topbar">
-      <div className="brand"><span className="brand-dot"></span> เลขา Ohm</div>
+      <button ref={brandRef} type="button" className={`brand brand-trigger${menuOpen?" open":""}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={toggleMenu}>
+        <span className="brand-dot"></span>
+        <span className="brand-name">Jack</span>
+        <i className="fa-solid fa-chevron-down brand-caret" aria-hidden="true"></i>
+        <span className="brand-page">{PAGE_TITLES[page]}</span>
+      </button>
       <div className="nav-pill">
         {PAGE_TITLES.map((label,i)=>(
           <button key={i} className={`nav-pill-btn ${page===i?"active":""}`} onClick={()=>setPage(i)}>{label}</button>
@@ -2137,6 +2146,14 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
         </div>
         <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={12}/></button>
         <AccountMenu/>
+      </div>
+      <div className={`jm-layer${menuOpen?" open":""}`} aria-hidden={!menuOpen}>
+        <div className="jm-backdrop" onClick={()=>setMenuOpen(false)}></div>
+        <nav className="jm-panel" role="menu" style={{top:menuTop}}>
+          {PAGE_TITLES.map((label,i)=>(
+            <button key={i} type="button" role="menuitem" tabIndex={menuOpen?0:-1} className={`jm-item${page===i?" active":""}`} style={{"--i":i}} onClick={()=>{setPage(i);setMenuOpen(false);}}>{label}</button>
+          ))}
+        </nav>
       </div>
     </div>
   );
@@ -8365,7 +8382,6 @@ function SecretaryDashboard() {
           </div>
         </div>
       </div>
-      <PageNav page={page} setPage={setPage}/>
     </div>
   );
 }

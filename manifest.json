@@ -1,6 +1,6 @@
 {
-  "name": "เลขาส่วนตัว - Ohm",
-  "short_name": "เลขา Ohm",
+  "name": "Jack",
+  "short_name": "Jack",
   "description": "แอปเลขาส่วนตัวและสมองที่สอง",
   "start_url": "./preview-dashboard.html",
   "scope": "./",
