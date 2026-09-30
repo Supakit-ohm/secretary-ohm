@@ -4,13 +4,12 @@
 //
 // ที่เก็บ (ใช้ร่วมกับแอป): users/{uid}/files/{fileId}  field json = สตริง JSON ของ
 //   {id, name, mime, size, driveId, url, thumb, link:{kind,id}|null, from:"line"|"app", createdAt, trash, trashedAt}
-//   kind = expense | income | document · id = id ของรายการ (ไม่ใช่ ref) → ย้ายเดือนแล้วยังผูกอยู่
+//   kind = document (ไฟล์เก่าอาจเป็น expense | income) · id = id ของรายการ (ไม่ใช่ ref) → ย้ายเดือนแล้วยังผูกอยู่
 //   ไม่ได้เก็บในตัวรายการ → แนบ/ย้ายไฟล์ไม่ต้องเขียนเอกสารรายจ่ายชนกับแอป
 //   ไฟล์ที่ link = null หรือชี้ไปรายการที่ไม่มีแล้ว = "ไฟล์รอจัด" ในหน้า Documents ของแอป
 //
-// การผูกอัตโนมัติ (โอมเลือก 2026-09-28):
-//   ส่งรูปภายใน 10 นาทีหลังจดรายจ่าย/รายรับ → แนบกับรายการนั้นเลย (มีปุ่มเปลี่ยน/เก็บเป็นเอกสาร/ลบ)
-//   ส่งรูปก่อน → เก็บรอ 10 นาที ถ้าพิมพ์รายการตามมาจะแนบให้เอง (หรือกดเลือกรายการจากปุ่ม)
+// ขั้นที่ 9 (ข้อ 56): ทุกไฟล์ที่ส่งมา = เอกสาร — Jack ถามหมวด → สร้างใน k.documents + ผูกไฟล์ (kind "document") → ถามชื่อ/วันหมดอายุ
+//   ไม่ผูกกับรายจ่าย/รายรับอีกแล้ว และไม่อ่านสลิป (OCR ถูกลบ) · ไฟล์เก่าที่ผูกกับรายจ่ายไว้ยังเปิดดูในแอปได้เหมือนเดิม
 // ลบ: แอปตั้ง trash:true (แอปมีสิทธิ์ drive.file ลบไฟล์ของ Jack ไม่ได้) → Jack ย้ายลงถังขยะ Drive ตอนรอบ 07:00
 //      ถ้าลบจาก LINE (ปุ่ม/ลบรายการ) Jack ย้ายลงถังขยะทันที
 // ============================================================
@@ -169,177 +168,52 @@ function saveLineFile_(msg, link, blob) {
   return fileCreate_(meta);
 }
 
-// ---------- เลือกรายการที่จะผูก ----------
-// รายการที่ Jack เพิ่งจด (ภายใน 10 นาที ยังไม่ถูกยกเลิก) → ผูกอัตโนมัติ
-function autoLinkTarget_() {
-  var recent = cacheGetJson_("recent") || [];
-  var win = CONFIG.ATTACH_WINDOW_MIN * 60000;
-  for (var i = 0; i < recent.length; i++) {
-    var r = recent[i];
-    if (r.kind !== "expense" && r.kind !== "income") continue;
-    if (!r.at || Date.now() - r.at > win) return null;                  // recent เรียงใหม่→เก่า
-    var rec = r.token ? cacheGetJson_("rec_" + r.token) : null;
-    if (rec && rec.undone) continue;
-    return r;
-  }
-  return null;
+// ---------- ขั้นที่ 9 (ข้อ 56): เอกสาร ----------
+// ไฟล์ที่ส่งเข้ามา → Jack ถามหมวด (Quick Reply) → สร้างเอกสารใน k.documents + ผูกไฟล์ → ให้พิมพ์ชื่อ (+วันหมดอายุ) ได้เลย
+// หมวด "งาน/ราชการ" = โหมดจำกัด: ไม่มีในปุ่มของ Jack · Jack ไม่อ่าน/ไม่แก้ (ยกเว้นโอมติ๊ก "ไม่ลับ" ในแอป → d.open)
+// ต้องตรงกับ DOC_CATS ใน preview-dashboard.html
+var DOC_CATS = [
+  { k: "ประจำตัว", icon: "🪪" },
+  { k: "งาน/ราชการ", icon: "🎖️", restricted: true },
+  { k: "ประวัติ/ใบรับรอง", icon: "👤" },
+  { k: "ยานพาหนะ", icon: "🚗" },
+  { k: "ทั่วไป", icon: "📁" }
+];
+var DOC_CAT_LEGACY = { "ประชาชน": "ประจำตัว", "สัญญา": "ทั่วไป", "การเงิน": "ทั่วไป", "ประกัน": "ทั่วไป", "อื่นๆ": "ทั่วไป", "": "ทั่วไป" };
+var DOC_AWAIT_SEC = 600;                  // รอโอมพิมพ์ชื่อ/วันหมดอายุหลังเลือกหมวด (10 นาที)
+function docCatKey_(c) {
+  for (var i = 0; i < DOC_CATS.length; i++) if (DOC_CATS[i].k === c) return c;
+  return DOC_CAT_LEGACY[c] || "ทั่วไป";
 }
-function shortEntryLabel_(kind, it) {
-  if (kind === "expense") return (it.memo || it.category || "รายจ่าย") + " " + fmt_(expOut_(it));
-  return (it.note || it.source || "รายรับ") + " +" + fmt_(it.amount);
+function docCatDef_(c) { var k = docCatKey_(c); for (var i = 0; i < DOC_CATS.length; i++) if (DOC_CATS[i].k === k) return DOC_CATS[i]; return DOC_CATS[4]; }
+function docRestricted_(d) { return !!(docCatDef_(d.category).restricted && !d.open); }
+function docsAll_() { return arrAll_(readGroups_([{ id: "k.documents", def: [] }])["k.documents"]).filter(function (d) { return d && d.id; }); }
+function thDateY_(iso) { return thDate_(iso) + " " + (Number(iso.slice(0, 4)) + 543); }
+// หาวันที่ในข้อความ: 31/12/2027 · 31-12-2570 (พ.ศ. แปลงให้) · 2027-12-31 → {date, rest} หรือ null
+function parseDocDate_(text) {
+  var s = String(text || ""), m, y, d, mo;
+  if ((m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+  else return null;
+  if (y > 2400) y -= 543;
+  var iso = y + "-" + (mo < 10 ? "0" : "") + mo + "-" + (d < 10 ? "0" : "") + d;
+  if (!validDate_(iso)) return null;
+  return { date: iso, rest: s.replace(m[0], " ") };
 }
-// ตัวเลือกสำหรับปุ่ม: ที่ Jack เพิ่งจด (6 ชม.) + รายการล่าสุดของเดือนนี้
-function linkCandidates_(ctx, n) {
-  var out = [], seen = {};
-  var add = function (ref, label) { if (!seen[ref] && out.length < n) { seen[ref] = 1; out.push({ ref: ref, label: label }); } };
-  (cacheGetJson_("recent") || []).forEach(function (r) {
-    if (r.kind !== "expense" && r.kind !== "income") return;
-    var rec = r.token ? cacheGetJson_("rec_" + r.token) : null;
-    if (rec && rec.undone) return;
-    add(r.ref, r.short || r.label);
-  });
-  if (out.length < n) {
-    var month = ctx.today.slice(0, 7), de = "fg.expenses." + month, di = "fg.income." + month;
-    var G = readGroups_([{ id: de, def: [] }, { id: di, def: [] }]);
-    var items = arrAll_(G[de]).map(function (x) { return { kind: "expense", doc: de, it: x }; }).slice(-n)
-      .concat(arrAll_(G[di]).map(function (x) { return { kind: "income", doc: di, it: x }; }).slice(-2));
-    items.sort(function (a, b) { return String(b.it.date || "").localeCompare(String(a.it.date || "")); });
-    items.forEach(function (x) { add(x.doc + "#" + x.it.id, shortEntryLabel_(x.kind, x.it)); });
-  }
-  return out;
-}
-function fileQuick_(ids, ctx, withCandidates) {
+
+// ---------- ส่งไฟล์เข้ามา ----------
+function fileQuick_(ids) {
   var f = ids.slice(0, 20).join(",");
   var items = [];
-  if (withCandidates) {
-    linkCandidates_(ctx, 4).forEach(function (c) {
-      items.push({ type: "action", action: { type: "postback", label: ("📎 " + c.label).slice(0, 20), data: "a=flink&f=" + f + "&ref=" + c.ref, displayText: "แนบกับ " + c.label } });
-    });
-  } else {
-    items.push({ type: "action", action: { type: "postback", label: "เปลี่ยนรายการ", data: "a=frelink&f=" + f, displayText: "เปลี่ยนรายการที่แนบ" } });
-  }
-  items.push({ type: "action", action: { type: "postback", label: "📄 เก็บเป็นเอกสาร", data: "a=fdoc&f=" + f, displayText: "เก็บเป็นเอกสาร" } });
-  if (withCandidates) items.push({ type: "action", action: { type: "postback", label: "เก็บไว้ก่อน", data: "a=fkeep&f=" + f, displayText: "เก็บไว้ก่อน" } });
+  DOC_CATS.forEach(function (c, i) {
+    if (c.restricted) return;                                            // งาน/ราชการ ไม่มีในปุ่มของ Jack
+    items.push({ type: "action", action: { type: "postback", label: (c.icon + " " + c.k).slice(0, 20), data: "a=fcat&f=" + f + "&c=" + i, displayText: "เก็บเป็นเอกสาร: " + c.k } });
+  });
+  items.push({ type: "action", action: { type: "postback", label: "เก็บไว้ก่อน", data: "a=fkeep&f=" + f, displayText: "เก็บไว้ก่อน" } });
   items.push({ type: "action", action: { type: "postback", label: "🗑️ ลบ", data: "a=ftrash&f=" + f, displayText: "ลบไฟล์นี้" } });
   return items;
 }
 
-// ---------- รูปที่รอผูก (ส่งรูปก่อนพิมพ์รายการ) ----------
-function pendingFiles_() {
-  var win = CONFIG.ATTACH_WINDOW_MIN * 60000;
-  return (cacheGetJson_("pendingFiles") || []).filter(function (p) { return Date.now() - p.at <= win; });
-}
-function setPendingFiles_(list) {
-  if (list.length) CacheService.getScriptCache().put("pendingFiles", JSON.stringify(list.slice(-20)), CONFIG.ATTACH_WINDOW_MIN * 60 + 60);
-  else CacheService.getScriptCache().remove("pendingFiles");
-}
-function dropPending_(ids) {
-  var set = {}; ids.forEach(function (x) { set[x] = 1; });
-  setPendingFiles_(pendingFiles_().filter(function (p) { return !set[p.id]; }));
-}
-// เรียกหลังประมวลผลข้อความ: ถ้ามีรูปรออยู่และข้อความนี้จดรายจ่าย/รายรับ → แนบกับรายการแรก
-function attachPendingTo_(records) {
-  var pend = pendingFiles_();
-  if (!pend.length) return null;
-  var target = (records || []).filter(function (r) { return r.kind === "expense" || r.kind === "income"; })[0];
-  if (!target) return null;
-  var ids = pend.map(function (p) { return p.id; });
-  var r = parseRef_(target.ref);
-  var res = filesSetLink_(ids, { kind: target.kind, id: r.id });
-  setPendingFiles_([]);
-  return res.changed ? res.changed : null;
-}
-
-// ---------- อ่านสลิป/ใบเสร็จ (ขั้นที่ 9) ----------
-// รูป → gpt-6-luna (vision + JSON schema) → {kind, amount, date, memo, category} → จดรายจ่าย/รายรับให้เอง
-// สลิปที่ยอดตรงกับรายการที่เพิ่งจดไว้ (ภายใน 10 นาที) = แนบกับรายการนั้น ไม่จดซ้ำ
-var OCR_SCHEMA = { name: "receipt", schema: {
-  type: "object", additionalProperties: false,
-  required: ["kind", "amount", "currency", "date", "memo", "category", "confidence"],
-  properties: {
-    kind: { type: "string", enum: ["expense", "income", "other"] },
-    amount: { type: ["number", "null"] },
-    currency: { type: ["string", "null"] },
-    date: { type: ["string", "null"] },
-    memo: { type: ["string", "null"] },
-    category: { type: ["string", "null"] },
-    confidence: { type: "string", enum: ["high", "low"] }
-  } } };
-
-function ocrInstructions_(ctx) {
-  var cats = categoryHints_();
-  return [
-    "คุณอ่านรูปสลิปโอนเงิน / สลิปจ่ายเงิน / ใบเสร็จ / บิลร้านค้า ของโอม แล้วตอบเป็น JSON ตามโครงที่กำหนดเท่านั้น",
-    "- kind: \"expense\" = โอม/ผู้ใช้จ่ายเงินออก (สลิปโอนไปหาคนอื่น, จ่ายบิล, ใบเสร็จร้านค้า) — ถ้าเป็นสลิปโอนให้ถือเป็น expense เสมอ เว้นแต่สลิปบอกชัดว่าเป็นการ \"รับเงิน/เงินเข้า\" จึงใช้ \"income\" · ถ้าไม่ใช่สลิป/ใบเสร็จ (รูปทั่วไป เอกสารอื่น ภาพหน้าจออื่น) หรืออ่านยอดไม่ได้ → \"other\" และ amount = null",
-    "- amount: ยอดรวมที่จ่ายจริงทั้งหมด (ตัวเลขบวก ไม่มีคอมมา) · ใบเสร็จให้ใช้ยอดสุทธิ/Total หลังส่วนลดและภาษี ไม่ใช่ยอดรายชิ้น · สลิปโอนให้ใช้ \"จำนวนเงิน\" (ไม่รวมค่าธรรมเนียมถ้าแยกบรรทัด)",
-    "- currency: รหัสสกุลเงิน เช่น THB (ไม่มีระบุแต่เป็นสลิปไทย = THB)",
-    "- date: วันที่ทำรายการเป็น YYYY-MM-DD ปีค.ศ. (สลิปไทยมักเป็นปี พ.ศ. เช่น 69 หรือ 2569 → ลบ 543 · เช่น 28 ก.ย. 69 = 2026-09-28) · อ่านไม่ได้ = null",
-    "- memo: สั้นๆ ไม่เกิน 60 ตัวอักษร · ถ้ามี \"บันทึกช่วยจำ/โน้ต\" บนสลิปให้ใช้ข้อความนั้นก่อน · ไม่มีก็ใช้ชื่อร้าน/ชื่อผู้รับเงิน (ตัดคำนำหน้า นาย/นาง/น.ส. และนามสกุลยาวๆ ได้)",
-    "- category: เลือกจากรายการนี้ที่ใกล้ที่สุดเท่านั้น ถ้าไม่เข้าเลยใช้ \"อื่นๆ\" — รายจ่าย: " + cats.expense.join(", ") + " · รายรับ: " + cats.income.join(", "),
-    "- confidence: \"high\" เมื่อยอดและวันที่ชัดเจน · \"low\" เมื่อภาพเบลอ/ถูกบัง/ไม่แน่ใจตัวเลขหรือหมวด",
-    "- ห้ามเดาตัวเลขที่มองไม่เห็น"
-  ].join("\n");
-}
-
-// คืน null = ปิดระบบ · {ok:false, why} = ใช้ไม่ได้ · {ok:true, kind, amount, date, memo, category, warn, dateGuess}
-function ocrReceipt_(blob, ctx) {
-  if (!CONFIG.OCR_ENABLED) return null;
-  var bytes = blob.getBytes();
-  if (!bytes.length || bytes.length > CONFIG.OCR_MAX_MB * 1024 * 1024) return { ok: false, why: "big" };
-  if (usageThisMonth_().usd >= CONFIG.MONTHLY_CAP_USD - 0.02) return { ok: false, why: "cap" };
-  var mime = blob.getContentType() || "image/jpeg";
-  if (!/^image\/(jpeg|png|webp|gif)$/.test(mime)) return { ok: false, why: "type" };
-  var resp = llmCall_({
-    model: CONFIG.MODEL_SMALL, effort: CONFIG.EFFORT_OCR, instructions: ocrInstructions_(ctx), schema: OCR_SCHEMA, tools: [],
-    input: [{ role: "user", content: [
-      { type: "input_text", text: "วันนี้ " + ctx.today + " · อ่านรูปนี้" },
-      { type: "input_image", image_url: "data:" + mime + ";base64," + Utilities.base64Encode(bytes), detail: "high" }
-    ] }]
-  });
-  addUsage_(resp.model || CONFIG.MODEL_SMALL, resp.usage, false);
-  var j = null;
-  try { j = JSON.parse(resp.text); } catch (e) { return { ok: false, why: "parse" }; }
-  if (!j || j.kind === "other") return { ok: false, why: "other" };
-  var cur = String(j.currency || "THB").toUpperCase();
-  if (cur !== "THB" && cur !== "฿" && cur !== "บาท") return { ok: false, why: "currency", currency: cur };
-  var amt = money_(j.amount);
-  if (!amt) return { ok: false, why: "noamount" };
-  var date = validDate_(j.date);
-  if (date && Number(date.slice(0, 4)) >= 2400) date = validDate_((Number(date.slice(0, 4)) - 543) + date.slice(4));   // เผลอส่งปี พ.ศ.
-  var dateGuess = false;
-  if (!date || date > ctx.today) { date = ctx.today; dateGuess = true; }
-  var kind = j.kind === "income" ? "income" : "expense";
-  var cats = categoryHints_();
-  var list = kind === "income" ? cats.income : cats.expense;
-  var category = clean_(j.category, 40);
-  if (list.indexOf(category) < 0) category = "อื่นๆ";
-  return {
-    ok: true, kind: kind, amount: amt, date: date, dateGuess: dateGuess, memo: clean_(j.memo, 60), category: category,
-    warn: j.confidence === "low" || amt >= CONFIG.OCR_WARN_AMOUNT
-  };
-}
-
-// จดรายการจากผลอ่านสลิป → คืน {rec, res} (rec = record เดียวกับที่ใช้ทำปุ่มแก้/ยกเลิก) · ไม่สำเร็จ = null
-function createFromOcr_(o, ctx) {
-  var n0 = ctx.records.length;
-  var res = o.kind === "income"
-    ? toolAddIncome_({ amount: o.amount, source: o.category, note: o.memo, date: o.date }, ctx)
-    : toolAddExpense_({ amount: o.amount, category: o.category, memo: o.memo, date: o.date }, ctx);
-  if (!res.ok || ctx.records.length <= n0) return null;
-  return { rec: ctx.records[ctx.records.length - 1], res: res };
-}
-function labelHasAmount_(label, amount) {
-  return String(label || "").indexOf(" " + fmt_(amount) + " บาท") >= 0;
-}
-function ocrNote_(o) {
-  if (!o || o.ok) return "";
-  if (o.why === "cap") return "\n(เพดานค่า AI เดือนนี้เต็ม เลยยังไม่อ่านสลิปให้ — พิมพ์ยอดเองได้)";
-  if (o.why === "currency") return "\n(ยอดเป็นสกุล " + o.currency + " Jack ยังไม่จดอัตโนมัติ — พิมพ์ยอดเป็นบาทให้ได้เลย)";
-  if (o.why === "noamount") return "\n(อ่านยอดจากรูปนี้ไม่ได้)";
-  return "";
-}
-
-// ---------- ข้อความรูป/ไฟล์จาก LINE ----------
 function handleFileMessage_(ev, userId) {
   var msg = ev.message;
   if (msg.type === "file" && !/\.pdf$/i.test(msg.fileName || "")) {
@@ -347,116 +221,49 @@ function handleFileMessage_(ev, userId) {
     return;
   }
   if (msg.type === "file" && Number(msg.fileSize) > CONFIG.FILE_MAX_MB * 1024 * 1024) {
-    lineReply_(ev.replyToken, [textMsg_("ไฟล์ใหญ่เกิน " + CONFIG.FILE_MAX_MB + "MB ครับ อัปขึ้น Drive เองแล้ววางลิงก์ในหน้า Documents แทนนะ")]);
+    lineReply_(ev.replyToken, [textMsg_("ไฟล์ใหญ่เกิน " + CONFIG.FILE_MAX_MB + "MB ครับ อัปขึ้น Drive เองแล้ววางลิงก์ในหน้า Documents แทนได้")]);
     return;
   }
   if (userId) lineLoading_(userId, 30);
-  var ctx = newCtx_();
-  var blob = fetchLineBlob_(msg);
-
-  // 1) อ่านสลิป (เฉพาะรูป) — พังตรงไหนก็ตกกลับไปเก็บรูปเฉยๆ ไม่ให้เสียรูป
-  var ocr = null;
-  if (msg.type === "image") { try { ocr = ocrReceipt_(blob, ctx); } catch (err) { noteError_(err); ocr = { ok: false, why: "error" }; } }
-
-  // 2) ตัดสินว่าจะผูกกับอะไร
-  var target = autoLinkTarget_();
-  var made = null, link = null, how = "none";       // how: ocr | matched | recent | none
-  if (ocr && ocr.ok && target && labelHasAmount_(target.label, ocr.amount)) {
-    link = { kind: target.kind, id: parseRef_(target.ref).id }; how = "matched";
-  } else if (ocr && ocr.ok) {
-    try { made = createFromOcr_(ocr, ctx); } catch (err) { noteError_(err); made = null; }
-    if (made && (made.rec.kind === "expense" || made.rec.kind === "income")) { link = { kind: made.rec.kind, id: parseRef_(made.rec.ref).id }; how = "ocr"; }
-    else if (made) how = "ocr";                       // เช่น กบข. → เงินออม (ไม่มีที่ผูกรูป)
-    else if (target) { link = { kind: target.kind, id: parseRef_(target.ref).id }; how = "recent"; }
-  } else if (target) {
-    link = { kind: target.kind, id: parseRef_(target.ref).id }; how = "recent";
-  }
-
-  // 3) เก็บรูปลง Drive — ถ้าพังหลังจดรายการไปแล้ว ถอยรายการกลับ ไม่ให้เหลือรายการลอยๆ ที่ไม่มีรูป
-  var meta;
-  try { meta = saveLineFile_(msg, link, blob); }
-  catch (err) { if (made) { try { undoRecord_(made.rec); } catch (e2) { noteError_(e2); } } throw err; }
-  if (made) rememberRecords_([made.rec]);
-  if (!link) setPendingFiles_(pendingFiles_().concat([{ id: meta.id, at: Date.now() }]));
-
-  // 4) สรุปบรรทัดของรูปนี้
-  var o = { how: how, rec: made && made.rec, ocr: ocr };
-  if (how === "ocr") {
-    o.line = "🧾 " + made.rec.label + (ocr.dateGuess ? " (อ่านวันที่ไม่ได้ ใช้วันนี้)" : "");
-    var bd = made.res.budget;
-    if (bd && bd.budget && bd.pct >= 80) o.line += "\n⚠️ งบ " + bd.category + " ใช้ไป " + bd.pct + "% แล้ว";
-    if (ocr.warn) o.line += "\n❓ ไม่ค่อยมั่นใจ เช็กยอด/หมวดอีกทีนะครับ (กดแก้ได้)";
-  } else if (how === "matched") {
-    o.line = "📎 แนบกับ" + target.label + " (ยอดตรงกับที่จดไว้ เลยไม่จดซ้ำ)";
-  } else if (how === "recent") {
-    o.line = "📎 แนบกับ" + target.label;
-  } else {
-    o.line = "📎 เก็บไว้ใน Drive (รอผูกรายการ)";
-  }
+  var meta = saveLineFile_(msg, null, fetchLineBlob_(msg));
 
   // ส่งหลายรูปพร้อมกัน (imageSet) → ตอบครั้งเดียวเมื่อครบชุด
-  var ids = [meta.id], set = msg.imageSet, lines = [o.line], recs = made ? [made.rec] : [], pending = !link;
+  var ids = [meta.id], set = msg.imageSet;
   if (set && set.id && Number(set.total) > 1) {
-    var key = "iset_" + set.id, st = cacheGetJson_(key) || { ids: [], replied: false, lines: [], recs: [], pending: false };
-    st.ids.push(meta.id); st.lines.push(o.line); if (made) st.recs.push(made.rec); if (!link) st.pending = true;
+    var key = "iset_" + set.id, st = cacheGetJson_(key) || { ids: [], replied: false };
+    st.ids.push(meta.id);
     var done = !st.replied && (st.ids.length >= Number(set.total) || Number(set.index) === Number(set.total));
     if (done) st.replied = true;
     CacheService.getScriptCache().put(key, JSON.stringify(st), 3600);
     if (!done) return;
-    ids = st.ids; lines = st.lines; recs = st.recs; pending = st.pending;
+    ids = st.ids;
   }
   var many = ids.length > 1;
   var what = many ? ids.length + " รูป" : (msg.type === "file" ? "ไฟล์ " + meta.name : "รูป");
-  var text, quick;
-  if (many && recs.length) {
-    text = "📎 เก็บ" + what + "แล้วครับ\n" + lines.map(function (l) { return "• " + l; }).join("\n");
-    quick = (quickItemsFor_(recs) || []).concat(fileQuick_(ids, ctx, false).slice(0, 3));
-  } else if (many) {
-    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ" + (pending ? "\nเลือกแนบกับรายการด้านล่าง หรือไปจัดในหน้า Documents ของแอปทีหลังก็ได้" : "\n" + lines.join("\n"));
-    quick = fileQuick_(ids, ctx, pending);
-  } else if (how === "ocr") {
-    text = "อ่านสลิปแล้ว จดให้ครับ\n" + o.line + "\n📎 แนบรูปไว้แล้ว";
-    quick = (quickItemsFor_(recs) || []).concat(fileQuick_(ids, ctx, false).slice(0, 3));
-  } else if (link) {
-    text = "📎 แนบ" + what + "กับ" + target.label + " แล้วครับ" + (how === "matched" ? "\n(ยอดตรงกับที่จดไว้ เลยไม่จดซ้ำ — ถ้าเป็นคนละรายการ พิมพ์บอกได้)" : "") + ocrNote_(ocr);
-    quick = fileQuick_(ids, ctx, false);
-  } else {
-    text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ\nเลือกแนบกับรายการด้านล่าง หรือไปจัดในหน้า Documents ของแอปทีหลังก็ได้" + ocrNote_(ocr);
-    quick = fileQuick_(ids, ctx, true);
-  }
+  var text = "📎 เก็บ" + what + "ไว้ใน Drive แล้วครับ\nจะจัดเป็นเอกสารหมวดไหนดี?";
   saveHistory_("[ส่ง" + what + "]", text);
-  lineReply_(ev.replyToken, [textMsg_(text, quick)]);
+  lineReply_(ev.replyToken, [textMsg_(text, fileQuick_(ids))]);
 }
 
-// ---------- ปุ่มใต้ข้อความไฟล์ (postback a=flink/frelink/fdoc/fkeep/ftrash) ----------
+// ---------- ปุ่มใต้ข้อความไฟล์ (postback a=fcat/fskip/fkeep/ftrash) ----------
 function handleFilePostback_(ev, data) {
+  if (data.a === "fskip") {
+    CacheService.getScriptCache().remove("docAwait");
+    lineReply_(ev.replyToken, [textMsg_("โอเคครับ ตั้งชื่อ/วันหมดอายุทีหลังได้ในหน้า Documents ของแอป หรือบอก Jack ก็ได้")]);
+    return;
+  }
   var ids = String(data.f || "").split(",").filter(function (x) { return /^f[a-z0-9]+$/.test(x); });
   if (!ids.length) { lineReply_(ev.replyToken, [textMsg_("ปุ่มนี้ใช้ไม่ได้แล้วครับ")]); return; }
   var ctx = newCtx_();
   var gone = "ไม่เจอไฟล์นี้แล้วครับ (อาจถูกลบในแอป)";
-  if (data.a === "frelink") {
-    lineReply_(ev.replyToken, [textMsg_("จะแนบกับรายการไหนครับ ", fileQuick_(ids, ctx, true))]);
-    setPendingFiles_(pendingFiles_().filter(function (p) { return ids.indexOf(p.id) < 0; }).concat(ids.map(function (id) { return { id: id, at: Date.now() }; })));
-    return;
-  }
-  if (data.a === "flink") {
-    var r = parseRef_(data.ref), kind = r && kindOfDoc_(r.doc);
-    if (kind !== "expense" && kind !== "income") { lineReply_(ev.replyToken, [textMsg_("รายการนี้ใช้ไม่ได้ครับ")]); return; }
-    var G = readGroups_([{ id: r.doc, def: [] }]);
-    var f = arrFind_(G[r.doc], r.id);
-    if (!f) { lineReply_(ev.replyToken, [textMsg_("ไม่เจอรายการนี้แล้วครับ (อาจถูกลบ)")]); return; }
-    var res = filesSetLink_(ids, { kind: kind, id: r.id });
-    dropPending_(ids);
-    lineReply_(ev.replyToken, [textMsg_(res.changed ? "📎 แนบกับ" + labelFor_(kind, f.chunk.value[f.index]) + " แล้วครับ" : gone)]);
-    return;
-  }
   if (data.a === "fkeep") {
     var rk = filesSetLink_(ids, null);
-    dropPending_(ids);
-    lineReply_(ev.replyToken, [textMsg_(rk.changed ? "โอเคครับ เก็บไว้ใน \"ไฟล์รอจัด\" หน้า Documents ของแอป ไปผูกทีหลังได้" : gone)]);
+    lineReply_(ev.replyToken, [textMsg_(rk.changed ? "โอเคครับ เก็บไว้ใน \"ไฟล์รอจัด\" หน้า Documents ของแอป จัดหมวดทีหลังได้" : gone)]);
     return;
   }
-  if (data.a === "fdoc") {
+  if (data.a === "fcat") {
+    var cat = DOC_CATS[Number(data.c)];
+    if (!cat || cat.restricted) { lineReply_(ev.replyToken, [textMsg_("หมวดนี้เลือกผ่าน Jack ไม่ได้ครับ")]); return; }
     var cur = filesGet_(ids);
     var metas = Object.keys(cur).map(function (k) { return cur[k].meta; }).filter(function (m) { return !m.trash; });
     if (!metas.length) { lineReply_(ev.replyToken, [textMsg_(gone)]); return; }
@@ -464,21 +271,115 @@ function handleFilePostback_(ev, data) {
     var title = pdf || "เอกสารจาก LINE " + thDate_(ctx.today);
     var docId = uid_();
     mutate_([{ id: "k.documents", def: [] }], function (G2) {
-      if (!arrFind_(G2["k.documents"], docId)) arrPush_(G2["k.documents"], { id: docId, title: title, category: "อื่นๆ", description: "ส่งมาจาก LINE", link: "" });
+      if (!arrFind_(G2["k.documents"], docId)) arrPush_(G2["k.documents"], { id: docId, title: title, category: cat.k, description: "ส่งมาจาก LINE", link: "", expiry: "", info: {} });
     });
     filesSetLink_(metas.map(function (m) { return m.id; }), { kind: "document", id: docId });
-    dropPending_(ids);
-    var t = "📄 เก็บเป็นเอกสาร \"" + title + "\" แล้วครับ — ไปตั้งชื่อ/หมวดได้ในหน้า Documents";
-    saveHistory_("เก็บเป็นเอกสาร", t);
-    lineReply_(ev.replyToken, [textMsg_(t)]);
+    CacheService.getScriptCache().put("docAwait", JSON.stringify({ docId: docId, at: Date.now() }), DOC_AWAIT_SEC);
+    var t = "📄 เก็บเป็นเอกสารหมวด " + cat.icon + " " + cat.k + " แล้วครับ\nพิมพ์ชื่อเอกสารได้เลย ต่อด้วยวันหมดอายุก็ได้ เช่น \"ประกันรถ 31/12/2027\" (Jack จะเตือน 30 วันกับ 7 วันก่อนหมด) หรือกดข้าม";
+    saveHistory_("เก็บเป็นเอกสาร " + cat.k, t);
+    lineReply_(ev.replyToken, [textMsg_(t, [{ type: "action", action: { type: "postback", label: "ข้าม", data: "a=fskip", displayText: "ข้าม" } }])]);
     return;
   }
   if (data.a === "ftrash") {
     var cur2 = filesGet_(ids);
     var n = trashFilesNow_(Object.keys(cur2).map(function (k) { return cur2[k].meta; }));
-    dropPending_(ids);
     lineReply_(ev.replyToken, [textMsg_(n ? "🗑️ ลบแล้วครับ (อยู่ในถังขยะ Drive กู้คืนได้ 30 วัน)" : gone)]);
   }
+}
+
+// หลังเลือกหมวด: ข้อความสั้นถัดไป = ชื่อเอกสาร (+วันหมดอายุ) — ไม่ใช้ AI · ยาว/หลายบรรทัด = ปล่อยให้ Jack ตอบตามปกติ
+function docAwaitHandle_(text) {
+  var st = cacheGetJson_("docAwait");
+  if (!st) return null;
+  var s = String(text || "").trim();
+  if (!s || s.length > 60 || /\n/.test(s) || s.charAt(0) === "/") { CacheService.getScriptCache().remove("docAwait"); return null; }
+  CacheService.getScriptCache().remove("docAwait");
+  if (/^(ไม่มี|ไม่|ข้าม|ไม่ต้อง|ไม่มีวันหมดอายุ)$/.test(s)) return simple_("โอเคครับ ตั้งชื่อ/วันหมดอายุทีหลังได้ในหน้า Documents หรือบอก Jack ก็ได้");
+  var pd = parseDocDate_(s);
+  var title = clean_((pd ? pd.rest : s).replace(/(วันหมดอายุ|หมดอายุ|exp(ire)?s?)\s*[:วันที่]*/ig, " ").replace(/[\s,:;–—-]+$/g, "").replace(/^[\s,:;–—-]+/g, "").replace(/\s+/g, " "), 80);
+  if (!title && !pd) return null;
+  var found = mutate_([{ id: "k.documents", def: [] }], function (G) {
+    var f = arrFind_(G["k.documents"], st.docId);
+    if (!f) return null;
+    var it = JSON.parse(JSON.stringify(f.chunk.value[f.index]));
+    if (title) it.title = title;
+    if (pd) it.expiry = pd.date;
+    f.chunk.value[f.index] = it; f.chunk.dirty = true;
+    return it;
+  });
+  if (!found) return null;
+  var out = "✅ ตั้งชื่อเอกสาร \"" + found.title + "\"" + (pd ? " · หมดอายุ " + thDateY_(pd.date) + " (เตือน 30 วันกับ 7 วันก่อนหมด)" : "");
+  saveHistory_(s, out);
+  return simple_(out);
+}
+
+// ---------- เครื่องมือของ Jack: find_documents / update_document ----------
+function toolFindDocuments_(a, ctx) {
+  var words = String(a.query || "").toLowerCase().split(/\s+/).filter(function (w) { return w; });
+  var cat = a.category ? docCatKey_(a.category) : "";
+  var all = docsAll_().filter(function (d) { return !docRestricted_(d); });          // งาน/ราชการ (ไม่ลับ=false) Jack มองไม่เห็นเลย
+  var hit = all.filter(function (d) {
+    if (cat && docCatKey_(d.category) !== cat) return false;
+    var hay = [d.title, docCatKey_(d.category), d.description || ""].concat(Object.keys(d.info || {}).map(function (k) { return k + " " + d.info[k]; })).join(" ").toLowerCase();
+    return words.every(function (w) { return hay.indexOf(w) >= 0; });
+  });
+  hit.sort(function (x, y) { return String(x.expiry || "9999").localeCompare(String(y.expiry || "9999")); });
+  var top = hit.slice(0, 8);
+  var files = top.length ? filesListAll_() : {};
+  var docs = top.map(function (d) {
+    var n = d.expiry && validDate_(d.expiry) ? daysBetween_(ctx.today, d.expiry) : null;
+    var fl = Object.keys(files).map(function (k) { return files[k].meta; })
+      .filter(function (m) { return !m.trash && m.link && m.link.kind === "document" && m.link.id === d.id; })
+      .slice(0, 5).map(function (m) { return { name: m.name, url: m.url }; });
+    return { ref: d.id, title: d.title, category: docCatKey_(d.category), expiry: d.expiry || null, daysLeft: n,
+      info: d.info || {}, note: d.description || "", link: d.link || "", files: fl };
+  });
+  var res = { ok: true, matched: hit.length, docs: docs, note: "ส่งไฟล์เป็นลิงก์ Drive (files[].url) ห้ามส่งไฟล์ลงแชท · daysLeft ติดลบ = หมดอายุแล้ว" };
+  if (!hit.length) res.allTitles = all.slice(0, 30).map(function (d) { return d.title; });
+  return res;
+}
+function toolUpdateDocument_(a, ctx) {
+  var id = String(a.ref || "");
+  var newCat = a.category ? docCatKey_(a.category) : null;
+  if (newCat && docCatDef_(newCat).restricted) return { ok: false, error: "หมวดงาน/ราชการ ตั้งผ่าน Jack ไม่ได้ — ให้โอมตั้งในแอป" };
+  var expiry = null;
+  if (a.expiry != null) {
+    if (a.expiry === "none" || a.expiry === "") expiry = "";
+    else { var pd = parseDocDate_(a.expiry) || (validDate_(a.expiry) ? { date: a.expiry } : null); if (!pd) return { ok: false, error: "วันหมดอายุไม่ถูกต้อง (ใช้ YYYY-MM-DD หรือ none เพื่อลบ)" }; expiry = pd.date; }
+  }
+  var res = mutate_([{ id: "k.documents", def: [] }], function (G) {
+    var f = arrFind_(G["k.documents"], id);
+    if (!f) return { ok: false, error: "ไม่พบเอกสารนี้ (ใช้ ref จาก find_documents)" };
+    var it = JSON.parse(JSON.stringify(f.chunk.value[f.index]));
+    if (docRestricted_(it)) return { ok: false, error: "เอกสารหมวดงาน/ราชการ Jack แก้ไม่ได้ — ให้โอมแก้ในแอป" };
+    if (a.title) it.title = clean_(a.title, 80);
+    if (newCat) { it.category = newCat; it.open = false; }
+    if (expiry !== null) it.expiry = expiry;
+    if (a.infoKey && a.infoValue != null) {
+      it.info = it.info || {};
+      var k = clean_(a.infoKey, 30), v = clean_(a.infoValue, 120);
+      if (v) it.info[k] = v; else delete it.info[k];
+    }
+    f.chunk.value[f.index] = it; f.chunk.dirty = true;
+    return { ok: true, doc: { ref: it.id, title: it.title, category: docCatKey_(it.category), expiry: it.expiry || null, info: it.info || {} } };
+  });
+  return res;
+}
+
+// สรุปเช้า: เอกสารที่หมดอายุในอีก 30 หรือ 7 วันพอดี · หมวดงาน/ราชการ (ไม่ลับ) แจ้งแค่จำนวน ไม่บอกชื่อ
+function docsExpiringForMorning_(ctx) {
+  try {
+    var out = [], hidden = 0;
+    docsAll_().forEach(function (d) {
+      if (!d.expiry || !validDate_(d.expiry)) return;
+      var n = daysBetween_(ctx.today, d.expiry);
+      if (n !== 30 && n !== 7) return;
+      if (docRestricted_(d)) { hidden++; return; }
+      out.push(docCatDef_(d.category).icon + " " + d.title + " — อีก " + n + " วัน (หมด " + thDateY_(d.expiry) + ")");
+    });
+    if (hidden) out.push("🔒 มีเอกสารงาน/ราชการ " + hidden + " ฉบับใกล้หมดอายุ ดูในแอป");
+    return out.slice(0, 8);
+  } catch (err) { noteError_(err); return []; }
 }
 
 // ---------- ตั้งค่าครั้งแรก (รันจาก editor เพื่ออนุญาตสิทธิ์ Google Drive) ----------

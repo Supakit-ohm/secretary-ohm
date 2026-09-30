@@ -1289,6 +1289,59 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const ck1=await lvRead();
   check('XP Health: นำเข้าผลตรวจ (วันที่ตรวจ = วันนี้) +100',num(ck1[1])[0]*1000+num(ck1[1])[1]!==num(ck0[1])[0]*1000+num(ck0[1])[1],JSON.stringify([ck0[1],ck1[1]]));
 
+  console.log('\n[ข้อ 56 ขั้นที่ 9] Documents: หมวด · วันหมดอายุ · โหมดจำกัด');
+  await mobileGo('Documents'); await p.waitForTimeout(700);
+  const dEmpty=await p.evaluate(()=>({empty:(document.querySelector('.page-content .empty')||{}).textContent,bar:!!document.querySelector('#doc-expiring'),chips:document.querySelectorAll('.doc-filter-row .tag-filter-chip').length}));
+  check('Documents: ว่าง → "ยังไม่มีเอกสาร" · ไม่มีแถบใกล้หมดอายุ · ไม่มีชิปกรอง',/ยังไม่มีเอกสาร/.test(dEmpty.empty||'')&&!dEmpty.bar&&dEmpty.chips===0,JSON.stringify(dEmpty));
+  const dLegacy=await p.evaluate(()=>[docCatKey('ประชาชน'),docCatKey('สัญญา'),docCatKey('การเงิน'),docCatKey('ประกัน'),docCatKey('อื่นๆ'),docCatKey(''),docCatKey('ยานพาหนะ'),DOC_CATS.map(c=>c.k).join('|')]);
+  check('Documents: หมวดเก่าแปลงเป็นหมวดใหม่ (ประชาชน→ประจำตัว · สัญญา/การเงิน/ประกัน/อื่นๆ/ว่าง→ทั่วไป) · มี 5 หมวด',JSON.stringify(dLegacy)===JSON.stringify(['ประจำตัว','ทั่วไป','ทั่วไป','ทั่วไป','ทั่วไป','ทั่วไป','ยานพาหนะ','ประจำตัว|งาน/ราชการ|ประวัติ/ใบรับรอง|ยานพาหนะ|ทั่วไป']),JSON.stringify(dLegacy));
+  const inDays=n=>p.evaluate(n=>{const d=new Date(todayISO()+'T00:00:00');d.setDate(d.getDate()+n);return isoDate(d);},n);
+  const addDoc=async(title,cat,expiry,firstInfo)=>{
+    await p.locator('.page-content .text-btn:has-text("เอกสารใหม่")').click(); await p.waitForTimeout(250);
+    await p.locator('.doc-form input.modal-input').first().fill(title);
+    await p.locator('#doc-cat-select').selectOption(cat); await p.waitForTimeout(150);
+    if(expiry) await p.locator('#doc-expiry-input').fill(expiry);
+    if(firstInfo) await p.locator('.doc-info-input').first().fill(firstInfo);
+  };
+  const d10=await inDays(10), d5=await inDays(5), d90=await inDays(90);
+  await addDoc('ประกันรถ','ยานพาหนะ',d10,'1กก 1234');
+  const fields=await p.evaluate(()=>[...document.querySelectorAll('.doc-form .field-label')].map(l=>l.textContent.trim()));
+  check('Documents: ฟอร์มหมวดยานพาหนะมีช่องทะเบียน/บริษัทประกัน/เลขกรมธรรม์/เบอร์ติดต่อ + วันหมดอายุ',['ทะเบียน','บริษัทประกัน','เลขกรมธรรม์','เบอร์ติดต่อ','วันหมดอายุ (ไม่บังคับ)'].every(x=>fields.includes(x))&&await p.locator('.doc-restricted-note').count()===0,JSON.stringify(fields));
+  await p.locator('.doc-form .modal-btn-save').click(); await p.waitForTimeout(500);
+  const d1=await p.evaluate(()=>({items:document.querySelectorAll('.doc-item').length,txt:(document.querySelector('.doc-item')||{}).innerText||'',badge:(document.querySelector('.doc-exp-badge')||{}).className||'',bar:[...document.querySelectorAll('#doc-expiring .doc-exp-row')].map(r=>r.innerText.replace(/\s+/g,' ')),att:document.querySelectorAll('.doc-item .att-strip, .doc-item .att-note:not(.doc-locked-note)').length,chips:[...document.querySelectorAll('.doc-filter-row .tag-filter-chip')].map(c=>c.textContent.trim())}));
+  check('Documents: เพิ่มเอกสาร → การ์ดโชว์หมวด 🚗 + ทะเบียน + ป้ายหมดอายุ (เหลือ 10 วัน = สีเตือนปกติ)',d1.items===1&&/ประกันรถ/.test(d1.txt)&&/🚗 ยานพาหนะ/.test(d1.txt)&&/ทะเบียน: 1กก 1234/.test(d1.txt)&&/อีก 10 วัน/.test(d1.txt)&&/soon/.test(d1.badge)&&!/urgent/.test(d1.badge),JSON.stringify(d1));
+  check('Documents: แถบ "ใกล้หมดอายุ" (≤30 วัน) ขึ้นบนสุด · เอกสารปกติมีปุ่มแนบไฟล์',d1.bar.length===1&&/ประกันรถ.*อีก 10 วัน/.test(d1.bar[0])&&d1.att===1,JSON.stringify([d1.bar,d1.att]));
+  await addDoc('บัตรข้าราชการ','งาน/ราชการ',d5,'ABC-999');
+  const rs=await p.evaluate(()=>({note:(document.querySelector('.doc-restricted-note')||{}).innerText||'',open:!!document.querySelector('#doc-open-check'),checked:!!(document.querySelector('#doc-open-check')||{}).checked,fields:[...document.querySelectorAll('.doc-form .field-label')].map(l=>l.textContent.trim())}));
+  check('Documents: หมวดงาน/ราชการ → ขึ้นคำอธิบายโหมดจำกัด + ช่อง "ไม่ลับ" (ไม่ติ๊กเป็นค่าตั้งต้น) + ช่องเลขที่/ที่เก็บตัวจริง',/โหมดจำกัด/.test(rs.note)&&rs.open&&!rs.checked&&rs.fields.includes('เลขที่')&&rs.fields.includes('ที่เก็บตัวจริง'),JSON.stringify(rs));
+  await p.locator('.doc-form .modal-btn-save').click(); await p.waitForTimeout(500);
+  const d2=await p.evaluate(()=>{
+    const items=[...document.querySelectorAll('.doc-item')]; const it=items.find(x=>/บัตรข้าราชการ/.test(x.innerText));
+    return {n:items.length,locked:!!it&&/🔒/.test(it.innerText),lockNote:!!(it&&it.querySelector('.doc-locked-note')),att:it?it.querySelectorAll('.att-strip, .att-note:not(.doc-locked-note)').length:-1,attOther:items.filter(x=>x!==it&&x.querySelector('.att-strip, .att-note:not(.doc-locked-note)')).length,
+      bar:[...document.querySelectorAll('#doc-expiring .doc-exp-row')].map(r=>({t:r.innerText.replace(/\s+/g,' '),u:r.classList.contains('urgent')})),chips:[...document.querySelectorAll('.doc-filter-row .tag-filter-chip')].map(c=>c.textContent.trim())};
+  });
+  check('Documents: งาน/ราชการ (ลับ) → การ์ดมี 🔒 + "โหมดจำกัด" + ไม่มีปุ่มแนบไฟล์ (ส่วนเอกสารอื่นยังมี)',d2.n===2&&d2.locked&&d2.lockNote&&d2.att===0&&d2.attOther===1,JSON.stringify(d2));
+  check('Documents: แถบใกล้หมดอายุเรียงใกล้สุดก่อน · ≤7 วันเป็นสีเร่งด่วน',d2.bar.length===2&&/บัตรข้าราชการ.*อีก 5 วัน/.test(d2.bar[0].t)&&d2.bar[0].u&&/ประกันรถ/.test(d2.bar[1].t)&&!d2.bar[1].u,JSON.stringify(d2.bar));
+  check('Documents: ชิปกรองแสดงเฉพาะหมวดที่มีเอกสาร + จำนวน',JSON.stringify(d2.chips)===JSON.stringify(['ทั้งหมด 2','🎖️ งาน/ราชการ 1','🚗 ยานพาหนะ 1']),JSON.stringify(d2.chips));
+  await p.locator('.doc-filter-row .tag-filter-chip:has-text("ยานพาหนะ")').click(); await p.waitForTimeout(250);
+  const flt=await p.evaluate(()=>[...document.querySelectorAll('.doc-item')].map(x=>x.innerText.split('\n')[0]));
+  check('Documents: กดชิป "ยานพาหนะ" → เหลือเฉพาะประกันรถ',flt.length===1&&/ประกันรถ/.test(flt[0]),JSON.stringify(flt));
+  await p.locator('.doc-filter-row .tag-filter-chip:has-text("ทั้งหมด")').click(); await p.waitForTimeout(250);
+  await p.locator('.doc-item:has-text("บัตรข้าราชการ") .del-btn[title="แก้ไข"]').click(); await p.waitForTimeout(250);
+  await p.locator('#doc-open-check').check(); await p.waitForTimeout(100);
+  await p.locator('.doc-form .modal-btn-save').click(); await p.waitForTimeout(500);
+  const d3=await p.evaluate(()=>{const it=[...document.querySelectorAll('.doc-item')].find(x=>/บัตรข้าราชการ/.test(x.innerText));return {locked:/🔒/.test(it.innerText),att:it.querySelectorAll('.att-strip, .att-note:not(.doc-locked-note)').length,open:/ไม่ลับ/.test(it.innerText)};});
+  check('Documents: ติ๊ก "ไม่ลับ" → ปลดล็อก (ไม่มี 🔒) + แนบไฟล์ได้ + ป้าย "ไม่ลับ"',!d3.locked&&d3.att===1&&d3.open,JSON.stringify(d3));
+  await p.locator('.doc-item:has-text("บัตรข้าราชการ") .del-btn[title="แก้ไข"]').click(); await p.waitForTimeout(250);
+  await p.locator('#doc-cat-select').selectOption('ทั่วไป'); await p.waitForTimeout(100);
+  await p.locator('.doc-form .modal-btn-save').click(); await p.waitForTimeout(500);
+  const stored=await p.evaluate(()=>{const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1')).documents;const x=d.find(y=>y.title==='บัตรข้าราชการ');const v=d.find(y=>y.title==='ประกันรถ');return {cat:x.category,open:x.open,exp:v.expiry,info:v.info,cat2:v.category};});
+  check('Documents: ย้ายออกจากงาน/ราชการ → ล้าง open · บันทึกลง localStorage (expiry/info/category)',stored.cat==='ทั่วไป'&&stored.open===false&&/^\d{4}-\d{2}-\d{2}$/.test(stored.exp)&&stored.info['ทะเบียน']==='1กก 1234'&&stored.cat2==='ยานพาหนะ',JSON.stringify(stored));
+  await addDoc('ใบรับรองแพทย์','ประวัติ/ใบรับรอง',d90,'');
+  await p.locator('.doc-form .modal-btn-save').click(); await p.waitForTimeout(500);
+  const d4=await p.evaluate(()=>[...document.querySelectorAll('#doc-expiring .doc-exp-row')].length);
+  check('Documents: เอกสารที่หมดอายุอีก 90 วัน ไม่ขึ้นในแถบใกล้หมดอายุ (เกณฑ์ 30 วัน)',d4===2,String(d4));
+
   console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
   await mobileGo('Home'); await p.waitForTimeout(600);
   const hd=await p.evaluate(()=>{

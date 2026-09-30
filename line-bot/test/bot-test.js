@@ -233,6 +233,8 @@ const ctx = {
 };
 vm.createContext(ctx);
 for (const f of ["Config.gs", "Persona.gs", "Bot.gs", "Files.gs"]) vm.runInContext(fs.readFileSync(path.join(DIR, f), "utf8"), ctx, { filename: f });
+// ขั้นที่ 9: โค้ดจดเงินถูกลบจาก Bot.gs แล้ว → โหลดตัวสร้างข้อมูลเงินตั้งต้นเฉพาะเทสต์
+vm.runInContext(fs.readFileSync(path.join(__dirname, "money-seed.gs"), "utf8"), ctx, { filename: "money-seed.gs" });
 
 // ขั้นที่ 1: Jack ไม่มีเครื่องมือจดเงินแล้ว (ไม่อยู่ใน TOOLS) — แต่เทสต์ส่วนไฟล์แนบ/ยกเลิก/OCR ยังต้องสร้างรายการเงินเป็นข้อมูลตั้งต้น
 // จึงต่อ "ทางลัดเฉพาะเทสต์" ให้ add_expense/add_income เรียกฟังก์ชันภายใน · เทสต์ขั้นที่ 1 ใช้ REAL_TOOLS ตรวจว่า AI มองไม่เห็นเครื่องมือเหล่านี้จริง
@@ -938,7 +940,7 @@ test("สถานะ jack แสดงความจำ/ตั้งเวล�
   assert.ok(t.includes("ความจำระยะยาว: 1/60") && t.includes("สรุปเช้า 07:00") && t.includes("วางแผนพรุ่งนี้ 20:00") && /ส่งไป \d+ ครั้ง/.test(t), t);
 });
 
-// =================== ข้อ 55 ขั้นที่ 8: ไฟล์แนบ ===================
+// =================== ข้อ 55 ขั้นที่ 8: ไฟล์แนบ → เอกสาร (ขั้นที่ 9 ปรับใหม่) ===================
 const img = (id, set) => ({ type: "message", webhookEventId: "ev" + evn++, replyToken: "rt" + evn, source: { type: "user", userId: "U_OHM" }, message: Object.assign({ type: "image", id, contentProvider: { type: "line" } }, set ? { imageSet: set } : {}) });
 const fmsg = (id, fileName, fileSize) => ({ type: "message", webhookEventId: "ev" + evn++, replyToken: "rt" + evn, source: { type: "user", userId: "U_OHM" }, message: { type: "file", id, fileName, fileSize } });
 const files = () => Object.values(fstore).map((x) => JSON.parse(x.json));
@@ -948,73 +950,93 @@ const replies = () => lineLog.filter((x) => x.path === "/v2/bot/message/reply").
 const qdata = (label) => { const it = lastReply().quickReply.items.find((i) => i.action.label.includes(label)); return it && it.action.data; };
 const newestExp = (memo) => month(MONTH).find((x) => x.memo === memo);
 
-test("ไฟล์: จดรายจ่ายแล้วส่งรูปภายใน 10 นาที → Drive files-line + ผูกอัตโนมัติ + รูปย่อ · ไม่เรียก AI", () => {
-  aiScript = once([{ name: "add_expense", args: { amount: 850, category: "อื่นๆ", memo: "ค่าซ่อมแอร์" } }]);
-  post([msg("ค่าซ่อมแอร์ 850")]);
-  const exp = newestExp("ค่าซ่อมแอร์");
+const setDocs = (arr) => { store["k.documents"] = { json: JSON.stringify(arr), by: "app", updateTime: ts() }; };
+const docsNow = () => app().documents || [];
+const lineDoc = () => docsNow().find((d) => d.description === "ส่งมาจาก LINE");
+
+test("ไฟล์: ส่งรูป → เก็บ Drive files-line + ถามหมวด (ไม่มีหมวดงาน/ราชการ) · ไม่ใช้ AI · ไม่ผูกกับรายการเงิน", () => {
   const ai0 = aiLog.length;
   post([img("m1")]);
   assert.strictEqual(aiLog.length, ai0, "รูปไม่ต้องใช้ AI");
   const fl = files();
-  assert.strictEqual(fl.length, 1, JSON.stringify(fl.map((x) => [x.name, x.link])) + " " + JSON.stringify(Object.values(drive.files).map((x) => x.name)));
+  assert.strictEqual(fl.length, 1, JSON.stringify(fl.map((x) => [x.name, x.link])));
   const f = fl[0];
-  assert.deepStrictEqual(f.link, { kind: "expense", id: exp.id });
+  assert.strictEqual(f.link, null);
   assert.strictEqual(f.from, "line");
   assert.ok(/^f[a-z0-9]+$/.test(f.id) && /^LINE_\d{4}-\d{2}-\d{2}_\d{6}\.jpg$/.test(f.name), f.name);
   assert.ok(/^data:image\/jpeg;base64,/.test(f.thumb) && f.thumb.length < 16000);
   const df = drive.files[f.driveId];
-  assert.ok(df && drive.folders[df.parent].name === "files-line" && drive.folders[df.parent].parent === ROOT.id, "ต้องอยู่ใน SecretaryOhmApp/files-line (ใช้โฟลเดอร์หลักเดิม)");
+  assert.ok(df && drive.folders[df.parent].name === "files-line" && drive.folders[df.parent].parent === ROOT.id, "ต้องอยู่ใน SecretaryOhmApp/files-line");
   assert.strictEqual(f.url, "https://drive.google.com/file/d/" + f.driveId + "/view");
   assert.strictEqual(f.size, 250000);
-  assert.ok(lastReply().text.includes("แนบรูปกับ") && lastReply().text.includes("850"), lastReply().text);
-  assert.deepStrictEqual(lastReply().quickReply.items.map((i) => i.action.label), ["เปลี่ยนรายการ", "📄 เก็บเป็นเอกสาร", "🗑️ ลบ"]);
+  assert.ok(lastReply().text.includes("หมวดไหน"), lastReply().text);
+  const labels = lastReply().quickReply.items.map((i) => i.action.label);
+  assert.deepStrictEqual(labels, ["🪪 ประจำตัว", "👤 ประวัติ/ใบรับรอง", "🚗 ยานพาหนะ", "📁 ทั่วไป", "เก็บไว้ก่อน", "🗑️ ลบ"]);
+  assert.ok(labels.every((l) => l.length <= 20) && !labels.some((l) => l.includes("งาน/ราชการ")));
   assert.ok(contentLog.some((u) => u.endsWith("/m1/content")) && contentLog.some((u) => u.endsWith("/m1/content/preview")));
+  assert.ok(!cacheMap.pendingFiles, "ไม่มีระบบรอผูกรายการเงินอีกแล้ว");
   canonical();
 });
 
-test("ไฟล์: ปุ่มเปลี่ยนรายการ → เลือกรายการอื่น → ผูกใหม่ (label ≤20)", () => {
+test("ไฟล์: เลือกหมวด → สร้างเอกสารใน documents (หมวดถูก) + ผูกไฟล์ kind document + ถามชื่อ/วันหมดอายุ", () => {
   const f = files()[0];
-  post([pb(qdata("เปลี่ยนรายการ"))]);
-  const items = lastReply().quickReply.items;
-  assert.ok(items.every((i) => i.action.label.length <= 20));
-  const picks = items.filter((i) => i.action.label.startsWith("📎"));
-  assert.ok(picks.length >= 2, "ต้องมีตัวเลือกรายการ");
-  const other = picks.find((i) => !i.action.data.endsWith("#" + f.link.id));
-  const ref = new URLSearchParams(other.action.data).get("ref");
-  post([pb(other.action.data)]);
-  assert.strictEqual(fileById(f.id).link.id, ref.split("#")[1]);
-  assert.ok(lastReply().text.startsWith("📎 แนบกับ"), lastReply().text);
+  const ai0 = aiLog.length;
+  post([pb(qdata("ยานพาหนะ"))]);
+  assert.strictEqual(aiLog.length, ai0);
+  const doc = lineDoc();
+  assert.ok(doc && doc.category === "ยานพาหนะ" && doc.title.startsWith("เอกสารจาก LINE ") && doc.expiry === "" && typeof doc.info === "object", JSON.stringify(doc));
+  assert.deepStrictEqual(fileById(f.id).link, { kind: "document", id: doc.id });
+  assert.ok(cacheMap.docAwait, "รอชื่อ/วันหมดอายุ");
+  assert.ok(lastReply().text.includes("พิมพ์ชื่อเอกสาร") && lastReply().text.includes("ยานพาหนะ"), lastReply().text);
+  assert.deepStrictEqual(lastReply().quickReply.items.map((i) => i.action.label), ["ข้าม"]);
+  canonical();
 });
 
-test("ไฟล์: ส่งรูปก่อน → รอผูก → พิมพ์รายการภายใน 10 นาที → แนบให้เอง", () => {
-  ageRecent();
+test("ไฟล์: พิมพ์ \"ประกันรถ 31/12/2570\" → ตั้งชื่อ + วันหมดอายุ 2027-12-31 (พ.ศ. แปลงให้) · ไม่ใช้ AI", () => {
+  const ai0 = aiLog.length;
+  post([msg("ประกันรถ 31/12/2570")]);
+  assert.strictEqual(aiLog.length, ai0, "ไม่ใช้ AI");
+  const doc = lineDoc();
+  assert.strictEqual(doc.title, "ประกันรถ");
+  assert.strictEqual(doc.expiry, "2027-12-31");
+  assert.ok(lastReply().text.includes("ประกันรถ") && lastReply().text.includes("หมดอายุ 31") && lastReply().text.includes("30 วัน"), lastReply().text);
+  assert.ok(!cacheMap.docAwait);
+  post([msg("สวัสดี")]);
+  assert.strictEqual(lineDoc().title, "ประกันรถ", "ข้อความถัดไปไม่ทับชื่อ");
+  canonical();
+});
+
+test("ไฟล์: หลังเลือกหมวด ถ้าพิมพ์ยาว/หลายบรรทัด → ไม่ถูกดักเป็นชื่อ (ไปถึง AI ตามปกติ)", () => {
   post([img("m2")]);
-  const f = files().find((x) => x.name && !x.link);
-  assert.ok(f, "ยังไม่ผูก");
-  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive") && lastReply().quickReply.items.some((i) => i.action.label === "เก็บไว้ก่อน"));
-  assert.strictEqual(JSON.parse(cacheMap.pendingFiles).length, 1);
-  aiScript = once([{ name: "add_expense", args: { amount: 320, category: "อาหาร", memo: "หมูกระทะ" } }], "จดแล้วครับ");
-  post([msg("หมูกระทะ 320")]);
-  assert.deepStrictEqual(fileById(f.id).link, { kind: "expense", id: newestExp("หมูกระทะ").id });
-  assert.ok(lastReply().text.includes("📎 แนบรูปที่ส่งมาเมื่อกี้"), lastReply().text);
-  assert.ok(!cacheMap.pendingFiles);
+  post([pb(qdata("ทั่วไป"))]);
+  const doc = docsNow().filter((d) => d.description === "ส่งมาจาก LINE").pop();
+  assert.ok(doc.title.startsWith("เอกสารจาก LINE "));
+  const ai0 = aiLog.length;
+  aiScript = () => ({ text: "ตอบตามปกติ" });
+  post([msg("วันนี้ช่วยสรุปงานที่ค้างให้หน่อย แล้วบอกด้วยว่าพรุ่งนี้มีนัดอะไรบ้าง ขอแบบละเอียดๆ นะครับ")]);
+  assert.ok(aiLog.length > ai0, "ต้องส่งให้ AI");
+  assert.ok(!cacheMap.docAwait);
+  assert.strictEqual(docsNow().find((d) => d.id === doc.id).title, doc.title);
 });
 
-test("ไฟล์: รูปรอเกิน 10 นาที → ไม่แนบกับรายการถัดไป", () => {
-  ageRecent();
+test("ไฟล์: พิมพ์ \"ไม่มี\" / กดข้าม → ไม่ตั้งอะไร ล้างสถานะรอ · ข้อความถัดไปเป็นแชทปกติ", () => {
   post([img("m3")]);
-  const f = files().find((x) => !x.link);
-  cacheMap.pendingFiles = JSON.stringify([{ id: f.id, at: Date.now() - 11 * 60000 }]);
-  aiScript = once([{ name: "add_expense", args: { amount: 40, category: "ขนม", memo: "โดนัท" } }], "จดแล้วครับ");
-  post([msg("โดนัท 40")]);
-  assert.strictEqual(fileById(f.id).link, null);
-  assert.ok(!lastReply().text.includes("📎"));
-  post([pb("a=ftrash&f=" + f.id)]);
+  post([pb(qdata("ประจำตัว"))]);
+  const doc = docsNow().filter((d) => d.description === "ส่งมาจาก LINE").pop();
+  post([pb("a=fskip")]);
+  assert.ok(!cacheMap.docAwait && lastReply().text.includes("ทีหลัง"), lastReply().text);
+  post([pb(qdata === null ? "" : "a=fcat&f=" + files().filter((x) => x.name).pop().id + "&c=0")]);
+  const doc2 = docsNow().filter((d) => d.description === "ส่งมาจาก LINE").pop();
+  post([msg("ไม่มี")]);
+  assert.ok(!cacheMap.docAwait);
+  assert.strictEqual(docsNow().find((d) => d.id === doc2.id).expiry, "");
+  assert.ok(lastReply().text.includes("ทีหลัง"));
+  assert.ok(doc.id);
 });
 
-test("ไฟล์: ส่ง 3 รูปชุดเดียว (imageSet) → ตอบครั้งเดียว · ปุ่มเก็บไว้ก่อน → ไฟล์รอจัด", () => {
-  ageRecent();
+test("ไฟล์: ส่ง 3 รูปชุดเดียว (imageSet) → ตอบครั้งเดียว · เก็บไว้ก่อน → ไฟล์รอจัด (ไม่สร้างเอกสาร)", () => {
   const r0 = replies();
+  const nDocs = docsNow().length;
   post([img("s1", { id: "SET1", index: 1, total: 3 })]);
   post([img("s2", { id: "SET1", index: 2, total: 3 })]);
   assert.strictEqual(replies(), r0, "ยังไม่ครบชุด ยังไม่ตอบ");
@@ -1023,32 +1045,42 @@ test("ไฟล์: ส่ง 3 รูปชุดเดียว (imageSet) →
   assert.ok(lastReply().text.includes("3 รูป"));
   const ids = new URLSearchParams(qdata("เก็บไว้ก่อน")).get("f").split(",");
   assert.strictEqual(ids.length, 3);
-  assert.strictEqual(JSON.parse(cacheMap.pendingFiles).length, 3);
   post([pb(qdata("เก็บไว้ก่อน"))]);
   assert.ok(ids.every((id) => fileById(id).link === null));
-  assert.ok(!cacheMap.pendingFiles);
   assert.ok(lastReply().text.includes("ไฟล์รอจัด"));
+  assert.strictEqual(docsNow().length, nDocs);
 });
 
-test("ไฟล์: เก็บเป็นเอกสาร → สร้างใน documents + ผูกทั้ง 3 รูป (รูปแบบมาตรฐานของแอป)", () => {
+test("ไฟล์: เลือกหมวดกับ 3 รูปที่เก็บไว้ก่อน → เอกสารเดียว ผูกทั้ง 3 รูป", () => {
   const f3 = files().filter((x) => x.link === null && /_\d\.jpg$/.test(x.name)).map((x) => x.id);
   assert.strictEqual(f3.length, 3);
-  post([pb("a=fdoc&f=" + f3.join(","))]);
-  const doc = (app().documents || []).find((d) => d.description === "ส่งมาจาก LINE");
-  assert.ok(doc && doc.title.startsWith("เอกสารจาก LINE ") && doc.category === "อื่นๆ", JSON.stringify(doc));
+  post([pb("a=fcat&f=" + f3.join(",") + "&c=2")]);
+  const doc = docsNow().filter((d) => d.description === "ส่งมาจาก LINE").pop();
+  assert.strictEqual(doc.category, "ประวัติ/ใบรับรอง");
   assert.ok(f3.every((id) => fileById(id).link.kind === "document" && fileById(id).link.id === doc.id));
-  assert.ok(lastReply().text.includes("เก็บเป็นเอกสาร"));
+  post([msg("ทะเบียนบ้าน")]);
   canonical();
 });
 
-test("ไฟล์: PDF → เก็บชื่อเดิม ไม่มีรูปย่อ · เก็บเป็นเอกสารใช้ชื่อไฟล์", () => {
-  ageRecent();
+test("ไฟล์: หมวดงาน/ราชการ เลือกผ่านปุ่ม Jack ไม่ได้ (ยิง postback ตรงๆ ก็ไม่ผ่าน)", () => {
+  post([img("m9")]);
+  const f = files().filter((x) => !x.link).pop();
+  const n = docsNow().length;
+  post([pb("a=fcat&f=" + f.id + "&c=1")]);
+  assert.strictEqual(docsNow().length, n);
+  assert.strictEqual(fileById(f.id).link, null);
+  assert.ok(lastReply().text.includes("เลือกผ่าน Jack ไม่ได้"), lastReply().text);
+  post([pb("a=ftrash&f=" + f.id)]);
+});
+
+test("ไฟล์: PDF → เก็บชื่อเดิม ไม่มีรูปย่อ · เลือกหมวดใช้ชื่อไฟล์เป็นชื่อเอกสาร", () => {
   post([fmsg("pdf1", "ใบกำกับภาษี.pdf", 50000)]);
   const f = files().find((x) => x.name === "ใบกำกับภาษี.pdf");
   assert.ok(f && f.mime === "application/pdf" && f.thumb === null && f.link === null);
   assert.ok(lastReply().text.includes("ไฟล์ ใบกำกับภาษี.pdf"));
-  post([pb(qdata("เก็บเป็นเอกสาร"))]);
-  assert.ok((app().documents || []).some((d) => d.title === "ใบกำกับภาษี"));
+  post([pb(qdata("ทั่วไป"))]);
+  assert.ok(docsNow().some((d) => d.title === "ใบกำกับภาษี"));
+  post([msg("ไม่มี")]);
 });
 
 test("ไฟล์: ชนิดอื่น/ใหญ่เกิน → ปฏิเสธ ไม่อัป", () => {
@@ -1061,7 +1093,6 @@ test("ไฟล์: ชนิดอื่น/ใหญ่เกิน → ปฏ
 });
 
 test("ไฟล์: ปุ่มลบ → ถังขยะ Drive + ลบเอกสาร Firestore", () => {
-  ageRecent();
   post([img("m4")]);
   const f = files().find((x) => !x.link);
   post([pb(qdata("ลบ"))]);
@@ -1072,51 +1103,17 @@ test("ไฟล์: ปุ่มลบ → ถังขยะ Drive + ลบเ�
   assert.ok(lastReply().text.includes("ไม่เจอไฟล์นี้"));
 });
 
-test("ไฟล์: ยกเลิกรายจ่ายที่มีรูปแนบ → รูปไม่หาย กลับไปรอผูก", () => {
-  aiScript = once([{ name: "add_expense", args: { amount: 2000, category: "อื่นๆ", memo: "ผิดยอด" } }]);
-  post([msg("ผิดยอด 2000")]);
-  const tok = new URLSearchParams(lastReply().quickReply.items[1].action.data).get("r");
+test("ไฟล์: ไม่มีปุ่ม/postback เก่าของผูกรายจ่าย (flink/frelink/fdoc) แล้ว", () => {
   post([img("m5")]);
-  const f = files().find((x) => x.link && x.link.id === newestExp("ผิดยอด").id);
-  assert.ok(f);
-  post([pb("a=undo&r=" + tok)]);
-  assert.strictEqual(fileById(f.id).link, null);
-  assert.ok(JSON.parse(cacheMap.pendingFiles).some((p) => p.id === f.id));
-  assert.ok(lastReply().text.includes("รูปที่แนบไว้ยังอยู่"), lastReply().text);
-  aiScript = once([{ name: "add_expense", args: { amount: 200, category: "อื่นๆ", memo: "ยอดถูก" } }], "จดแล้วครับ");
-  post([msg("ยอดถูก 200")]);
-  assert.strictEqual(fileById(f.id).link.id, newestExp("ยอดถูก").id);
-});
-
-test("ไฟล์: ส่งรูปหลังยกเลิกรายการ → ไม่แนบกับรายการที่ยกเลิกไปแล้ว (ไปรอผูกแทน)", () => {
-  ageRecent();
-  aiScript = once([{ name: "add_expense", args: { amount: 77, category: "อื่นๆ", memo: "จะยกเลิก" } }]);
-  post([msg("จะยกเลิก 77")]);
-  const tok = new URLSearchParams(lastReply().quickReply.items[1].action.data).get("r");
-  post([pb("a=undo&r=" + tok)]);
-  post([img("m6")]);
   const f = files().find((x) => !x.link);
-  assert.ok(f, "ต้องไม่ผูกกับรายการที่ยกเลิก");
-  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive"), lastReply().text);
-  assert.ok(!lastReply().quickReply.items.some((i) => i.action.label.includes("จะยกเลิก")), "ตัวเลือกต้องไม่มีรายการที่ยกเลิกแล้ว");
+  const n = Object.values(fstore).length;
+  post([pb("a=flink&f=" + f.id + "&ref=fg.expenses." + MONTH + "#e_cur1")]);
+  assert.strictEqual(fileById(f.id).link, null, "ต้องไม่ผูกกับรายจ่าย");
+  assert.strictEqual(Object.values(fstore).length, n);
   post([pb("a=ftrash&f=" + f.id)]);
 });
 
-test("ขั้นที่ 1: สั่งลบรายการเงินผ่าน delete_entry → ถูกปฏิเสธ · รายการกับไฟล์ที่แนบยังอยู่", () => {
-  aiScript = once([{ name: "add_expense", args: { amount: 555, category: "อื่นๆ", memo: "ลบทั้งรูป" } }]);
-  post([msg("ลบทั้งรูป 555")]);
-  post([img("m7")]);
-  const e = newestExp("ลบทั้งรูป");
-  const f = files().find((x) => x.link && x.link.id === e.id);
-  aiScript = once([{ name: "delete_entry", args: { ref: "fg.expenses." + MONTH + "#" + e.id } }], "ลบไม่ได้ครับ");
-  post([msg("ลบรายการลบทั้งรูปทิ้ง")]);
-  assert.ok(newestExp("ลบทั้งรูป"), "รายการเงินต้องไม่ถูกลบโดย Jack");
-  assert.ok(fstore[f.id] && !drive.files[f.driveId].trashed);
-  canonical();
-});
-
 test("ไฟล์: preview ของ LINE ใหญ่เกิน → ใช้รูปย่อ 160px จาก Drive", () => {
-  ageRecent();
   previewBytes = 20000;
   post([img("m8")]);
   previewBytes = 3000;
@@ -1128,14 +1125,15 @@ test("ไฟล์: preview ของ LINE ใหญ่เกิน → ใช�
 test("ไฟล์: แอปแก้เอกสารไฟล์แทรกระหว่างผูก → อ่านใหม่แล้วผูกสำเร็จ", () => {
   const f = files().find((x) => !x.link);
   const c0 = conflictsSeen;
-  injectConflict = () => { fstore[f.id].updateTime = ts(); };
-  post([pb("a=flink&f=" + f.id + "&ref=fg.expenses." + MONTH + "#e_cur1")]);
+  injectConflict = () => { injectConflict = () => { fstore[f.id].updateTime = ts(); }; };   // commit แรก = สร้างเอกสาร · commit ถัดไป (ผูกไฟล์) โดนแอปแทรก
+  post([pb("a=fcat&f=" + f.id + "&c=4")]);
   assert.ok(conflictsSeen > c0);
-  assert.deepStrictEqual(fileById(f.id).link, { kind: "expense", id: "e_cur1" });
+  assert.strictEqual(fileById(f.id).link.kind, "document");
+  post([msg("ข้าม")]);
 });
 
 test("ไฟล์: รอบ 07:00 เก็บกวาดไฟล์ที่แอปกดลบ (trash:true) → ถังขยะ Drive + ลบเอกสาร", () => {
-  const f = files().find((x) => x.link && x.link.id === "e_cur1");
+  const f = files().find((x) => x.link && x.link.kind === "document");
   const m = Object.assign({}, f, { trash: true, trashedAt: new Date().toISOString() });
   fstore[f.id] = { json: JSON.stringify(m), by: "app", updateTime: ts() };
   propsMap.PUSHED_morning = TODAY;   // วันนี้ส่งสรุปไปแล้ว — เก็บกวาดก็ยังต้องทำ
@@ -1151,248 +1149,120 @@ test("ไฟล์: setupFiles ใช้โฟลเดอร์เดิม ไ
   assert.strictEqual(n, 1);
 });
 
+// =================== ข้อ 56 ขั้นที่ 9: Documents (หมวด · หมดอายุ · โหมดจำกัด) ===================
+const dtd = (n) => ctx.addDays_(TODAY, n);
+const DOCS9 = () => [
+  { id: "dA", title: "ประกันรถ", category: "ยานพาหนะ", description: "", link: "", expiry: dtd(30), info: { "บริษัทประกัน": "วิริยะ", "เลขกรมธรรม์": "VR-12345", "เบอร์ติดต่อ": "1557" } },
+  { id: "dB", title: "บัตรประชาชน", category: "ประชาชน", description: "", link: "", expiry: dtd(400) },
+  { id: "dC", title: "ใบขับขี่", category: "ประจำตัว", description: "", link: "", expiry: dtd(7) },
+  { id: "dD", title: "บัตรข้าราชการ", category: "งาน/ราชการ", description: "", link: "", expiry: dtd(30), info: { "เลขที่": "SECRET-999" } },
+  { id: "dE", title: "คำสั่งแต่งตั้ง", category: "งาน/ราชการ", open: true, description: "", link: "", expiry: dtd(200), info: { "เลขที่": "OPEN-1" } },
+  { id: "dF", title: "สัญญาเช่า", category: "สัญญา", description: "บ้าน", link: "", expiry: dtd(90) }
+];
+function linkDocFile(docId) {
+  post([img("dz" + evn)]);
+  const f = files().filter((x) => x.link === null).pop();
+  fstore[f.id] = { json: JSON.stringify(Object.assign({}, f, { link: { kind: "document", id: docId } })), by: "app", updateTime: ts() };
+  return fstore[f.id] && f;
+}
 
-// =================== ข้อ 55 ขั้นที่ 9: อ่านสลิป/ใบเสร็จ (OCR) ===================
-// ข้อ 56: โอมปิด OCR ใน Config จริง (OCR_ENABLED:false) — โค้ดส่วนนี้ยังเหลืออยู่จึงเปิดเฉพาะในเทสต์กลุ่มนี้ เพื่อกันโค้ดเน่า (ปิดคืนท้ายไฟล์)
-vm.runInContext("CONFIG.OCR_ENABLED = true", ctx);
-const slip = (o) => Object.assign({ kind: "expense", amount: null, currency: "THB", date: TODAY, memo: null, category: "อื่นๆ", confidence: "high" }, o);
-const anyExp = (memo) => app().finance.expenses.find((x) => x.memo === memo);
-const usageUsd = () => JSON.parse(propsMap["usage_" + MONTH]).usd;
+test("ขั้นที่ 9: find_documents — ตอบข้อมูลสำคัญ + ลิงก์ Drive · หมวดเก่าแปลงเป็นหมวดใหม่ · ไม่เห็นงาน/ราชการที่ยังลับ", () => {
+  setDocs(DOCS9());
+  const f = linkDocFile("dA");
+  const r = ctx.toolFindDocuments_({ query: "ประกัน รถ" }, ctx.newCtx_());
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.docs.length, 1);
+  const d = r.docs[0];
+  assert.strictEqual(d.title, "ประกันรถ");
+  assert.strictEqual(d.daysLeft, 30);
+  assert.strictEqual(d.info["เลขกรมธรรม์"], "VR-12345");
+  assert.strictEqual(JSON.stringify(d.files), JSON.stringify([{ name: f.name, url: f.url }]));
+  const all = ctx.toolFindDocuments_({}, ctx.newCtx_());
+  const titles = all.docs.map((x) => x.title);
+  assert.ok(!titles.includes("บัตรข้าราชการ"), "หมวดงาน/ราชการที่ยังลับ Jack ต้องไม่เห็น: " + titles);
+  assert.ok(titles.includes("คำสั่งแต่งตั้ง"), "ติ๊ก ไม่ลับ แล้ว Jack เห็นได้");
+  assert.strictEqual(all.docs.find((x) => x.title === "บัตรประชาชน").category, "ประจำตัว");
+  assert.strictEqual(all.docs.find((x) => x.title === "สัญญาเช่า").category, "ทั่วไป");
+  assert.strictEqual(JSON.stringify(all.docs.map((x) => x.title).slice(0, 2)), JSON.stringify(["ใบขับขี่", "ประกันรถ"]), "เรียงตามวันหมดอายุ");
+  const none = ctx.toolFindDocuments_({ query: "ข้าราชการ" }, ctx.newCtx_());
+  assert.strictEqual(none.docs.length, 0);
+  assert.ok(!JSON.stringify(none).includes("ข้าราชการ") && !JSON.stringify(none).includes("SECRET-999"), "ห้ามหลุดชื่อ/ข้อมูลของเอกสารลับ");
+  const byCat = ctx.toolFindDocuments_({ category: "ยานพาหนะ" }, ctx.newCtx_());
+  assert.strictEqual(JSON.stringify(byCat.docs.map((x) => x.title)), JSON.stringify(["ประกันรถ"]));
+});
 
-test("OCR: ส่งสลิปโอน → จดรายจ่าย (ติดลบ) + แนบรูป + ปุ่ม แก้/ยกเลิก · ส่งรูปเข้า vision จริง · นับค่า AI", () => {
-  ageRecent();
-  ocrScript = () => slip({ amount: 1250.5, memo: "ค่าโทรศัพท์", category: "อื่นๆ" });
-  const n0 = ocrLog.length, ai0 = aiLog.length, usd0 = usageUsd(), f0 = files().length;
-  post([img("o1")]);
-  assert.strictEqual(ocrLog.length, n0 + 1);
-  assert.strictEqual(aiLog.length, ai0, "ไม่ผ่านแชท/เครื่องมือ");
-  const b = ocrLog[ocrLog.length - 1];
-  assert.strictEqual(b.model, "gpt-6-luna");
-  const c = b.input[0].content;
-  const im = c.find((x) => x.type === "input_image");
-  assert.ok(/^data:image\/jpeg;base64,/.test(im.image_url) && im.detail === "high");
-  assert.ok(b.instructions.includes("อาหาร") && b.instructions.includes("พ.ศ."), "ส่งรายการหมวด + วิธีแปลง พ.ศ.");
-  const e = newestExp("ค่าโทรศัพท์");
-  assert.ok(e && e.amount === -1250.5 && e.via === "line" && e.source === "manual" && e.date === TODAY, JSON.stringify(e));
-  assert.strictEqual(files().length, f0 + 1);
-  const f = files().pop();
-  assert.deepStrictEqual(f.link, { kind: "expense", id: e.id });
-  assert.ok(lastReply().text.includes("อ่านสลิปแล้ว") && lastReply().text.includes("1,250.5") && lastReply().text.includes("แนบรูปไว้แล้ว"), lastReply().text);
-  assert.ok(!lastReply().text.includes("ไม่ค่อยมั่นใจ"));
-  assert.deepStrictEqual(lastReply().quickReply.items.map((i) => i.action.label).slice(0, 2), ["แก้", "ยกเลิก"]);
-  assert.ok(usageUsd() > usd0, "ต้องนับค่า AI ของ vision");
-  assert.ok(app().activity[0].text.includes("LINE"));
+test("ขั้นที่ 9: AI เห็นเครื่องมือเอกสาร + กติกา (ส่งลิงก์ ไม่ส่งไฟล์)", () => {
+  aiScript = () => ({ text: "โอเคครับ" });
+  post([msg("ทดสอบเครื่องมือเอกสาร")]);
+  const b = aiLog[aiLog.length - 1];
+  const names = b.tools.map((t) => t.name);
+  assert.ok(names.includes("find_documents") && names.includes("update_document"));
+  assert.ok(b.instructions.includes("ลิงก์ Drive") && b.instructions.includes("ห้ามส่งไฟล์ลงแชท") && b.instructions.includes("โหมดจำกัด"));
+});
+
+test("ขั้นที่ 9: ขอเอกสารผ่าน Jack → AI เรียก find_documents แล้วตอบพร้อมลิงก์", () => {
+  aiScript = (body) => {
+    const o = body.input.filter((x) => x.type === "function_call_output").map((x) => JSON.parse(x.output));
+    return o.length ? { text: "ประกันรถหมด " + o[0].docs[0].expiry + "\n" + o[0].docs[0].files[0].url } : { calls: [{ name: "find_documents", args: { query: "ประกันรถ" } }] };
+  };
+  post([msg("ขอสำเนาประกันรถหน่อย")]);
+  assert.ok(lastReply().text.includes("drive.google.com/file/d/"), lastReply().text);
+});
+
+test("ขั้นที่ 9: update_document — ตั้งวันหมดอายุ/ชื่อ/ข้อมูลสำคัญได้ · หมวดงาน/ราชการ (ลับ) แก้ไม่ได้ · ตั้งหมวดงาน/ราชการไม่ได้", () => {
+  const c = ctx.newCtx_();
+  let r = ctx.toolUpdateDocument_({ ref: "dB", expiry: "2031-05-01", title: "บัตรประชาชน (ใหม่)", infoKey: "เลขที่เอกสาร", infoValue: "1-2345" }, c);
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  let d = docsNow().find((x) => x.id === "dB");
+  assert.strictEqual(d.expiry, "2031-05-01");
+  assert.strictEqual(d.title, "บัตรประชาชน (ใหม่)");
+  assert.strictEqual(d.info["เลขที่เอกสาร"], "1-2345");
+  r = ctx.toolUpdateDocument_({ ref: "dB", expiry: "31/12/2575" }, c);
+  assert.strictEqual(docsNow().find((x) => x.id === "dB").expiry, "2032-12-31");
+  r = ctx.toolUpdateDocument_({ ref: "dB", expiry: "none" }, c);
+  assert.strictEqual(docsNow().find((x) => x.id === "dB").expiry, "");
+  assert.strictEqual(ctx.toolUpdateDocument_({ ref: "dB", expiry: "เมื่อวาน" }, c).ok, false);
+  const before = JSON.stringify(docsNow().find((x) => x.id === "dD"));
+  r = ctx.toolUpdateDocument_({ ref: "dD", title: "แก้ชื่อ", expiry: "2030-01-01" }, c);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(JSON.stringify(docsNow().find((x) => x.id === "dD")), before);
+  r = ctx.toolUpdateDocument_({ ref: "dC", category: "งาน/ราชการ" }, c);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(docsNow().find((x) => x.id === "dC").category, "ประจำตัว");
+  r = ctx.toolUpdateDocument_({ ref: "dC", category: "ยานพาหนะ" }, c);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(ctx.toolUpdateDocument_({ ref: "nope", title: "x" }, c).ok, false);
   canonical();
 });
 
-test("OCR: ยกเลิกรายการที่อ่านจากสลิป → รายการหาย · รูปไม่หาย กลับไปรอผูก", () => {
-  const e = newestExp("ค่าโทรศัพท์");
-  const tok = new URLSearchParams(lastReply().quickReply.items[1].action.data).get("r");
-  const f = files().find((x) => x.link && x.link.id === e.id);
-  post([pb("a=undo&r=" + tok)]);
-  assert.ok(!newestExp("ค่าโทรศัพท์"));
-  assert.strictEqual(fileById(f.id).link, null);
-  assert.ok(pendingHas(f.id));
-  canonical();
-});
-function pendingHas(id) { return (JSON.parse(cacheMap.pendingFiles || "[]")).some((p) => p.id === id); }
-
-test("OCR: สลิปยอดตรงกับรายการที่เพิ่งพิมพ์จดไว้ → แนบกับรายการนั้น ไม่จดซ้ำ", () => {
-  aiScript = once([{ name: "add_expense", args: { amount: 320, category: "อาหาร", memo: "ชาบู" } }]);
-  post([msg("ชาบู 320")]);
-  const nExp = month(MONTH).length;
-  ocrScript = () => slip({ amount: 320, memo: "ร้านชาบู", category: "อาหาร" });
-  post([img("o2")]);
-  assert.strictEqual(month(MONTH).length, nExp, "ต้องไม่จดซ้ำ");
-  const f = files().pop();
-  assert.deepStrictEqual(f.link, { kind: "expense", id: newestExp("ชาบู").id });
-  assert.ok(lastReply().text.includes("แนบรูปกับ") && lastReply().text.includes("ไม่จดซ้ำ"), lastReply().text);
+test("ขั้นที่ 9: สรุปเช้าเตือนเอกสารหมดอายุ 30 และ 7 วันพอดี · งาน/ราชการ (ลับ) แจ้งแค่จำนวน ไม่บอกชื่อ/เลข", () => {
+  setDocs(DOCS9());
+  const c = ctx.newCtx_();
+  const f = ctx.morningFacts_(c);
+  assert.ok(f.docsExpiring.some((x) => x.includes("ประกันรถ") && x.includes("อีก 30 วัน")), f.docsExpiring.join("|"));
+  assert.ok(f.docsExpiring.some((x) => x.includes("ใบขับขี่") && x.includes("อีก 7 วัน")));
+  assert.ok(f.docsExpiring.includes("🔒 มีเอกสารงาน/ราชการ 1 ฉบับใกล้หมดอายุ ดูในแอป"), f.docsExpiring.join("|"));
+  assert.ok(!JSON.stringify(f).includes("บัตรข้าราชการ") && !JSON.stringify(f).includes("SECRET-999"), "AI/ข้อความเช้าต้องไม่เห็นชื่อเอกสารลับ");
+  assert.ok(!f.docsExpiring.some((x) => x.includes("บัตรประชาชน") || x.includes("สัญญาเช่า") || x.includes("คำสั่งแต่งตั้ง")), "วันอื่นไม่เตือน");
+  const t = ctx.morningTemplate_(f);
+  assert.ok(t.includes("📄 เอกสารใกล้หมดอายุ") && t.includes("• 🚗 ประกันรถ — อีก 30 วัน") && t.includes("มีเอกสารงาน/ราชการ 1 ฉบับใกล้หมดอายุ ดูในแอป"), t);
 });
 
-test("OCR: สลิปยอดไม่ตรงกับรายการล่าสุด → จดเป็นรายการใหม่ (ไม่แนบผิดรายการ)", () => {
-  ocrScript = () => slip({ amount: 75, memo: "ชานมไข่มุก", category: "ชา กาแฟ" });
-  const nExp = month(MONTH).length;
-  post([img("o3")]);
-  assert.strictEqual(month(MONTH).length, nExp + 1);
-  const e = newestExp("ชานมไข่มุก");
-  assert.strictEqual(e.category, "ชา กาแฟ");
-  assert.deepStrictEqual(files().pop().link, { kind: "expense", id: e.id });
-  canonical();
+test("ขั้นที่ 9: ไม่มีเอกสารครบ 30/7 วัน → สรุปเช้าไม่มีหัวข้อเอกสาร · วันที่ผิดรูปแบบไม่ทำให้พัง", () => {
+  setDocs([{ id: "z1", title: "เอกสารเก่า", category: "ทั่วไป", expiry: dtd(20) }, { id: "z2", title: "พัง", category: "ทั่วไป", expiry: "ไม่ใช่วันที่" }, { id: "z3", title: "ไม่มีวัน", category: "ทั่วไป" }]);
+  const t = ctx.morningTemplate_(ctx.morningFacts_(ctx.newCtx_()));
+  assert.ok(!t.includes("เอกสารใกล้หมดอายุ"), t);
 });
 
-test("OCR: ปี พ.ศ. หลุดมา → แปลงเป็น ค.ศ. · วันที่อนาคต/อ่านไม่ได้ → ใช้วันนี้ + บอกโอม · หมวดที่ไม่มีในระบบ → อื่นๆ", () => {
-  ageRecent();
-  ocrScript = () => slip({ amount: 41, date: PREV + "-10", memo: "ทดสอบวัน1", category: "หมวดที่ไม่มี" });
-  post([img("o4")]);
-  let e = anyExp("ทดสอบวัน1");
-  assert.strictEqual(e.date, PREV + "-10");
-  assert.strictEqual(e.category, "อื่นๆ");
-  ageRecent();
-  ocrScript = () => slip({ amount: 42, date: (Number(PREV.slice(0, 4)) + 543) + PREV.slice(4) + "-11", memo: "ทดสอบวัน2" });
-  post([img("o5")]);
-  assert.strictEqual(anyExp("ทดสอบวัน2").date, PREV + "-11", "พ.ศ. ต้องถูกลบ 543");
-  ageRecent();
-  ocrScript = () => slip({ amount: 43, date: "2099-01-01", memo: "ทดสอบวัน3" });
-  post([img("o6")]);
-  assert.strictEqual(newestExp("ทดสอบวัน3").date, TODAY);
-  assert.ok(lastReply().text.includes("อ่านวันที่ไม่ได้"), lastReply().text);
-  ageRecent();
-  ocrScript = () => slip({ amount: 44, date: null, memo: "ทดสอบวัน4" });
-  post([img("o7")]);
-  assert.strictEqual(newestExp("ทดสอบวัน4").date, TODAY);
-  canonical();
+test("ขั้นที่ 9: parseDocDate_ — ค.ศ./พ.ศ./ปีสองหลัก/คั่นหลายแบบ · วันที่ไม่มีจริงไม่รับ", () => {
+  const p = (s) => { const r = ctx.parseDocDate_(s); return r && r.date; };
+  assert.strictEqual(p("ประกัน 31/12/2027"), "2027-12-31");
+  assert.strictEqual(p("31-12-2570"), "2027-12-31");
+  assert.strictEqual(p("1.2.27"), "2027-02-01");
+  assert.strictEqual(p("หมดอายุ 2028-03-09"), "2028-03-09");
+  assert.strictEqual(p("31/02/2027"), null);
+  assert.strictEqual(p("ไม่มีวันที่"), null);
 });
-
-test("OCR: confidence ต่ำ / ยอดใหญ่ → จดแต่ขอให้เช็กซ้ำ · มีงบใกล้เต็ม → เตือนงบ", () => {
-  ageRecent();
-  ocrScript = () => slip({ amount: 60000, memo: "ค่าเครื่อง", confidence: "high" });
-  post([img("o8")]);
-  assert.ok(newestExp("ค่าเครื่อง") && lastReply().text.includes("เช็กยอด/หมวดอีกทีนะครับ"), lastReply().text);
-  ageRecent();
-  ocrScript = () => slip({ amount: 90, memo: "เบลอๆ", confidence: "low" });
-  post([img("o9")]);
-  assert.ok(lastReply().text.includes("เช็กยอด/หมวดอีกทีนะครับ"));
-  ageRecent();
-  ocrScript = () => slip({ amount: 500, memo: "มื้อใหญ่", category: "อาหาร" });   // งบอาหาร 5000 ใช้ไปเกิน 80% แล้ว
-  post([img("o10")]);
-  assert.ok(lastReply().text.includes("⚠️ งบ อาหาร"), lastReply().text);
-});
-
-test("OCR: สลิปรับเงิน → รายรับ (บวก)", () => {
-  ageRecent();
-  ocrScript = () => slip({ kind: "income", amount: 2000, memo: "ลูกค้าโอนมัดจำ", category: "อื่นๆ" });
-  post([img("o11")]);
-  const i = app().finance.income.find((x) => x.note === "ลูกค้าโอนมัดจำ");
-  assert.ok(i && i.amount === 2000 && i.via === "line" && i.month === MONTH, JSON.stringify(i));
-  assert.deepStrictEqual(files().pop().link, { kind: "income", id: i.id });
-  assert.ok(lastReply().text.includes("รายรับ"));
-  canonical();
-});
-
-test("OCR: กบข. จากสลิป → เงินออม (ไม่ใช่รายจ่าย) · รูปเก็บรอผูก", () => {
-  ageRecent();
-  const nExp = app().finance.expenses.length, nInv = app().finance.investments.length;
-  ocrScript = () => slip({ amount: 1500, memo: "สะสม กบข." });
-  post([img("o12")]);
-  assert.strictEqual(app().finance.expenses.length, nExp);
-  assert.strictEqual(app().finance.investments.length, nInv + 1);
-  assert.strictEqual(files().pop().link, null);
-  canonical();
-});
-
-test("OCR: รูปที่ไม่ใช่สลิป / อ่านยอดไม่ได้ / JSON เพี้ยน → เก็บรูปเฉยๆ ไม่จดอะไร (เหมือนขั้นที่ 8)", () => {
-  ageRecent();
-  const nExp = month(MONTH).length;
-  ocrScript = () => slip({ kind: "other" });
-  post([img("o13")]);
-  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive") && !lastReply().text.includes("อ่านยอด"), lastReply().text);
-  ocrScript = () => slip({ amount: null });
-  post([img("o14")]);
-  assert.ok(lastReply().text.includes("อ่านยอดจากรูปนี้ไม่ได้"), lastReply().text);
-  ocrScript = () => "garbage";
-  post([img("o15")]);
-  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive"));
-  assert.strictEqual(month(MONTH).length, nExp);
-  assert.strictEqual(files().filter((f) => !f.link).length >= 3, true);
-});
-
-test("OCR: สกุลเงินอื่น → ไม่จดอัตโนมัติ บอกโอม", () => {
-  ageRecent();
-  const nExp = month(MONTH).length;
-  ocrScript = () => slip({ amount: 12.5, currency: "USD", memo: "OpenAI" });
-  post([img("o16")]);
-  assert.strictEqual(month(MONTH).length, nExp);
-  assert.ok(lastReply().text.includes("USD"), lastReply().text);
-});
-
-test("OCR: OpenAI ล่ม → ไม่เสียรูป เก็บรูปเฉยๆ (ไม่พังทั้งข้อความ)", () => {
-  ageRecent();
-  const f0 = files().length;
-  aiFail = { code: 500, msg: "boom" };
-  post([img("o17")]);
-  aiFail = null;
-  assert.strictEqual(files().length, f0 + 1);
-  assert.ok(lastReply().text.includes("เก็บรูปไว้ใน Drive"), lastReply().text);
-});
-
-test("OCR: เพดานค่า AI เต็ม → ไม่เรียก vision เก็บรูปเฉยๆ + บอกเหตุผล", () => {
-  ageRecent();
-  const saved = propsMap["usage_" + MONTH];
-  propsMap["usage_" + MONTH] = JSON.stringify({ usd: CONFIG_CAP(), calls: 1, messages: 1, byModel: {} });
-  const n0 = ocrLog.length;
-  ocrScript = () => slip({ amount: 10, memo: "ไม่ควรถูกเรียก" });
-  post([img("o18")]);
-  assert.strictEqual(ocrLog.length, n0);
-  assert.ok(lastReply().text.includes("เพดานค่า AI"), lastReply().text);
-  assert.ok(!newestExp("ไม่ควรถูกเรียก"));
-  propsMap["usage_" + MONTH] = saved;
-});
-function CONFIG_CAP() { return vm.runInContext("CONFIG.MONTHLY_CAP_USD", ctx); }
-
-test("OCR: ปิดด้วย OCR_ENABLED=false → ไม่เรียก vision", () => {
-  ageRecent();
-  vm.runInContext("CONFIG.OCR_ENABLED = false", ctx);
-  const n0 = ocrLog.length;
-  ocrScript = () => slip({ amount: 10, memo: "ห้ามอ่าน" });
-  post([img("o19")]);
-  vm.runInContext("CONFIG.OCR_ENABLED = true", ctx);
-  assert.strictEqual(ocrLog.length, n0);
-  assert.ok(!newestExp("ห้ามอ่าน"));
-});
-
-test("OCR: PDF ยังไม่อ่าน (เก็บเฉยๆ) · ไม่เรียก vision", () => {
-  ageRecent();
-  const n0 = ocrLog.length;
-  post([fmsg("pdf9", "ใบเสร็จ.pdf", 40000)]);
-  assert.strictEqual(ocrLog.length, n0);
-  assert.ok(files().some((f) => f.name === "ใบเสร็จ.pdf"));
-});
-
-test("OCR: ส่ง 3 สลิปพร้อมกัน (imageSet) → จดทีละใบ ตอบครั้งเดียว มีปุ่มยกเลิกทีละรายการ", () => {
-  ageRecent();
-  const r0 = replies(), nExp = month(MONTH).length;
-  const amts = [111, 222, 333];
-  let k = 0;
-  ocrScript = () => slip({ amount: amts[k], memo: "ชุด" + amts[k++] });
-  post([img("q1", { id: "SET9", index: 1, total: 3 })]);
-  post([img("q2", { id: "SET9", index: 2, total: 3 })]);
-  assert.strictEqual(replies(), r0, "ยังไม่ครบชุด");
-  post([img("q3", { id: "SET9", index: 3, total: 3 })]);
-  assert.strictEqual(replies(), r0 + 1);
-  assert.strictEqual(month(MONTH).length, nExp + 3);
-  const t = lastReply().text;
-  assert.ok(t.includes("3 รูป") && t.includes("111") && t.includes("222") && t.includes("333"), t);
-  const undo = lastReply().quickReply.items.filter((i) => i.action.label.startsWith("ยกเลิก"));
-  assert.strictEqual(undo.length, 3);
-  ["ชุด111", "ชุด222", "ชุด333"].forEach((m) => assert.ok(newestExp(m)));
-  const ids = files().slice(-3);
-  assert.ok(ids.every((f) => f.link && f.link.kind === "expense"));
-  assert.ok(lastReply().quickReply.items.length <= 13);
-  canonical();
-});
-
-test("OCR: บันทึกรูปลง Drive พังหลังจดรายการ → ถอยรายการกลับ ไม่เหลือรายการลอย", () => {
-  ageRecent();
-  const nExp = month(MONTH).length;
-  const orig = ctx.DriveApp.getFoldersByName;
-  ctx.DriveApp.getFoldersByName = () => { throw new Error("Drive ล่ม"); };
-  delete propsMap.DRIVE_FILES_FOLDER_ID;
-  ocrScript = () => slip({ amount: 999, memo: "ควรถูกถอย" });
-  post([img("o20")]);
-  ctx.DriveApp.getFoldersByName = orig;
-  assert.strictEqual(month(MONTH).length, nExp);
-  assert.ok(!newestExp("ควรถูกถอย"));
-  assert.ok(lastReply().text.includes("สะดุด"), lastReply().text);
-  ctx.setupFiles();
-});
-
-test("OCR: ค่า AI ของ vision เข้าเพดานรายเดือน · สถานะ jack ยังทำงาน", () => {
-  post([msg("สถานะ jack")]);
-  assert.ok(lastReply().text.includes("ค่า AI เดือนนี้"));
-});
-
-
-vm.runInContext("CONFIG.OCR_ENABLED = false", ctx);   // กลับเป็นค่าจริงใน Config.gs (โอมปิดไว้)
 
 // =================== ข้อ 56 ขั้นที่ 1: Jack × การเงิน (อ่านอย่างเดียว) ===================
 test("ขั้นที่ 1: AI มองไม่เห็นเครื่องมือจด/แก้เงิน · เรียกตรงๆ ก็ไม่รู้จัก · prompt บอกกติกาอ่านอย่างเดียว + dataAsOf", () => {

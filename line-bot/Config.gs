@@ -53,14 +53,9 @@ var CONFIG = {
   QUICK_REPLY: true,           // แนบปุ่ม "แก้ / ยกเลิก" หลังบันทึก
 
   // ---- ไฟล์แนบ (ขั้นที่ 8) — รูป/PDF ที่ส่งใน LINE → Drive SecretaryOhmApp/files-line ----
-  ATTACH_WINDOW_MIN: 10,       // ส่งรูปภายในกี่นาทีหลังจดรายการ → แนบให้เอง (และรูปที่ส่งก่อน รอรายการได้กี่นาที)
   FILE_MAX_MB: 20,             // PDF ใหญ่สุดที่รับ (UrlFetch ของ Apps Script รับได้ถึง 50MB)
 
   // ---- อ่านสลิป/ใบเสร็จจากรูป (ขั้นที่ 9) — ส่งรูป → gpt-6-luna อ่านยอด/วันที่/ร้าน → จดรายจ่ายให้เอง + แนบรูป ----
-  OCR_ENABLED: false,          // (โอมปิดไว้ 2026-09-29: ลงรายจ่ายด้วย import CSV KBank รายเดือน ไม่จดผ่าน Jack) false = กลับไปเก็บรูปเฉยๆ ไม่อ่าน (ไม่เสียค่า AI)
-  EFFORT_OCR: "low",           // none | low | medium — ตัวเลขผิดบ่อยให้ขยับเป็น medium
-  OCR_MAX_MB: 5,               // รูปใหญ่กว่านี้ไม่อ่าน (ยังเก็บลง Drive ตามปกติ)
-  OCR_WARN_AMOUNT: 50000,      // ยอดตั้งแต่นี้ขึ้นไป Jack จะขอให้โอมเช็กซ้ำเสมอ
 
   // ---- Rich Menu (ปุ่มลัดล่างแชท) — ติดตั้งด้วยฟังก์ชัน setupRichMenu() ----
   APP_URL: "https://supakit-ohm.github.io/secretary-ohm/preview-dashboard.html",

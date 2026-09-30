@@ -1617,8 +1617,8 @@ const DEFAULT_DATA = {
     {id:"h2",date:tomorrowISO(),weight:70,energy:6,sleep:7,mood:7},
   ],
   documents:[
-    {id:"d1",title:"บัตรประชาชน",category:"ประชาชน",description:"",link:""},
-    {id:"d2",title:"สัญญาเช่า",category:"สัญญา",description:"บ้าน 2-3 นอน",link:""},
+    {id:"d1",title:"บัตรประชาชน",category:"ประจำตัว",description:"",link:"",expiry:"",info:{}},
+    {id:"d2",title:"สัญญาเช่า",category:"ทั่วไป",description:"บ้าน 2-3 นอน",link:"",expiry:"",info:{}},
   ],
   bookQueue:[
     {id:"b1",title:"Atomic Habits",author:"James Clear",status:"reading",priority:5,startedDate:todayISO(),tags:["นิสัย","แรงบันดาลใจ"]},
@@ -2316,7 +2316,7 @@ function FileInbox({data,persist}){
     const id=uid();
     const title=f.from==="line"&&/^LINE_/.test(f.name||"")?`เอกสารจาก LINE ${String(f.createdAt||"").slice(0,10)}`
       :String(f.name||"").replace(/^\d{4}-\d{2}-\d{2}_/,"").replace(/\.[^.]+$/,"")||"เอกสาร";
-    persist({...data,documents:[...(data.documents||[]),{id,title,category:"อื่นๆ",description:f.from==="line"?"ส่งมาจาก LINE":"",link:""}]});
+    persist({...data,documents:[...(data.documents||[]),{id,title,category:"ทั่วไป",description:f.from==="line"?"ส่งมาจาก LINE":"",link:"",expiry:"",info:{}}]});
     api.setLink(f.id,{kind:"document",id});
   };
   const link=f=>{ const v=pick[f.id]; if(!v) return; const i=v.indexOf("|"); api.setLink(f.id,{kind:v.slice(0,i),id:v.slice(i+1)}); };
@@ -7058,20 +7058,42 @@ function HealthPage({data,persist}) {
     </div>
   );
 }
+/* ═══ ข้อ 66 (ขั้นที่ 9 ของแผนข้อ 56): Documents ═══
+   หมวด 5 หมวด · วันหมดอายุ (ไม่บังคับ) · ช่องข้อมูลสำคัญตามหมวด (เก็บใน d.info เป็น {ป้าย:ค่า})
+   งาน/ราชการ = โหมดจำกัด: เก็บได้แค่ข้อมูลอ้างอิง ปิดแนบไฟล์ + Jack ไม่อ่าน (ยกเว้นติ๊ก d.open="ไม่ลับ")
+   หมวดเก่า (ประชาชน/สัญญา/การเงิน/ประกัน/อื่นๆ) แปลงตอนแสดง/บันทึก ไม่ต้อง migrate ข้อมูลทั้งก้อน */
+const DOC_CATS=[
+  {k:"ประจำตัว",icon:"🪪",fields:["เลขที่เอกสาร","หน่วยงานที่ออก"]},
+  {k:"งาน/ราชการ",icon:"🎖️",restricted:true,fields:["เลขที่","ที่เก็บตัวจริง"]},
+  {k:"ประวัติ/ใบรับรอง",icon:"👤",fields:["หน่วยงานที่ออก","เลขที่"]},
+  {k:"ยานพาหนะ",icon:"🚗",fields:["ทะเบียน","บริษัทประกัน","เลขกรมธรรม์","เบอร์ติดต่อ"]},
+  {k:"ทั่วไป",icon:"📁",fields:["บริษัท/หน่วยงาน","เลขที่/เลขกรมธรรม์","เบอร์ติดต่อ"]},
+];
+const DOC_CAT_LEGACY={"ประชาชน":"ประจำตัว","สัญญา":"ทั่วไป","การเงิน":"ทั่วไป","ประกัน":"ทั่วไป","อื่นๆ":"ทั่วไป","":"ทั่วไป"};
+function docCatKey(c){ if(DOC_CATS.some(x=>x.k===c)) return c; return DOC_CAT_LEGACY[c]||"ทั่วไป"; }
+function docCatDef(c){ return DOC_CATS.find(x=>x.k===docCatKey(c)); }
+function docRestricted(d){ const def=docCatDef(d.category); return !!(def&&def.restricted&&!d.open); }
+/* เหลืออีกกี่วัน: null=ไม่มีวันหมดอายุ, ติดลบ=หมดแล้ว */
+function docDaysLeft(d){ return d&&d.expiry?daysUntil(d.expiry):null; }
+function docExpiryText(n){ return n==null?"":n<0?`หมดอายุแล้ว ${-n} วัน`:n===0?"หมดอายุวันนี้":`อีก ${n} วัน`; }
 function DocumentPage({data,persist}) {
-  /* ข้อ 55 ขั้นที่ 8: อ่านจาก data.documents ตรงๆ (เดิมมิเรอร์เป็น state แล้วไม่อัปเดตตามข้อมูลจากเครื่องอื่น/Jack) + แก้ไขได้ + ไฟล์แนบต่อเอกสาร + กล่องไฟล์รอจัด */
+  /* ข้อ 55 ขั้นที่ 8: อ่านจาก data.documents ตรงๆ (เดิมมิเรอร์เป็น state แล้วไม่อัปเดตตามข้อมูลจากเครื่องอื่น/Jack) */
   const docs=data.documents||[];
-  const empty={title:"",category:"",description:"",link:""};
+  const empty={title:"",category:"ทั่วไป",description:"",link:"",expiry:"",info:{},open:false};
   const [editId,setEditId]=useState(null);   // null | "new" | id ของเอกสารที่กำลังแก้
   const [form,setForm]=useState(empty);
+  const [filter,setFilter]=useState("all");
   const attCounts=useAttachCounts("document");
-  const categories=["ประชาชน","สัญญา","การเงิน","ประกัน","อื่นๆ"];
   const openNew=()=>{ setForm(empty); setEditId("new"); };
-  const openEdit=d=>{ setForm({title:d.title||"",category:d.category||"",description:d.description||"",link:d.link||""}); setEditId(d.id); };
+  const openEdit=d=>{ setForm({title:d.title||"",category:docCatKey(d.category),description:d.description||"",link:d.link||"",expiry:d.expiry||"",info:{...(d.info||{})},open:!!d.open}); setEditId(d.id); };
+  const clean=f=>{
+    const info={}; Object.keys(f.info||{}).forEach(k=>{ const v=String(f.info[k]||"").trim(); if(v) info[k]=v; });
+    return {...f,title:f.title.trim(),info,expiry:/^\d{4}-\d{2}-\d{2}$/.test(f.expiry)?f.expiry:"",open:docCatDef(f.category).restricted?!!f.open:false};
+  };
   const save=()=>{
-    const title=form.title.trim(); if(!title) return;
-    if(editId==="new") persist({...data,documents:[...docs,{id:uid(),...form,title}]});
-    else persist({...data,documents:docs.map(d=>d.id===editId?{...d,...form,title}:d)});
+    const f=clean(form); if(!f.title) return;
+    if(editId==="new") persist({...data,documents:[...docs,{id:uid(),...f}]});
+    else persist({...data,documents:docs.map(d=>d.id===editId?{...d,...f}:d)});
     setEditId(null);
   };
   const removeDoc=d=>{
@@ -7080,6 +7102,8 @@ function DocumentPage({data,persist}) {
     persist({...data,documents:docs.filter(x=>x.id!==d.id)});
     trashAttachments("document",[d.id]);
   };
+  const setCat=c=>setForm(f=>({...f,category:c,open:docCatDef(c).restricted?f.open:false}));
+  const def=docCatDef(form.category);
   const formBox=(
     <div className="doc-form">
       <div style={{marginBottom:10}}>
@@ -7087,12 +7111,27 @@ function DocumentPage({data,persist}) {
         <input className="modal-input" placeholder="บัตรประชาชน" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
       </div>
       <div style={{marginBottom:10}}>
-        <label className="field-label">ประเภท</label>
-        <select className="modal-input" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={{cursor:"pointer"}}>
-          <option value="">เลือก...</option>
-          {[...new Set([...categories,form.category].filter(Boolean))].map(c=><option key={c} value={c}>{c}</option>)}
+        <label className="field-label">หมวด</label>
+        <select id="doc-cat-select" className="modal-input" value={form.category} onChange={e=>setCat(e.target.value)} style={{cursor:"pointer"}}>
+          {DOC_CATS.map(c=><option key={c.k} value={c.k}>{c.icon} {c.k}</option>)}
         </select>
       </div>
+      {def.restricted&&(
+        <div className="doc-restricted-note">
+          🔒 หมวดนี้เป็นโหมดจำกัด: เก็บแค่ข้อมูลอ้างอิง ไม่แนบไฟล์ และ Jack ไม่อ่าน
+          <label className="doc-open-check"><input id="doc-open-check" type="checkbox" checked={!!form.open} onChange={e=>setForm({...form,open:e.target.checked})}/> ไม่ลับ (แนบไฟล์ได้ · Jack อ่านได้)</label>
+        </div>
+      )}
+      <div style={{marginBottom:10}}>
+        <label className="field-label">วันหมดอายุ (ไม่บังคับ)</label>
+        <input id="doc-expiry-input" type="date" className="modal-input" value={form.expiry} onChange={e=>setForm({...form,expiry:e.target.value})}/>
+      </div>
+      {def.fields.map(lb=>(
+        <div key={lb} style={{marginBottom:10}}>
+          <label className="field-label">{lb}</label>
+          <input className="modal-input doc-info-input" value={(form.info||{})[lb]||""} onChange={e=>setForm({...form,info:{...(form.info||{}),[lb]:e.target.value}})}/>
+        </div>
+      ))}
       <div style={{marginBottom:10}}>
         <label className="field-label">Note</label>
         <textarea className="modal-input" rows={2} placeholder="หมายเหตุ..." value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
@@ -7107,27 +7146,54 @@ function DocumentPage({data,persist}) {
       </div>
     </div>
   );
+  const soon=docs.map(d=>({d,n:docDaysLeft(d)})).filter(x=>x.n!=null&&x.n<=30).sort((a,b)=>a.n-b.n);
+  const counts={}; docs.forEach(d=>{ const k=docCatKey(d.category); counts[k]=(counts[k]||0)+1; });
+  const shown=filter==="all"?docs:docs.filter(d=>docCatKey(d.category)===filter);
   return (
     <div className="page-content">
+      {soon.length>0&&(
+        <div className="card doc-expiring" id="doc-expiring">
+          <div className="card-head">⏰ ใกล้หมดอายุ <span className="att-inbox-count">{soon.length}</span></div>
+          {soon.map(({d,n})=>(
+            <div key={d.id} className={`doc-exp-row${n<=7?" urgent":""}`}>
+              <span className="doc-exp-title">{docCatDef(d.category).icon} {d.title}</span>
+              <span className="doc-exp-left">{docExpiryText(n)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <FileInbox data={data} persist={persist}/>
       <div className="card">
         <div className="card-head"><FileText size={15}/> Documents</div>
+        {docs.length>0&&(
+          <div className="tag-filter-row doc-filter-row">
+            <button className={`db-chip tag-filter-chip${filter==="all"?" active":""}`} onClick={()=>setFilter("all")}>ทั้งหมด {docs.length}</button>
+            {DOC_CATS.filter(c=>counts[c.k]).map(c=>
+              <button key={c.k} className={`db-chip tag-filter-chip${filter===c.k?" active":""}`} onClick={()=>setFilter(c.k)}>{c.icon} {c.k} {counts[c.k]}</button>
+            )}
+          </div>
+        )}
         {docs.length===0&&<div className="empty">ยังไม่มีเอกสาร</div>}
-        {docs.map(d=>editId===d.id?<div key={d.id}>{formBox}</div>:(
+        {shown.map(d=>editId===d.id?<div key={d.id}>{formBox}</div>:(()=>{
+          const cd=docCatDef(d.category), locked=docRestricted(d), n=docDaysLeft(d);
+          const info=Object.keys(d.info||{});
+          return (
           <div key={d.id} className="doc-item">
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600}}>{d.title}</div>
-                {d.category&&<div style={{fontSize:12.5,color:"var(--accent)",marginTop:4}}>{d.category}</div>}
+                <div style={{fontSize:13,fontWeight:600}}>{locked?"🔒 ":""}{d.title}</div>
+                <div style={{fontSize:12.5,color:"var(--accent)",marginTop:4}}>{cd.icon} {cd.k}{d.open?" · ไม่ลับ":""}</div>
+                {n!=null&&<div className={`doc-exp-badge${n<=7?" urgent":n<=30?" soon":""}`}>หมดอายุ {d.expiry} · {docExpiryText(n)}</div>}
+                {info.map(k=><div key={k} style={{fontSize:12.5,color:"var(--ink-2)",marginTop:3}}>{k}: {d.info[k]}</div>)}
                 {d.description&&<div style={{fontSize:12.5,color:"var(--ink-2)",marginTop:4}}>{d.description}</div>}
                 {d.link&&<div style={{fontSize:11.5,color:"#34d399",marginTop:4,wordBreak:"break-all"}}>{d.link}</div>}
               </div>
               <button className="del-btn" title="แก้ไข" onClick={()=>openEdit(d)}><Edit3 size={13}/></button>
               <button className="del-btn" title="ลบ" onClick={()=>removeDoc(d)}><Trash2 size={13}/></button>
             </div>
-            <AttachStrip kind="document" id={d.id}/>
-          </div>
-        ))}
+            {locked?<div className="att-note doc-locked-note">🔒 โหมดจำกัด — ไม่แนบไฟล์ · Jack ไม่อ่าน</div>:<AttachStrip kind="document" id={d.id}/>}
+          </div>);
+        })())}
         {editId==="new"&&formBox}
         {editId===null&&<button className="text-btn" onClick={openNew}><Plus size={13}/> เอกสารใหม่</button>}
       </div>
