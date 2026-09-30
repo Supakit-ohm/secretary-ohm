@@ -7692,10 +7692,11 @@ function journalDayActivity(data,date){
   const order=(data.projects||[]).map(p=>p.id);
   return Object.values(groups).sort((a,b)=>a.key==="_none"?1:b.key==="_none"?-1:order.indexOf(a.key)-order.indexOf(b.key));
 }
-function JournalPage({data,persist}) {
+function JournalPage({data,persist,initialDate}) {
   const today=todayISO();
-  const [month,setMonth]=useState(today.slice(0,7));
-  const [sel,setSel]=useState(today);
+  const start=initialDate||today;
+  const [month,setMonth]=useState(start.slice(0,7));
+  const [sel,setSel]=useState(start);
   const jm=useMemo(()=>journalMap(data),[data.journal]);
   const cur=jm[sel]||null;
   const blank=()=>({mood:null,entry:"",parts:{did:"",highlight:"",feel:"",lesson:""}});
@@ -8588,6 +8589,7 @@ function XpModal({data,persist,onClose}){
   const XP=useMemo(()=>computeXP(data),[data]);
   const [target,setTarget]=useState(String(XP.savingRateTarget));
   const [limit,setLimit]=useState(40);
+  const [tab,setTab]=useState("xp");   // ข้อ 67: แท็บ "กิจกรรม" = History ที่ย้ายมาจาก Home
   const saveTarget=()=>{ const v=Math.max(1,Math.min(90,Number(target)||XP_DEFAULT_SAVING_TARGET)); setTarget(String(v)); persist({...data,xp:{...(data.xp||{}),savingRateTarget:v}}); };
   const sideOf=(k)=>XP_SIDES.find(s=>s.key===k);
   const shown=XP.events.slice(0,limit);
@@ -8596,7 +8598,8 @@ function XpModal({data,persist,onClose}){
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal xp-modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
         <div className="modal-head"><span>Level · ประวัติ XP</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
-        <div className="modal-body">
+        <div className="xp-tabs"><button type="button" className={`xp-tab${tab==="xp"?" on":""}`} onClick={()=>setTab("xp")}>XP</button><button type="button" className={`xp-tab${tab==="log"?" on":""}`} onClick={()=>setTab("log")}>กิจกรรม ({(data.activity||[]).length})</button></div>
+        <div className="modal-body">{tab==="log"?<HistoryPanel activity={data.activity}/>:<>
           <div className="xp-mside">
             {XP.sides.map(s=>(
               <div className="xp-mside-item" key={s.key} style={{"--xp-color":s.color}}>
@@ -8650,7 +8653,7 @@ function XpModal({data,persist,onClose}){
             <div>ออกกำลังกาย +15/ครั้ง · นอนถึงเป้า +10/คืน · ดื่มน้ำถึงเป้า +5/วัน · ทดสอบสมรรถนะดีขึ้นจากครั้งก่อน +30/ค่า (น้ำหนักไม่นับ) → Health · ตรวจสุขภาพประจำปี (นำเข้าผลแล้ว) +100 ตามวันที่ตรวจ</div>
             <div>ลบ/ยกเลิกรายการ = XP หายตาม · XP ไม่ลดตามเวลา · เลเวลถัดไปใช้ 100 × เลเวลปัจจุบัน</div>
           </details>
-        </div>
+        </>}</div>
       </div>
     </div>
   );
@@ -8791,122 +8794,6 @@ function DashCollapse({title,note,defaultOpen,children,span,actions}){
   );
 }
 
-function DashHero({data,greetEn,dateStr,timeStr,message,review,setPage}){
-  const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
-  const done=todayTasks.filter(t=>taskDoneOn(t)).length;
-  const projects=(data.projects||[]).filter(p=>p.status!=="archived");
-  const progress=Math.round(overallProgressNow(data));
-  const streak=momentumStreak(data);
-  const budgetPct=dbBudgetPct(review);
-  const nw=dbNetWorth(data);
-  return (
-    <div className="db-hero">
-      <div style={{minWidth:0}}>
-        <h1 className="db-hero-title">{greetEn}, <span>Ohm</span></h1>
-        <div className="db-hero-line">{dateStr} · {timeStr} น.{message?` · ${message}`:""}</div>
-        <div className="db-meters">
-          <div>
-            <div className="db-meter-label">งานวันนี้</div>
-            <div className="db-meter"><span className="db-meter-pill a db-mono">{done}/{todayTasks.length}</span></div>
-          </div>
-          <div>
-            <div className="db-meter-label">ความคืบหน้ารวม</div>
-            <div className="db-meter"><span className="db-meter-pill g db-mono">{progress}%</span></div>
-          </div>
-          <div>
-            <div className="db-meter-label">งบเดือนนี้ใช้ไป</div>
-            <div className="db-meter">
-              <span className="db-meter-pill db-mono">{budgetPct==null?"ยังไม่ตั้งงบ":`${budgetPct}%`}</span>
-              {budgetPct!=null&&<span className="db-meter-track"><i style={{width:`${Math.min(100,budgetPct)}%`}}/></span>}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="db-bignums">
-        <div className="db-bignum" onClick={()=>setPage(2)} role="button">
-          <div className="n acc db-mono">{streak}</div>
-          <div className="l"><span className="db-dot a"/> วันติดกัน</div>
-        </div>
-        <div className="db-bignum" onClick={()=>setPage(2)} role="button">
-          <div className="n db-mono">{projects.length}</div>
-          <div className="l"><span className="db-dot"/> โปรเจกต์</div>
-        </div>
-        <div className="db-bignum" onClick={()=>setPage(1)} role="button">
-          <div className={`n db-mono ${nw<0?"neg":"gld"}`}>{dbShort(nw)}</div>
-          <div className="l"><span className={`db-dot ${nw<0?"d":"g"}`}/> มูลค่าสุทธิ</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DashMomentumCard({data,setPage}){
-  const m=useMemo(()=>{
-    const today=todayISO();
-    const now=overallProgressNow(data);
-    const w=progressOn(data,shiftISO(today,{d:-7}));
-    const mo=progressOn(data,shiftISO(today,{m:-1}));
-    const pts=[];
-    for(let i=29;i>=0;i--){
-      const p=i===0?{value:now}:progressOn(data,shiftISO(today,{d:-i}));
-      pts.push(p?p.value:null);
-    }
-    return {now,delta7:w?now-w.value:null,prevMonth:mo?mo.value:null,
-      streak:momentumStreak(data),count:(data.projects||[]).filter(p=>p.status!=="archived").length,pts};
-  },[data]);
-  const R=46,C=2*Math.PI*R,len=C*Math.max(0,Math.min(100,m.now))/100;
-  const spark=useMemo(()=>{
-    const vals=m.pts.filter(v=>v!=null);
-    if(vals.length<2) return null;
-    const min=Math.min.apply(null,vals),max=Math.max.apply(null,vals),span=(max-min)||1;
-    const W=120,H=34,step=W/(m.pts.length-1);
-    const out=[];
-    m.pts.forEach((v,i)=>{ if(v==null) return; out.push(`${(i*step).toFixed(1)},${(H-2-((v-min)/span)*(H-6)).toFixed(1)}`); });
-    return {points:out.join(" "),last:out[out.length-1].split(",")};
-  },[m]);
-  if(!m.count) return (
-    <div className="db-card">
-      <div className="db-head"><div><div className="db-title">Momentum</div><div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div></div>
-      <div className="db-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก</div>
-      <button className="db-btn primary" style={{marginTop:12}} onClick={()=>setPage(2)}>สร้างเป้าหมาย</button>
-    </div>
-  );
-  return (
-    <div className="db-card">
-      <div className="db-head">
-        <div><div className="db-title">Momentum</div><div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div></div>
-        <button className="db-chip" onClick={()=>setPage(2)}><TrendingUp size={13}/></button>
-      </div>
-      <div className="db-mom">
-        <div className="db-ring-wrap">
-          <svg width="110" height="110" viewBox="0 0 110 110">
-            <circle cx="55" cy="55" r="46" fill="none" stroke="var(--chip-bg)" strokeWidth="9"/>
-            <circle cx="55" cy="55" r="46" fill="none" stroke="var(--accent)" strokeWidth="9" strokeLinecap="round"
-              strokeDasharray={`${len.toFixed(1)} ${(C-len).toFixed(1)}`} transform="rotate(-90 55 55)"/>
-          </svg>
-          <div className="db-ring-mid">
-            <div className="v db-mono">{Math.round(m.now)}%</div>
-            <div className="k">{m.count} โปรเจกต์</div>
-          </div>
-        </div>
-        <div className="db-mom-side">
-          {m.delta7==null
-            ? <span className="db-delta flat">ยังไม่มีข้อมูล 7 วัน</span>
-            : <span className={`db-delta${m.delta7<-0.05?" down":""}`}>{m.delta7<-0.05?"▼":"▲"} {Math.abs(m.delta7).toFixed(1)}% / 7 วัน</span>}
-          <div className="db-mom-line">เทียบเดือนก่อน <b>{m.prevMonth!=null?`${m.prevMonth.toFixed(1)}%`:"—"}</b></div>
-          <div className="db-mom-line">ขยับติดกัน <b>{m.streak} วัน</b></div>
-          {spark&&(
-            <svg width="120" height="34" viewBox="0 0 120 34" style={{marginTop:10,maxWidth:"100%"}}>
-              <polyline fill="none" stroke="var(--accent-soft)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={spark.points}/>
-              <circle cx={spark.last[0]} cy={spark.last[1]} r="3" fill="var(--accent-soft)"/>
-            </svg>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
   /* ข้อ 56 ขั้นที่ 3: การ์ด "วันนี้" — จัดกลุ่มตาม target + เตือนหลุดจังหวะ 1–2 อันบนสุด (แตะติ๊กได้เหมือนเดิม) */
   const [showAll,setShowAll]=useState(false);
@@ -9002,72 +8889,6 @@ function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
   );
 }
 
-function DashMovementCard({data,setPage}){
-  const m=useMemo(()=>{
-    const today=todayISO();
-    const days=[]; for(let i=6;i>=0;i--) days.push(shiftISO(today,{d:-i}));
-    const vals=days.map((d,i)=>{
-      const cur=progressOn(data,d);
-      const before=progressOn(data,i===0?shiftISO(d,{d:-1}):days[i-1]);
-      return (cur&&before)?Math.max(0,cur.value-before.value):0;
-    });
-    const total=vals.reduce((a,b)=>a+b,0);
-    const max=Math.max.apply(null,vals);
-    return {days,vals,total,max:max>0?max:1,best:max>0?vals.indexOf(max):-1};
-  },[data]);
-  return (
-    <div className="db-card" style={{position:"relative"}}>
-      <div className="db-head">
-        <div><div className="db-title">Daily Movement</div><div className="db-note">7 วันล่าสุด</div></div>
-        <button className="db-chip" onClick={()=>setPage(2)}><TrendingUp size={13}/></button>
-      </div>
-      <div className="db-bignum-inline db-mono">{m.total.toFixed(1)}<span> จุด/สัปดาห์</span></div>
-      {m.best>=0&&(
-        <div className="db-callout" style={{right:20,top:96}}>+{m.vals[m.best].toFixed(1)} {DB_DAY_TH[new Date(m.days[m.best]+"T00:00:00").getDay()]}</div>
-      )}
-      <div className="db-bars">
-        {m.days.map((d,i)=>(
-          <div className="db-bcol" key={d}>
-            <div className={`db-bar${i===m.best?" gold":i===6?" hi":""}`} style={{height:`${Math.max(3,(m.vals[i]/m.max)*100)}%`}} title={`${d} +${m.vals[i].toFixed(1)}%`}/>
-            <div className="db-blab">{DB_DAY_TH[new Date(d+"T00:00:00").getDay()]}</div>
-          </div>
-        ))}
-      </div>
-      {m.total===0&&<div className="db-empty">ยังไม่มีความคืบหน้าที่บันทึกไว้ในช่วงนี้</div>}
-    </div>
-  );
-}
-
-function DashMonthCard({review,setPage}){
-  const budgetPct=dbBudgetPct(review);
-  return (
-    <div className="db-card">
-      <div className="db-head">
-        <div><div className="db-title">This Month</div><div className="db-note">{dbThaiMonth(new Date())}</div></div>
-        <button className="db-chip" onClick={()=>setPage(1)}><ArrowRight size={13}/></button>
-      </div>
-      <div className="db-row"><span className="lab"><span className="db-dot a"/> รายรับ</span><span className="val up db-mono">{review.totalIncome<0?"−":"+"}{dbNum(Math.abs(review.totalIncome))}</span></div>
-      <div className="db-row"><span className="lab"><span className="db-dot d"/> รายจ่าย</span><span className="val down db-mono">{review.totalExpense<0?"+":"−"}{dbNum(Math.abs(review.totalExpense))}</span></div>
-      <div className="db-row"><span className="lab"><span className="db-dot g"/> ออม/ลงทุน</span><span className="val gld db-mono">{dbNum(review.totalSaved)}</span></div>
-      <div className="db-row" style={{paddingTop:14}}>
-        <span className="lab" style={{color:"var(--ink)"}}>คงเหลือ</span>
-        <span className={`val db-mono${review.leftover<0?" down":""}`} style={{fontSize:12.5}}>{dbNum(review.leftover)}</span>
-      </div>
-      {budgetPct!=null&&(
-        <div style={{marginTop:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--ink-5)",marginBottom:6}}>
-            <span>งบที่ตั้งไว้เดือนนี้</span>
-            <span className="db-mono">{dbNum(review.totalVsBudget)} / {dbNum(review.totalBudget)}</span>
-          </div>
-          <div className="db-track" style={{margin:0,height:8}}>
-            <div className="db-fill" style={{width:`${Math.min(100,budgetPct)}%`,background:budgetPct>100?"#f2777a":"linear-gradient(90deg,var(--gold),var(--gold-soft))"}}/>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function DashDonut({segs,total}){
   const R=15.9,C=2*Math.PI*R;
   let acc=0;
@@ -9090,72 +8911,56 @@ function DashDonut({segs,total}){
   );
 }
 
-function DashPortfolioCard({data,setPage}){
-  const iv=data.finance.investmentValues||{};
-  const segs=INVEST_TYPES.map(t=>({key:t.key,label:t.label,color:DB_ALLOC_COLORS[t.key]||"#365749",
-    value:t.key==="crypto"?cryptoPortfolioValue(data):nv(iv[t.key]&&iv[t.key].value)}))
-    .filter(s=>s.value>0).sort((a,b)=>b.value-a.value);
-  const total=segs.reduce((a,s)=>a+s.value,0);
+/* ═══ ข้อ 67 (ขั้นที่ 10 ของแผนข้อ 56): Home ใหม่ ═══
+   ลำดับ: หัว → Level → วันนี้ → สุขภาพวันนี้ → สัปดาห์นี้ → Target → อารมณ์ 7 วัน → ใกล้หมดอายุ (เฉพาะตอนมี) → Notes (ย่อไว้)
+   ย้ายออก: This Month → Finance · Portfolio → Investments · History → หน้าต่างประวัติ XP (แท็บ กิจกรรม)
+   Momentum + Daily Movement + Next Goal รวมเป็นการ์ด Target */
+function DashHero({data,greetEn,dateStr,timeStr,message,setPage}){
+  const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
+  const done=todayTasks.filter(t=>taskDoneOn(t)).length;
+  const projects=(data.projects||[]).filter(p=>p.status!=="archived");
+  const streak=momentumStreak(data);
   return (
-    <div className="db-card">
-      <div className="db-head">
-        <div><div className="db-title">Portfolio Allocation</div><div className="db-note">{total>0?`มูลค่ารวม ${dbNum(total)}`:"ยังไม่มีข้อมูล"}</div></div>
-        <button className="db-chip" onClick={()=>setPage(1)}><ArrowRight size={13}/></button>
+    <div className="db-hero">
+      <div style={{minWidth:0}}>
+        <h1 className="db-hero-title">{greetEn}, <span>Ohm</span></h1>
+        <div className="db-hero-line">{dateStr} · {timeStr} น.{message?` · ${message}`:""}</div>
       </div>
-      {total===0
-        ? <div className="db-empty">ยังไม่ได้กรอกมูลค่าพอร์ต — เปิดหน้าการเงิน › ลงทุน เพื่อใส่ยอด</div>
-        : (
-          <div className="db-donut-wrap">
-            <DashDonut segs={segs} total={total}/>
-            <div className="db-legend">
-              {segs.slice(0,4).map(s=>(
-                <span className="db-lg" key={s.key}><i style={{background:s.color}}/> {s.label} <b className="db-mono">{Math.round((s.value/total)*100)}%</b></span>
-              ))}
-              {segs.length>4&&<span className="db-lg"><i style={{background:"var(--ink-6)"}}/> อื่นๆ อีก {segs.length-4} ประเภท</span>}
-            </div>
-          </div>
-        )}
-    </div>
-  );
-}
-
-function DashQuickView({data,setPage}){
-  const debts=data.finance.debts||[];
-  const books=data.bookQueue||[];
-  const docs=data.documents||[];
-  const next=useMemo(()=>{
-    let best=null;
-    (data.projects||[]).filter(p=>p.status!=="archived").forEach(p=>{
-      const prog=projectProgress(p,data);
-      const nm=nextMilestone(p,prog);
-      if(!nm) return;
-      const gap=Number(nm.pct)-prog;
-      if(!best||gap<best.gap) best={gap,title:p.title,label:milestoneLabel(nm)};
-    });
-    return best;
-  },[data]);
-  const rows=[
-    {k:"debt",label:"หนี้คงเหลือ",value:debts.length?`${debts.length} รายการ · ${dbNum(totalDebtBalance(data))}`:"ไม่มีหนี้",page:1},
-    {k:"ms",label:"หมุดถัดไป",value:next?`${next.label} · อีก ${Math.max(0,Math.round(next.gap))}%`:"ยังไม่มีหมุด",page:2},
-    {k:"book",label:"หนังสือกำลังอ่าน",value:`${books.filter(b=>b.status==="reading").length} เล่ม · ทั้งหมด ${books.length}`,page:5},
-    {k:"doc",label:"เอกสารที่เก็บไว้",value:`${docs.length} รายการ`,page:4},
-  ];
-  return (
-    <div className="db-card">
-      <div className="db-head"><div className="db-title">Quick View</div></div>
-      {rows.map(r=>(
-        <div className="db-acc-row" key={r.k} onClick={()=>setPage(r.page)} role="button">
-          <span>{r.label}</span><span className="c db-mono">{r.value} ›</span>
+      <div className="db-bignums">
+        <div className="db-bignum" onClick={()=>{ const e=document.querySelector(".today-card"); if(e&&e.scrollIntoView) e.scrollIntoView({behavior:"smooth",block:"start"}); }} role="button">
+          <div className="n acc db-mono">{done}/{todayTasks.length}</div>
+          <div className="l"><span className="db-dot a"/> งานวันนี้</div>
         </div>
-      ))}
+        <div className="db-bignum" onClick={()=>setPage(2)} role="button">
+          <div className="n db-mono">{streak}</div>
+          <div className="l"><span className="db-dot g"/> วันติดกัน</div>
+        </div>
+        <div className="db-bignum" onClick={()=>setPage(2)} role="button">
+          <div className="n db-mono">{projects.length}</div>
+          <div className="l"><span className="db-dot"/> โปรเจกต์</div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function DashGoalCard({data,setPage}){
+/* การ์ด Target = ความคืบหน้ารวม (Momentum) + แท่ง 7 วัน (Daily Movement) + หมุดถัดไป (Next Goal) */
+function DashTargetCard({data,setPage,wide}){
+  const m=useMemo(()=>{
+    const today=todayISO();
+    const now=overallProgressNow(data);
+    const w=progressOn(data,shiftISO(today,{d:-7}));
+    const days=[]; for(let i=6;i>=0;i--) days.push(shiftISO(today,{d:-i}));
+    const vals=days.map((d,i)=>{
+      const cur=progressOn(data,d);
+      const before=progressOn(data,i===0?shiftISO(d,{d:-1}):days[i-1]);
+      return (cur&&before)?Math.max(0,cur.value-before.value):0;
+    });
+    const max=Math.max.apply(null,vals);
+    return {now,delta7:w?now-w.value:null,streak:momentumStreak(data),days,vals,max:max>0?max:1,best:max>0?vals.indexOf(max):-1,total:vals.reduce((a,b)=>a+b,0)};
+  },[data]);
   const pick=useMemo(()=>{
     const act=(data.projects||[]).filter(p=>p.status!=="archived");
-    if(!act.length) return null;
     let best=null;
     act.forEach(p=>{
       const prog=projectProgress(p,data);
@@ -9166,43 +8971,145 @@ function DashGoalCard({data,setPage}){
     return best;
   },[data]);
   if(!pick) return (
-    <div className="db-card">
-      <div className="db-head"><div className="db-title">Next Goal</div></div>
+    <div className={`db-card db-span2 tgt-card${wide?" tgt-wide":""}`}>
+      <div className="db-head"><div className="db-title">Target</div></div>
       <div className="db-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก</div>
       <button className="db-btn primary" style={{marginTop:12}} onClick={()=>setPage(2)}>สร้างเป้าหมาย</button>
     </div>
   );
   const {p,prog}=pick;
   const ms=sortedMilestones(p);
+  const nm=nextMilestone(p,prog);
   return (
-    <div className="db-card">
+    <div className={`db-card db-span2 tgt-card${wide?" tgt-wide":""}`}>
       <div className="db-head">
         <div style={{minWidth:0}}>
-          <div className="db-title">Next Goal</div>
-          <div className="db-note" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</div>
+          <div className="db-title">Target</div>
+          <div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div>
         </div>
         <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
       </div>
-      <div style={{display:"flex",alignItems:"baseline",gap:10}}>
-        <span className="db-mono" style={{fontSize:18,fontWeight:600,letterSpacing:"-.6px"}}>{Math.round(prog)}%</span>
-        {p.measureType==="numeric"&&<span className="db-mono" style={{fontSize:12,color:"var(--ink-5)"}}>{dbNum(projectCurrentValue(p,data))} / {dbNum(p.targetValue||0)}</span>}
+      <div className="tgt-top">
+        <div className="tgt-all">
+          <div className="tgt-all-n db-mono">{Math.round(m.now)}%</div>
+          {m.delta7==null
+            ? <span className="db-delta flat">ยังไม่มีข้อมูล 7 วัน</span>
+            : <span className={`db-delta${m.delta7<-0.05?" down":""}`}>{m.delta7<-0.05?"▼":"▲"} {Math.abs(m.delta7).toFixed(1)}% / 7 วัน</span>}
+          <div className="db-mom-line">ขยับติดกัน <b>{m.streak} วัน</b></div>
+        </div>
+        <div className="tgt-bars">
+          <div className="db-bars">
+            {m.days.map((d,i)=>(
+              <div className="db-bcol" key={d}>
+                <div className={`db-bar${i===m.best?" gold":i===6?" hi":""}`} style={{height:`${Math.max(3,(m.vals[i]/m.max)*100)}%`}} title={`${d} +${m.vals[i].toFixed(1)}%`}/>
+                <div className="db-blab">{DB_DAY_TH[new Date(d+"T00:00:00").getDay()]}</div>
+              </div>
+            ))}
+          </div>
+          {m.total===0&&<div className="db-empty" style={{marginTop:4}}>ยังไม่มีความคืบหน้าในช่วง 7 วัน</div>}
+        </div>
       </div>
-      <div className="db-track">
-        <div className="db-fill" style={{width:`${Math.min(100,prog)}%`}}/>
-        {ms.map(m=><span className="db-tick" key={m.pct} style={{left:`${Math.min(100,Number(m.pct))}%`}}/>)}
+      <div className="tgt-next">
+        <div className="tgt-next-head">
+          <span className="tgt-next-k">หมุดถัดไป</span>
+          <span className="tgt-next-t">{p.title}</span>
+          <span className="db-mono tgt-next-pct">{Math.round(prog)}%</span>
+        </div>
+        <div className="db-track">
+          <div className="db-fill" style={{width:`${Math.min(100,prog)}%`}}/>
+          {ms.map(x=><span className="db-tick" key={x.pct} style={{left:`${Math.min(100,Number(x.pct))}%`}}/>)}
+        </div>
+        {ms.length===0
+          ? <div className="db-empty">ยังไม่ได้ตั้งหมุดความคืบหน้า</div>
+          : <div className="tgt-next-sub">{nm?`${milestoneLabel(nm)} ${nm.pct}% · อีก ${Math.max(0,Math.round(Number(nm.pct)-prog))}%`:"ถึงทุกหมุดแล้ว 🎉"}</div>}
       </div>
-      {ms.length===0&&<div className="db-empty">ยังไม่ได้ตั้งหมุดความคืบหน้า</div>}
-      <div className="db-ms-list">
-        {ms.map(m=>{
-          const reached=prog>=Number(m.pct);
+    </div>
+  );
+}
+
+/* สุขภาพวันนี้ (อ่านอย่างเดียว — กดไปหน้า Health) */
+function DashHealthCard({data,setPage}){
+  const today=todayISO();
+  const S=healthSettings(data);
+  const h=healthDayMap(data)[today]||null;
+  const sleep=h&&h.sleepMin!=null?Number(h.sleepMin):null;
+  const water=h&&h.waterL!=null?Number(h.waterL):null;
+  const steps=h&&h.steps!=null?Number(h.steps):null;
+  const ex=exMinutes(h);
+  const rows=[
+    {k:"sleep",e:"😴",l:"นอน",v:sleep!=null?fmtSleep(sleep)+" ชม.":"–",pct:sleep!=null?sleep/S.sleepGoalMin*100:0,goal:`เป้า ${fmtSleep(S.sleepGoalMin)}`},
+    {k:"water",e:"💧",l:"น้ำ",v:water!=null?`${water} ล.`:"–",pct:water!=null?water/S.waterGoalL*100:0,goal:`เป้า ${S.waterGoalL} ล.`},
+    {k:"steps",e:"👟",l:"ก้าว",v:steps!=null?steps.toLocaleString():"–",pct:null,goal:""},
+    {k:"ex",e:"🏃",l:"ออกกำลังกาย",v:ex>0?`${ex} นาที`:"–",pct:null,goal:""},
+  ];
+  const any=sleep!=null||water!=null||steps!=null||ex>0;
+  return (
+    <div className="db-card db-span2 hh-card">
+      <div className="db-head">
+        <div><div className="db-title">สุขภาพวันนี้</div><div className="db-note">{any?"จาก Health":"ยังไม่ได้บันทึกวันนี้"}</div></div>
+        <button className="db-chip" onClick={()=>setPage(3)}><ArrowRight size={13}/></button>
+      </div>
+      <div className="hh-rows">
+        {rows.map(r=>(
+          <button type="button" key={r.k} className="hh-row" data-k={r.k} onClick={()=>setPage(3)}>
+            <span className="hh-e" aria-hidden="true">{r.e}</span>
+            <span className="hh-l">{r.l}</span>
+            <span className="hh-v db-mono">{r.v}</span>
+            {r.pct!=null&&<span className="hh-bar"><i className={r.pct>=100?"ok":""} style={{width:`${Math.max(0,Math.min(100,r.pct))}%`}}/></span>}
+            {r.pct!=null&&<span className="hh-goal db-mono">{r.goal}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* อารมณ์ 7 วัน (จาก Journal) — กดวันไหนเปิด Journal วันนั้น */
+function DashMoodCard({data,onOpenJournal}){
+  const today=todayISO();
+  const jm=useMemo(()=>journalMap(data),[data.journal]);
+  const days=[]; for(let i=6;i>=0;i--) days.push(shiftISO(today,{d:-i}));
+  const vals=days.map(d=>{ const j=jm[d]; const mo=j&&j.mood?journalMood(j.mood):null; return mo; });
+  const got=vals.filter(Boolean);
+  const avg=got.length?(got.reduce((a,m)=>a+m.v,0)/got.length):null;
+  return (
+    <div className="db-card mood-card">
+      <div className="db-head">
+        <div><div className="db-title">อารมณ์ 7 วัน</div><div className="db-note">{avg!=null?`เฉลี่ย ${avg.toFixed(1)}/5 · บันทึก ${got.length}/7 วัน`:"ยังไม่ได้บันทึกอารมณ์"}</div></div>
+      </div>
+      <div className="mood-row">
+        {days.map((d,i)=>{
+          const mo=vals[i];
           return (
-            <div className={`db-ms${reached?" on":""}`} key={m.pct}>
-              <span className={`db-ms-dot${reached?" on":""}`}/> {milestoneLabel(m)} <b className="db-mono">{m.pct}%</b>
-              <span className="db-ms-when">{reached?(m.reachedAt?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:"ถึงแล้ว"):`อีก ${Math.max(0,Math.round(Number(m.pct)-prog))}%`}</span>
-            </div>
+            <button type="button" key={d} className={`mood-day${d===today?" today":""}${mo?" has":""}`} onClick={()=>onOpenJournal(d)} title={mo?mo.l:"ยังไม่ได้บันทึก"}>
+              <span className="mood-e">{mo?mo.e:"·"}</span>
+              <span className="mood-d">{DB_DAY_TH[new Date(d+"T00:00:00").getDay()]}</span>
+            </button>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ใกล้หมดอายุ — โผล่เฉพาะตอนมีเอกสารเหลือ ≤30 วัน (ข้อมูลจากขั้นที่ 9) */
+function dashExpiringDocs(data){
+  return (data.documents||[]).map(d=>({d,n:docDaysLeft(d)})).filter(x=>x.n!=null&&x.n<=30).sort((a,b)=>a.n-b.n);
+}
+function DashExpiringCard({list,setPage}){
+  return (
+    <div className="db-card db-span2 exp-card" id="home-expiring">
+      <div className="db-head">
+        <div><div className="db-title">⏰ ใกล้หมดอายุ</div><div className="db-note">{list.length} เอกสาร</div></div>
+        <button className="db-chip" onClick={()=>setPage(4)}><ArrowRight size={13}/></button>
+      </div>
+      {list.slice(0,5).map(({d,n})=>(
+        <button type="button" key={d.id} className={`doc-exp-row exp-home-row${n<=7?" urgent":""}`} onClick={()=>setPage(4)}>
+          <span className="doc-exp-title">{docCatDef(d.category).icon} {d.title}</span>
+          <span className="doc-exp-left">{docExpiryText(n)}</span>
+        </button>
+      ))}
+      {list.length>5&&<div className="db-note" style={{marginTop:6}}>และอีก {list.length-5} เอกสาร</div>}
     </div>
   );
 }
@@ -9291,6 +9198,9 @@ function SecretaryDashboard() {
   const [editDashTask,setEditDashTask]=useState(null);
   const [toasts,setToasts]=useState([]);
   const [showXp,setShowXp]=useState(false);
+  const [journalDate,setJournalDate]=useState(null);
+  useEffect(()=>{ if(page!==6) setJournalDate(null); },[page]);   // ข้อ 67: แตะวันในการ์ดอารมณ์ → เปิด Journal วันนั้น
+
   const [showProfile,setShowProfile]=useState(false);
   /* ข้อ 56 ขั้นที่ 4: XP เพิ่ม → toast "+N XP" (เทียบกับรอบก่อน · รอบแรกหลังโหลดไม่เด้ง) */
   const xpNow=useMemo(()=>data?computeXP(data):null,[data]);
@@ -9327,7 +9237,7 @@ function SecretaryDashboard() {
     persist(next);
     if(ms&&ms.reached.length) setToasts(prev=>[...prev,...ms.reached].slice(-3));
   },[data&&data.projects,data&&data.tasks,data&&data.checkins,data&&data.finance,data&&data.xp]);
-  const monthReview=useMemo(()=>data?buildMonthReview(data,currentMonthKey()):null,[data]);
+  const expiringDocs=useMemo(()=>data?dashExpiringDocs(data):[],[data]);
   const dateStr=now.toLocaleDateString("th-TH",{weekday:"long",day:"numeric",month:"long",year:"numeric",calendar:"buddhist"});
   const timeStr=now.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
   const {text:greetText,en:greetEn,Icon:GreetIcon}=greetingFor(now.getHours());
@@ -9430,7 +9340,7 @@ function SecretaryDashboard() {
           <div className="content-main">
             {page===0&&(
               <>
-                <DashHero data={data} greetEn={greetEn} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} review={monthReview} setPage={setPage}/>
+                <DashHero data={data} greetEn={greetEn} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} setPage={setPage}/>
                 {profilePending(data).length>0&&(
                   <button type="button" className="pf-banner" onClick={()=>setShowProfile(true)}>
                     <span>🗂️ Jack เสนอเพิ่มแฟ้มตัวโอม {profilePending(data).length} ข้อ</span><span className="pf-banner-go">ดู/ยืนยัน ›</span>
@@ -9438,21 +9348,16 @@ function SecretaryDashboard() {
                 )}
                 <DashLevelCard data={data} onOpen={()=>setShowXp(true)}/>
                 <div className="db-bento">
-                  <DashMomentumCard data={data} setPage={setPage}/>
-                  <DashMovementCard data={data} setPage={setPage}/>
-                  <DashMonthCard review={monthReview} setPage={setPage}/>
                   <DashTasksCard data={data} persist={persist} setPage={setPage}
                     onEditTask={t=>{setEditDashTask(t);setShowDashTask(true);}}
                     onQuick={()=>setShowQuick(true)}/>
-                  <DashPortfolioCard data={data} setPage={setPage}/>
-                  <DashQuickView data={data} setPage={setPage}/>
-                  <DashGoalCard data={data} setPage={setPage}/>
+                  <DashHealthCard data={data} setPage={setPage}/>
+                  <DashMoodCard data={data} onOpenJournal={d=>{setJournalDate(d);setPage(6);}}/>
+                  <DashTargetCard data={data} setPage={setPage} wide={expiringDocs.length===0}/>
+                  {expiringDocs.length>0&&<DashExpiringCard list={expiringDocs} setPage={setPage}/>}
                   <DashWeekCard events={events} onAdd={()=>{setEditEvent(null);setShowEventModal(true);}} onEdit={openEditEvent} onOpenCal={()=>setShowCal(true)}/>
-                  <div className="db-card db-span2">
-                    <div className="db-head">
-                      <div><div className="db-title">Notes</div><div className="db-note">{notes.length} รายการ</div></div>
-                      <button className="db-chip" onClick={()=>{setEditNote(null);setShowNoteModal(true);}}><Plus size={13}/></button>
-                    </div>
+                  <DashCollapse span="db-span4" title="Notes" note={`${notes.length} รายการ`}
+                    actions={<button className="db-chip" onClick={()=>{setEditNote(null);setShowNoteModal(true);}}><Plus size={13}/></button>}>
                     {notes.length===0&&<div className="db-empty">ยังไม่มีโน้ต กด + เพื่อเพิ่ม</div>}
                     <div className="db-notes-grid">
                       {visibleNotes.map(n=>(
@@ -9470,9 +9375,6 @@ function SecretaryDashboard() {
                         {notesExpanded?<>แสดงน้อยลง <ChevronUp size={13}/></>:<>แสดงอีก {hiddenNotes} โน้ต <ChevronDown size={13}/></>}
                       </button>
                     )}
-                  </div>
-                  <DashCollapse title="History" note={`${(data.activity||[]).length} รายการ`}>
-                    <HistoryPanel activity={data.activity}/>
                   </DashCollapse>
                 </div>
               </>
@@ -9482,7 +9384,7 @@ function SecretaryDashboard() {
             {page===3&&<HealthPage data={data} persist={persist}/>}
             {page===4&&<DocumentPage data={data} persist={persist}/>}
             {page===5&&<BooksPage data={data} persist={persist}/>}
-            {page===6&&<JournalPage data={data} persist={persist}/>}
+            {page===6&&<JournalPage data={data} persist={persist} initialDate={journalDate}/>}
           </div>
         </div>
       </div>

@@ -86,48 +86,62 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   await p.waitForTimeout(7000);
 
   /* ───────── รอบ 19: การ์ดโมเมนตัมในแผงม่วง ───────── */
-  console.log('\n[ข้อ 24/2] Dashboard bento + การ์ดโมเมนตัม');
+  console.log('\n[ข้อ 67] Home ใหม่: หัว · วันนี้ · สุขภาพ · Target · อารมณ์ · Notes');
   const bento=await p.evaluate(()=>{
     const g=document.querySelector('.db-bento');
     if(!g) return null;
-    const cards=[...g.children];
-    const mom=g.querySelector('.db-mom');
     const q=(sel)=>!!g.querySelector(sel);
+    const hdr=[...g.children].map(c=>(c.querySelector('.db-title')||{}).textContent||'');
+    const notesHead=[...g.querySelectorAll('.db-head[role="button"]')].find(x=>x.innerText.includes('Notes'));
+    const notesOpenBefore=g.querySelectorAll('.note-card').length;
+    if(notesHead) notesHead.click();
     return {
-      cards:cards.length,
+      cards:g.children.length,hdr,
       cols:getComputedStyle(g).gridTemplateColumns.split(' ').length,
       hero:!!document.querySelector('.db-hero'),
-      heroNums:document.querySelectorAll('.db-bignum').length,
-      mom:!!mom,
-      ringDash:(g.querySelector('.db-ring-wrap circle[stroke-dasharray]')||{}).getAttribute?.('stroke-dasharray')||"",
-      spark:!!g.querySelector('.db-mom-side polyline'),
-      bars:g.querySelectorAll('.db-bar').length,
+      heroNums:document.querySelectorAll('.db-hero .db-bignum').length,
+      heroMeters:document.querySelectorAll('.db-hero .db-meters, .db-hero .db-meter-pill').length,
+      heroText:(document.querySelector('.db-hero')||{}).innerText||'',
       feature:!!g.querySelector('.db-feature'),
       tasks:g.querySelectorAll('.db-feature .db-trow').length,
-      monthRows:g.querySelectorAll('.db-row').length,
-      donut:g.querySelectorAll('.db-donut circle').length,
-      quick:g.querySelectorAll('.db-acc-row').length,
+      health:g.querySelectorAll('.hh-card .hh-row').length,
+      target:q('.tgt-card'),
+      bars:g.querySelectorAll('.tgt-card .db-bar').length,
+      tgtPct:(g.querySelector('.tgt-all-n')||{}).textContent||'',
+      tick:q('.tgt-card .db-track'),
+      mood:g.querySelectorAll('.mood-card .mood-day').length,
       week:q('.db-tl')||q('.db-empty'),
-      notes:g.querySelectorAll('.note-card').length,
-      history:g.innerText.includes('History'),
-      historyOpens:(()=>{const h=[...g.querySelectorAll('.db-head')].find(x=>x.innerText.includes('History'));if(!h)return false;h.click();return true;})(),
+      notesCollapsed:notesOpenBefore===0&&!!notesHead,
+      removed:['Momentum','Daily Movement','This Month','Portfolio','Quick View','Next Goal','History'].filter(t=>[...g.querySelectorAll('.db-title')].some(x=>x.textContent.trim()===t)),
       leftovers:document.querySelectorAll('.hero-panel, .sidebar').length,
     };
   });
-  check('กริด bento แสดงผล',bento&&bento.cards>=9,bento?`${bento.cards} การ์ด · ${bento.cols} คอลัมน์`:'ไม่พบ .db-bento');
-  check('แถบฮีโร่ + ตัวเลขใหญ่ 3 ช่อง',bento&&bento.hero&&bento.heroNums>=3,bento?`bignum ${bento.heroNums}`:"");
-  check('การ์ดโมเมนตัมอยู่ในกริด',bento&&bento.mom);
-  check('วงแหวนโมเมนตัมวาดจริง (มี stroke-dasharray)',bento&&bento.ringDash!=="",bento&&bento.ringDash?`dasharray="${bento.ringDash}"`:"");
-  check('sparkline วาดจริง',bento&&bento.spark);
-  check('กราฟแท่ง 7 วัน',bento&&bento.bars===7,bento?`${bento.bars} แท่ง`:"");
-  check('การ์ดเด่น "งานวันนี้" มีรายการงาน',bento&&bento.feature&&bento.tasks>0,bento?`${bento.tasks} งาน`:"");
-  check('การ์ดเดือนนี้ครบ 4 แถว',bento&&bento.monthRows>=4,bento?`${bento.monthRows} แถว`:"");
-  check('โดนัทสัดส่วนพอร์ตวาดจริง',bento&&bento.donut>=2,bento?`${bento.donut} วง (0 = ยังไม่กรอกมูลค่า)`:"");
-  check('การ์ดดูเร็ว 4 แถว',bento&&bento.quick>=4,bento?`${bento.quick} แถว`:"");
+  check('กริด bento แสดงผล',bento&&bento.cards>=6,bento?`${bento.cards} การ์ด · ${bento.cols} คอลัมน์ · ${bento.hdr.join(' | ')}`:'ไม่พบ .db-bento');
+  check('หัว Home: ตัวเลข 3 ช่อง (งานวันนี้/วันติดกัน/โปรเจกต์) ไม่มีมิเตอร์/มูลค่าสุทธิ',bento&&bento.hero&&bento.heroNums===3&&bento.heroMeters===0&&!bento.heroText.includes('มูลค่าสุทธิ')&&bento.heroText.includes('งานวันนี้'),bento?`bignum ${bento.heroNums}`:"");
+  check('การ์ดเด่น "วันนี้" มีรายการงาน',bento&&bento.feature&&bento.tasks>0,bento?`${bento.tasks} งาน`:"");
+  check('การ์ด "สุขภาพวันนี้" 4 แถว',bento&&bento.health===4,bento?`${bento.health} แถว`:"");
+  check('การ์ด Target: เปอร์เซ็นต์รวม + แท่ง 7 วัน + แถบหมุด',bento&&bento.target&&bento.bars===7&&/%$/.test(bento.tgtPct)&&bento.tick,bento?`${bento.tgtPct} · ${bento.bars} แท่ง`:"");
+  check('การ์ด "อารมณ์ 7 วัน" 7 ช่อง',bento&&bento.mood===7,bento?`${bento.mood}`:"");
   check('ตารางสัปดาห์แสดงผล',bento&&bento.week);
-  check('การ์ดโน้ตยังอยู่ในกริด',bento&&bento.notes>0,bento?`${bento.notes} โน้ต`:"");
-  check('การ์ด History (พับได้) ยังอยู่ในกริด',bento&&bento.history);
-  check('กดหัวการ์ด History แล้วกางออก',await p.evaluate(()=>{const g=document.querySelector('.db-bento');return !!g&&(g.innerText.includes('Event')||g.innerText.includes('ยังไม่มีประวัติ'));}));
+  check('Notes ย่อไว้เป็นค่าเริ่มต้น แล้วกดกางได้',bento&&bento.notesCollapsed&&await p.evaluate(()=>document.querySelectorAll('.db-bento .note-card').length)>0);
+  check('การ์ดที่ย้ายออก (Momentum/Month/Portfolio/Quick/Goal/History) ไม่อยู่ใน Home แล้ว',bento&&bento.removed.length===0,bento?bento.removed.join(','):"");
+  check('แตะวันในการ์ดอารมณ์ → เปิด Journal วันนั้น',await p.evaluate(async()=>{
+    const d=document.querySelectorAll('.mood-card .mood-day')[0]; if(!d) return false;
+    d.click(); await new Promise(r=>setTimeout(r,400));
+    const ok=!!document.querySelector('.jr-page')&&!document.querySelector('.db-bento .mood-card');
+    const back=[...document.querySelectorAll('.nav-pill button')].find(x=>x.textContent.includes('Home'));
+    if(back) back.click(); await new Promise(r=>setTimeout(r,500));
+    return ok;
+  }));
+  check('ปุ่มระดับ Level เปิดหน้าต่าง XP มีแท็บ "กิจกรรม" (History ย้ายมา)',await p.evaluate(async()=>{
+    const lv=document.querySelector('.xp-card .db-chip'); if(!lv) return false;
+    lv.click(); await new Promise(r=>setTimeout(r,300));
+    const tab=[...document.querySelectorAll('.xp-tab')].find(x=>x.textContent.includes('กิจกรรม'));
+    if(!tab) return false; tab.click(); await new Promise(r=>setTimeout(r,200));
+    const ok=!!document.querySelector('.xp-modal .modal-body');
+    const x=document.querySelector('.xp-modal .modal-close'); if(x) x.click(); await new Promise(r=>setTimeout(r,200));
+    return ok;
+  }));
   check('แผ่นมุมโค้ง (.main-wrap) มีไล่สีตาม mockup',await p.evaluate(()=>{const w=document.querySelector('.main-wrap');if(!w)return false;const cs=getComputedStyle(w);return cs.borderRadius.startsWith('34')&&cs.backgroundImage.includes('radial-gradient');}));
   check('ไม่มีซาก .hero-panel/.sidebar หลงเหลือ',bento&&bento.leftovers===0,bento?`เจอ ${bento.leftovers}`:"");
 
