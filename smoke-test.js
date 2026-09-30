@@ -52,6 +52,7 @@ const SEED={
  "checkins":[
   {"id":"ck1","projectId":"p2","date":"2026-03-01","value":120000,"note":"ยกมา"},
   {"id":"ck2","projectId":"p2","date":"2026-08-01","value":180000,"note":""}],
+ "ohmProfile":{"who":"เจ้าของร้าน","goals":"• วิ่ง 10K","values":"","focus":"","pending":[{"id":"pp1","section":"values","text":"ครอบครัวมาก่อน","at":"2026-09-01","by":"jack"},{"id":"pp2","section":"focus","text":"ทิ้งอันนี้","at":"2026-09-01","by":"jack"}]},
  "budgets":{"อาหาร":{"amount":8000,"type":"variable"}},"reviews":{},
  "progressLog":{"2026-07-25":30.5,"2026-08-20":38.2}
 };
@@ -1172,6 +1173,28 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('XP Wealth รายเดือน: ออมถึงเป้า + net worth เพิ่ม + หนี้ลด (เดือนที่ปิดแล้ว) + รีวิวเดือน · เดือนนี้ที่ nw ลดไม่นับ · เหรียญเดือนทอง',U.wealth.length===4&&U.wealth.every(x=>x.startsWith(U.wealth[0].slice(0,7)))&&U.w4,JSON.stringify(U.wealth));
   check('XP Wealth: ปรับเป้าอัตราออมสูงขึ้น (40%) → ข้อออมไม่ผ่าน',U.wealthHi===3,String(U.wealthHi));
   check('syncXpMeta: เปิดครั้งแรกตั้ง start + โปรเจกต์ที่ครบอยู่แล้ว=before + จด net worth · ครบทีหลัง=วันนี้ · ไม่มีอะไรเปลี่ยน=null · ต่ำกว่า 100% = ลบวัน',U.sync1[1]==='before'&&U.sync1[2]===undefined&&/"nw":1000/.test(U.sync1[3])&&/^\d{4}-/.test(U.sync2)&&U.sync3===null&&U.sync4===false,JSON.stringify([U.sync1,U.sync2,U.sync3,U.sync4]));
+
+  console.log('\n[ข้อ 56 ขั้นที่ 5] แฟ้มตัวโอม');
+  await mobileGo('Home'); await p.waitForTimeout(600);
+  const bn=await p.evaluate(()=>(document.querySelector('.pf-banner')||{}).innerText||'');
+  check('Home: มีแถบ "Jack เสนอเพิ่มแฟ้มตัวโอม 2 ข้อ" เมื่อมีข้อเสนอรอ',/เสนอเพิ่มแฟ้มตัวโอม 2 ข้อ/.test(bn),bn);
+  await p.locator('.acct-btn').click(); await p.waitForTimeout(300);
+  const mi=await p.evaluate(()=>{const b=[...document.querySelectorAll('.acct-item')].find(x=>x.innerText.includes('แฟ้มตัวโอม'));return b?b.innerText:'';});
+  check('เมนู O มี "แฟ้มตัวโอม" + ตัวเลขข้อเสนอรอ',/แฟ้มตัวโอม\s*2/.test(mi),mi);
+  await p.evaluate(()=>[...document.querySelectorAll('.acct-item')].find(x=>x.innerText.includes('แฟ้มตัวโอม')).click()); await p.waitForTimeout(500);
+  const pm=await p.evaluate(()=>({open:!!document.querySelector('.pf-modal'),rows:document.querySelectorAll('.pf-prow').length,areas:[...document.querySelectorAll('.pf-text')].map(t=>t.value),labels:[...document.querySelectorAll('.pf-modal .field-label')].map(l=>l.childNodes[0].textContent.trim()),sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
+  check('หน้าต่างแฟ้มตัวโอม: 4 หัวข้อ + ค่าเดิม + ข้อเสนอ 2 ข้อ · มือถือไม่ล้น',pm.open&&pm.rows===2&&pm.areas.length===4&&pm.areas[0]==='เจ้าของร้าน'&&pm.areas[1]==='• วิ่ง 10K'&&pm.labels.join('|')==='ฉันคือใคร|เป้าหมายปีนี้|ค่านิยม / หลักที่ยึด|โปรเจกต์ / เรื่องที่โฟกัส'&&pm.sw<=pm.iw+2,JSON.stringify(pm));
+  await p.locator('.pf-prow').first().locator('.pf-ok').click(); await p.waitForTimeout(400);
+  await p.locator('.pf-prow').first().locator('button:has-text("ไม่ต้อง")').click(); await p.waitForTimeout(400);
+  const pm2=await p.evaluate(()=>({rows:document.querySelectorAll('.pf-prow').length,values:document.querySelectorAll('.pf-text')[2].value,focus:document.querySelectorAll('.pf-text')[3].value}));
+  check('กด "ลงแฟ้ม" → ต่อท้ายหัวข้อ (• ข้อความ) · กด "ไม่ต้อง" → ทิ้ง ไม่ลงแฟ้ม',pm2.rows===0&&pm2.values==='• ครอบครัวมาก่อน'&&pm2.focus==='',JSON.stringify(pm2));
+  await p.locator('.pf-text').nth(3).fill('ขยายร้านออนไลน์'); await p.locator('.pf-modal .modal-btn-save').click(); await p.waitForTimeout(400);
+  await p.locator('.pf-modal .modal-close').click(); await p.waitForTimeout(300);
+  await p.locator('.acct-btn').click(); await p.waitForTimeout(300);
+  await p.evaluate(()=>[...document.querySelectorAll('.acct-item')].find(x=>x.innerText.includes('แฟ้มตัวโอม')).click()); await p.waitForTimeout(500);
+  const pm3=await p.evaluate(()=>({focus:document.querySelectorAll('.pf-text')[3].value,banner:!!document.querySelector('.pf-banner')}));
+  check('แก้แล้วบันทึก → เปิดใหม่ยังอยู่ · ไม่มีข้อเสนอรอ = แถบบน Home หาย',pm3.focus==='ขยายร้านออนไลน์'&&!pm3.banner,JSON.stringify(pm3));
+  await p.locator('.pf-modal .modal-close').click(); await p.waitForTimeout(300);
 
   console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
   await mobileGo('Home'); await p.waitForTimeout(600);

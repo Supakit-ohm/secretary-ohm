@@ -1319,3 +1319,17 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .xp-rules summary{cursor:pointer;color:var(--ink);font-weight:600;margin-bottom:4px;}
 .xp-rules div{margin-top:4px;}
 @media(max-width:560px){.xp-mside{gap:6px;}.xp-mside-item{padding:8px;}.xp-mside-lv{font-size:13px;}.xp-badges{grid-template-columns:repeat(3,1fr);gap:6px;}.xp-badge-desc{display:none;}}
+
+/* ═══ ข้อ 56 ขั้นที่ 5: แฟ้มตัวโอม ═══ */
+.pf-note{font-size:11.5px;color:var(--ink-5);line-height:1.5;}
+.pf-text{resize:vertical;min-height:70px;line-height:1.55;font-family:'Noto Sans Thai',sans-serif;}
+.pf-count{font-weight:400;color:var(--ink-5);font-size:10.5px;margin-left:6px;}
+.pf-pending{border:1px solid rgba(217,178,106,.35);background:rgba(217,178,106,.08);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+.pf-pending-lab{font-size:11.5px;font-weight:700;color:var(--gold-soft,var(--gold));}
+.pf-prow{display:flex;align-items:center;gap:8px;min-width:0;}
+.pf-psec{font-size:10.5px;color:var(--ink-5);}
+.pf-ptext{font-size:13px;color:var(--ink);word-break:break-word;}
+.pf-ok{background:var(--accent);color:#04140e;border-color:transparent;}
+.pf-badge{margin-left:auto;background:var(--gold);color:#1a1200;border-radius:999px;font-size:10.5px;font-weight:700;padding:1px 7px;}
+.pf-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin-bottom:12px;padding:11px 16px;border-radius:16px;border:1px solid rgba(217,178,106,.35);background:rgba(217,178,106,.09);color:var(--ink);font-family:'Noto Sans Thai',sans-serif;font-size:13px;cursor:pointer;text-align:left;}
+.pf-banner-go{color:var(--gold-soft,var(--gold));font-weight:600;white-space:nowrap;}

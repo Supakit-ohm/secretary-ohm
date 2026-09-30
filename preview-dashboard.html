@@ -2089,7 +2089,7 @@ function daysAgoText(iso){
   const d=Math.floor((Date.now()-Date.parse(iso))/86400000);
   return d<=0?"สำรองล่าสุดวันนี้":`สำรองล่าสุด ${d} วันก่อน`;
 }
-function AccountMenu() {
+function AccountMenu({onProfile,profilePendingCount=0}) {
   const [open,setOpen]=useState(false);
   const [fs,setFs]=useState(()=>window.__syncStatus||null);
   const [hasFire,setHasFire]=useState(()=>!!window.FireSync);
@@ -2140,6 +2140,7 @@ function AccountMenu() {
           ):(
             <button className="acct-item" onClick={()=>location.reload()}><i className="fa-solid fa-rotate-right"></i>โหลดหน้าใหม่ (ลองเชื่อมต่ออีกครั้ง)</button>
           )}
+          {onProfile&&<button className="acct-item" onClick={()=>{onProfile();setOpen(false);}}><i className="fa-solid fa-id-card"></i>แฟ้มตัวโอม{profilePendingCount>0&&<span className="pf-badge">{profilePendingCount}</span>}</button>}
           <button className="acct-item" onClick={()=>{clickById("exportJsonBtn");setOpen(false);}}><i className="fa-solid fa-file-export"></i>Export JSON (สำรองข้อมูล)</button>
           <button className="acct-item" onClick={()=>{clickById("importJsonBtn");setOpen(false);}}><i className="fa-solid fa-file-import"></i>Import JSON (กู้คืนข้อมูล)</button>
           {fireUser&&<button className="acct-item acct-signout" onClick={()=>{ if(window.confirm("ออกจากระบบ? ข้อมูลในเครื่องนี้ยังอยู่ แต่จะไม่ซิงก์จนกว่าจะล็อกอินใหม่")) window.FireSync.signOut(); }}><i className="fa-solid fa-right-from-bracket"></i>ออกจากระบบ</button>}
@@ -2148,7 +2149,7 @@ function AccountMenu() {
     </div>
   );
 }
-function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
+function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture,onProfile,profilePendingCount}) {
   const [openSearch,setOpenSearch]=useState(false);
   /* ข้อ 56 ขั้นที่ 2: มือถือ (≤900px) = กด "Jack ▾ ชื่อหน้า" เปิดเมนู 7 หน้าเลื่อนลงจากหัว · คอมยังใช้แถบแคปซูลเดิม (CSS ซ่อน/โชว์ตามจอ) */
   const [menuOpen,setMenuOpen]=useState(false);
@@ -2202,7 +2203,7 @@ function TopNav({page,setPage,search,setSearch,searchResults,onQuickCapture}) {
           )}
         </div>
         <button className="nav-icon-btn" onClick={onQuickCapture} title="Quick Capture"><Plus size={12}/></button>
-        <AccountMenu/>
+        <AccountMenu onProfile={onProfile} profilePendingCount={profilePendingCount}/>
       </div>
       <div className={`jm-layer${menuOpen?" open":""}`} aria-hidden={!menuOpen}>
         <div className="jm-backdrop" onClick={()=>setMenuOpen(false)}></div>
@@ -7988,6 +7989,81 @@ function XpModal({data,persist,onClose}){
   );
 }
 
+/* ═══ ข้อ 56 ขั้นที่ 5: แฟ้มตัวโอม (data.ohmProfile → Firestore k.ohmProfile) ═══
+   {who, goals, values, focus, pending:[{id,section,text,at,by}], updatedAt} — Jack (LINE) อ่านทุกข้อความ (cache 5 นาที)
+   Jack เสนอเพิ่มได้ → pending · ลงแฟ้มจริงเมื่อโอมกดยืนยัน (ในแอปหรือปุ่มใน LINE) — ชื่อหัวข้อตรงกับ PROFILE_SECTIONS ใน line-bot/Bot.gs */
+const PROFILE_SECTIONS=[
+  {key:"who",label:"ฉันคือใคร",ph:"เช่น เจ้าของร้านเสื้อผ้าแบรนด์เนม ชอบวางแผนการเงิน…"},
+  {key:"goals",label:"เป้าหมายปีนี้",ph:"• วิ่งมินิมาราธอน\n• เก็บเงินดาวน์บ้าน…"},
+  {key:"values",label:"ค่านิยม / หลักที่ยึด",ph:"เช่น ครอบครัวมาก่อน · ไม่เป็นหนี้บัตรเครดิต…"},
+  {key:"focus",label:"โปรเจกต์ / เรื่องที่โฟกัส",ph:"เรื่องที่อยากให้ Jack ช่วยดูเป็นพิเศษช่วงนี้…"},
+];
+const PROFILE_MAX_CHARS=1500;
+function profilePending(data){ const p=data&&data.ohmProfile; return (p&&Array.isArray(p.pending))?p.pending:[]; }
+function profileAccept(data,id,accept){
+  const pf={...(data.ohmProfile||{})}, list=profilePending(data), it=list.find(x=>x.id===id);
+  if(!it) return data;
+  pf.pending=list.filter(x=>x.id!==id);
+  if(accept){ const cur=String(pf[it.section]||"").replace(/\s+$/,""); pf[it.section]=(cur?cur+"\n":"")+"• "+it.text; pf.updatedAt=new Date().toISOString(); }
+  return {...data,ohmProfile:pf};
+}
+function ProfileModal({data,persist,onClose}){
+  const pf=data.ohmProfile||{};
+  const [form,setForm]=useState(()=>{ const f={}; PROFILE_SECTIONS.forEach(s=>f[s.key]=String(pf[s.key]||"")); return f; });
+  const [saved,setSaved]=useState(false);
+  const pending=profilePending(data);
+  const secLabel=(k)=>(PROFILE_SECTIONS.find(s=>s.key===k)||{}).label||k;
+  const dirty=PROFILE_SECTIONS.some(s=>form[s.key]!==String(pf[s.key]||""));
+  const save=()=>{
+    const next={...pf}; PROFILE_SECTIONS.forEach(s=>{ next[s.key]=form[s.key].slice(0,PROFILE_MAX_CHARS); });
+    next.updatedAt=new Date().toISOString();
+    persist({...data,ohmProfile:next}); setSaved(true);
+  };
+  const decide=(id,ok)=>{
+    const it=pending.find(x=>x.id===id);
+    const next=profileAccept(data,id,ok);
+    persist(next);
+    if(ok&&it) setForm(f=>({...f,[it.section]:String(next.ohmProfile[it.section]||"")}));   // ช่องที่กำลังแก้อยู่เห็นบรรทัดใหม่ทันที
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal pf-modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>แฟ้มตัวโอม</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          <div className="pf-note">Jack อ่านแฟ้มนี้ทุกข้อความใน LINE เพื่อเข้าใจโอม (แก้แล้ว Jack เห็นภายใน ~5 นาที) · Jack เสนอเพิ่มได้ แต่ลงแฟ้มเมื่อโอมกดยืนยันเท่านั้น</div>
+          {pending.length>0&&(
+            <div className="pf-pending">
+              <div className="pf-pending-lab">Jack เสนอเพิ่ม · {pending.length}</div>
+              {pending.map(x=>(
+                <div className="pf-prow" key={x.id}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="pf-psec">{secLabel(x.section)}{x.at?` · ${thaiDate(x.at)}`:""}</div>
+                    <div className="pf-ptext">{x.text}</div>
+                  </div>
+                  <button className="db-chip pf-ok" onClick={()=>decide(x.id,true)}>ลงแฟ้ม</button>
+                  <button className="db-chip" onClick={()=>decide(x.id,false)}>ไม่ต้อง</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {PROFILE_SECTIONS.map(s=>(
+            <div key={s.key}>
+              <label className="field-label">{s.label} <span className="pf-count">{form[s.key].length}/{PROFILE_MAX_CHARS}</span></label>
+              <textarea className="modal-input pf-text" rows={s.key==="who"?3:4} maxLength={PROFILE_MAX_CHARS} placeholder={s.ph} value={form[s.key]}
+                onChange={e=>{ const v=e.target.value; setForm(f=>({...f,[s.key]:v})); setSaved(false); }}/>
+            </div>
+          ))}
+          {pf.updatedAt&&<div className="pf-note">แก้ล่าสุด {thaiDate(xpLocalDate(pf.updatedAt))}</div>}
+        </div>
+        <div className="modal-foot">
+          <button className="modal-btn-cancel" onClick={onClose}>ปิด</button>
+          <button className="modal-btn-save" onClick={save} disabled={!dirty}>{saved&&!dirty?"บันทึกแล้ว ✓":"บันทึก"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MilestoneToast({toast,onClose}) {
   useEffect(()=>{ const t=setTimeout(onClose,toast.kind==="xp"?3200:7000); return()=>clearTimeout(t); },[]);
   if(toast.kind==="xp") return (
@@ -8548,6 +8624,7 @@ function SecretaryDashboard() {
   const [editDashTask,setEditDashTask]=useState(null);
   const [toasts,setToasts]=useState([]);
   const [showXp,setShowXp]=useState(false);
+  const [showProfile,setShowProfile]=useState(false);
   /* ข้อ 56 ขั้นที่ 4: XP เพิ่ม → toast "+N XP" (เทียบกับรอบก่อน · รอบแรกหลังโหลดไม่เด้ง) */
   const xpNow=useMemo(()=>data?computeXP(data):null,[data]);
   const xpPrev=useRef(null);
@@ -8665,6 +8742,7 @@ function SecretaryDashboard() {
   return (
     <div className="app">
       {showXp&&data&&<XpModal data={data} persist={persist} onClose={()=>setShowXp(false)}/>}
+      {showProfile&&data&&<ProfileModal data={data} persist={persist} onClose={()=>setShowProfile(false)}/>}
       {toasts.length>0&&(
         <div className="ms-toast-wrap">
           {toasts.map(t=><MilestoneToast key={t.id} toast={t} onClose={()=>setToasts(prev=>prev.filter(x=>x.id!==t.id))}/>)}
@@ -8680,12 +8758,17 @@ function SecretaryDashboard() {
       {showCal&&<CalendarModal events={events} onClose={()=>setShowCal(false)} onEditEvent={openEditEvent} onDeleteEvent={deleteEvent}/>}
       {showQuick&&<QuickCaptureModal onClose={()=>setShowQuick(false)} onSave={handleQuickCapture}/>}
       <div className="main-wrap">
-        <TopNav page={page} setPage={setPage} search={search} setSearch={setSearch} searchResults={searchResults} onQuickCapture={()=>setShowQuick(true)}/>
+        <TopNav page={page} setPage={setPage} search={search} setSearch={setSearch} searchResults={searchResults} onQuickCapture={()=>setShowQuick(true)} onProfile={()=>setShowProfile(true)} profilePendingCount={profilePending(data).length}/>
         <div className="content-grid">
           <div className="content-main">
             {page===0&&(
               <>
                 <DashHero data={data} greetEn={greetEn} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} review={monthReview} setPage={setPage}/>
+                {profilePending(data).length>0&&(
+                  <button type="button" className="pf-banner" onClick={()=>setShowProfile(true)}>
+                    <span>🗂️ Jack เสนอเพิ่มแฟ้มตัวโอม {profilePending(data).length} ข้อ</span><span className="pf-banner-go">ดู/ยืนยัน ›</span>
+                  </button>
+                )}
                 <DashLevelCard data={data} onOpen={()=>setShowXp(true)}/>
                 <div className="db-bento">
                   <DashMomentumCard data={data} setPage={setPage}/>

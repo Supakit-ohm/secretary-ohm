@@ -769,7 +769,8 @@ test("สรุปเช้า: เพดานเต็ม → แม่แบ�
     if (process.env.SHOW) console.log(t + "\n---");
     assert.ok(t.includes("อรุณสวัสดิ์") && t.includes("งานเลยกำหนด") && t.includes("14:00 นัดลูกค้า"), t);
     assert.ok(!/NaN|undefined|null/.test(t), t);
-    assert.ok(!/💰|บาท|งบ|รายจ่าย|รายรับ|ใช้ไป/.test(t), "ขั้นที่ 1: สรุปเช้าไม่มีเรื่องเงิน\n" + t);
+    const noTargets = t.replace(/💤 โปรเจกต์ไม่ขยับ[\s\S]*?(\n\n|$)/, "");   // ชื่อโปรเจกต์อาจมีคำว่า "บาท" (เช่น เก็บเงิน 1,000,000 บาท) ไม่ใช่รายงานเงิน
+    assert.ok(!/💰|บาท|งบ|รายจ่าย|รายรับ|ใช้ไป/.test(noTargets), "ขั้นที่ 1: สรุปเช้าไม่มีเรื่องเงิน\n" + t);
   } finally { u.usd = was; propsMap[key] = JSON.stringify(u); }
 });
 
@@ -795,7 +796,7 @@ test("สรุปเช้า: แม้เมื่อวานมีราย
   const f = ctx.morningFacts_(c);
   assert.ok(!("yesterdaySpent" in f) && !("month" in f));
   const t = ctx.morningTemplate_(f);
-  assert.ok(!/123|💰|บาท|งบ/.test(t), t);
+  assert.ok(!/123|💰|บาท|งบ/.test(t.replace(/💤 โปรเจกต์ไม่ขยับ[\s\S]*?(\n\n|$)/, "")), t);
 });
 
 function clearTodayJournal() {
@@ -1589,6 +1590,98 @@ test("ขั้นที่ 3: 20:00 มีรายการ + ปุ่ม ✓
   assert.ok(lastReply().text.includes("ไม่เกิน 1 วัน"), lastReply().text);
   assert.ok(!app().tasks.find((x) => x.id === "e1").completions[dAgo(2)]);
   canonical();
+});
+
+
+// =================== ข้อ 56 ขั้นที่ 5: แฟ้มตัวโอม + Jack อ่าน target ===================
+const setDoc = (id, v) => { store[id] = { json: JSON.stringify(v), by: "app", updateTime: ts() }; };
+const profNow = () => app().ohmProfile;
+test("ขั้นที่ 5: แฟ้มตัวโอมเข้า prompt ทุกข้อความ (แก้ในแอป → Jack เห็นหลัง cache 5 นาทีหมด) · ว่าง = บอกว่ายังว่าง", () => {
+  delete store["k.ohmProfile"]; delete cacheMap.prof;
+  aiScript = () => ({ text: "ครับ" });
+  post([msg("หวัดดี")]);
+  assert.ok(aiLog[aiLog.length - 1].instructions.includes("แฟ้มตัวโอม: (ยังว่าง)"));
+  setDoc("k.ohmProfile", { who: "เจ้าของร้านเสื้อผ้าแบรนด์เนม", goals: "• วิ่งมินิมาราธอนปีนี้\n• เก็บเงินดาวน์บ้าน", values: "ครอบครัวมาก่อน", focus: "" });
+  post([msg("หวัดดีอีกที")]);
+  assert.ok(aiLog[aiLog.length - 1].instructions.includes("แฟ้มตัวโอม: (ยังว่าง)"), "ยังใช้ cache เดิม");
+  delete cacheMap.prof;
+  post([msg("หวัดดีรอบสาม")]);
+  const ins = aiLog[aiLog.length - 1].instructions;
+  assert.ok(ins.includes("[เป้าหมายปีนี้]\n    • วิ่งมินิมาราธอนปีนี้\n    • เก็บเงินดาวน์บ้าน") && ins.includes("[ค่านิยม / หลักที่ยึด]\n    ครอบครัวมาก่อน") && !ins.includes("[โปรเจกต์ / เรื่องที่โฟกัส]"), ins.slice(-1500));
+  assert.ok(ins.includes("propose_profile") && ins.includes("โอมต้องกดยืนยันเอง"));
+});
+
+test("ขั้นที่ 5: propose_profile → เป็นข้อเสนอรอยืนยัน (ยังไม่ลงแฟ้ม) + ปุ่ม ✅/ไม่ต้อง · กดยืนยัน = ต่อท้ายหัวข้อ · กดซ้ำ/ทิ้ง", () => {
+  aiScript = once([{ name: "propose_profile", args: { section: "goals", text: "อ่านหนังสือเดือนละ 2 เล่ม" } }], "เสนอเพิ่มในแฟ้มไว้ให้แล้วครับ");
+  post([msg("ปีนี้อยากอ่านหนังสือเดือนละ 2 เล่ม")]);
+  let pf = profNow();
+  assert.strictEqual(pf.pending.length, 1);
+  assert.ok(!pf.goals.includes("อ่านหนังสือ"), "ยังไม่ลงแฟ้มจนกว่าจะกดยืนยัน");
+  const q = lastReply().quickReply.items.map((i) => i.action);
+  assert.ok(q[0].label.startsWith("✅ ลงแฟ้ม") && q[0].label.length <= 20 && q[1].label === "ไม่ต้อง", JSON.stringify(q));
+  canonical();
+  const n = aiLog.length;
+  post([pb(q[0].data)]);
+  assert.strictEqual(aiLog.length, n, "ไม่ใช้ AI");
+  pf = profNow();
+  assert.strictEqual(pf.goals, "• วิ่งมินิมาราธอนปีนี้\n• เก็บเงินดาวน์บ้าน\n• อ่านหนังสือเดือนละ 2 เล่ม");
+  assert.strictEqual(pf.pending.length, 0);
+  assert.ok(lastReply().text.includes("ลงแฟ้มตัวโอมแล้ว"));
+  post([pb(q[0].data)]);
+  assert.ok(lastReply().text.includes("จัดการไปแล้ว"));
+  // ทิ้ง + หัวข้อที่ยังว่าง + ซ้ำกับที่มีในแฟ้ม
+  aiScript = once([{ name: "propose_profile", args: { section: "focus", text: "ขยายร้านออนไลน์" } }, { name: "propose_profile", args: { section: "goals", text: "อ่านหนังสือเดือนละ 2 เล่ม" } }]);
+  post([msg("ช่วงนี้โฟกัสขยายร้านออนไลน์")]);
+  pf = profNow();
+  assert.strictEqual(pf.pending.length, 1, "อันที่มีในแฟ้มแล้วไม่เสนอซ้ำ");
+  post([pb("a=pf&v=0&id=" + pf.pending[0].id)]);
+  assert.strictEqual(profNow().pending.length, 0); assert.strictEqual(profNow().focus, "");
+  aiScript = once([{ name: "propose_profile", args: { section: "values", text: "รหัสผ่าน 1234" } }, { name: "propose_profile", args: { section: "xx", text: "a" } }]);
+  post([msg("x")]);
+  const outs = aiLog[aiLog.length - 1].input.filter((x) => x.type === "function_call_output").map((o) => JSON.parse(o.output));
+  assert.ok(outs.every((o) => o.ok === false), JSON.stringify(outs));
+  canonical();
+});
+
+test("ขั้นที่ 5: target — % ความคืบหน้า/ที่ควรถึง/สถานะ/หมุดถัดไป สูตรเดียวกับแอป · ไม่ขยับ ≥14 วัน · อยู่ใน prompt + list_targets", () => {
+  const T = TODAY, d = (n) => ctx.addDays_(T, n);
+  setProjects([
+    { id: "pN", title: "เก็บเงินสำรอง", category: "finance", status: "active", measureType: "numeric", baselineValue: 0, targetValue: 100000, unit: "บาท", startDate: d(-50), targetDate: d(50),
+      milestones: [{ id: "m1", pct: 25, reachedAt: d(-30) }, { id: "m2", pct: 50, label: "ครึ่งทาง", reachedAt: null }] },
+    { id: "pT", title: "ทำเว็บร้าน", category: "career", status: "active", measureType: "tasks", startDate: d(-5), targetDate: d(25), milestones: [] },
+    { id: "pM", title: "ภาษาอังกฤษ", category: "learning", status: "active", measureType: "manual", manualValue: 40, startDate: d(-100), milestones: [] },
+    { id: "pP", title: "พักไว้", category: "other", status: "paused", measureType: "manual", manualValue: 10, startDate: d(-100) },
+    { id: "pA", title: "เก็บถาวร", status: "archived", measureType: "manual", manualValue: 10 }]);
+  setDoc("k.checkins", [{ id: "c1", projectId: "pN", date: d(-40), value: 20000 }, { id: "c2", projectId: "pN", date: d(-20), value: 30000 }]);
+  setTasks([
+    { id: "w1", projectId: "pT", title: "ออกแบบ", status: "done", recurrence: "none", weight: 2, completedAt: new Date(d(-1) + "T05:00:00Z").toISOString(), completions: {} },
+    { id: "w2", projectId: "pT", title: "เขียนโค้ด", status: "pending", recurrence: "none", weight: 2, completions: {} }]);
+  delete cacheMap.tgt;
+  const out = ctx.toolListTargets_({}, ctx.newCtx_());
+  const by = (t) => out.targets.find((x) => x.title === t);
+  assert.ok(!by("เก็บถาวร"));
+  const n = by("เก็บเงินสำรอง");
+  assert.deepStrictEqual([n.progressPct, n.expectedPct, n.status, n.daysLeft, n.nextMilestone, n.lastMove, n.daysSinceMove, n.stalled], [30, 50, "ช้ากว่าแผน", 50, "ครึ่งทาง (50%)", d(-20), 20, true]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(n.value)), { current: 30000, target: 100000, unit: "บาท" });
+  const t = by("ทำเว็บร้าน");
+  assert.deepStrictEqual([t.progressPct, t.expectedPct, t.status, t.openTasks, t.stalled], [50, 17, "เร็วกว่าแผน", 1, false]);
+  const m = by("ภาษาอังกฤษ");
+  assert.deepStrictEqual([m.progressPct, m.expectedPct, m.status, m.daysSinceMove, m.stalled], [40, null, "กำลังทำ", 100, true]);
+  assert.strictEqual(by("พักไว้").stalled, false);
+  aiScript = () => ({ text: "ครับ" });
+  post([msg("โปรเจกต์ไปถึงไหนแล้ว")]);
+  const ins = aiLog[aiLog.length - 1].instructions;
+  assert.ok(ins.includes("• เก็บเงินสำรอง (การเงิน) 30% / ควรถึง 50% · ช้ากว่าแผน · เหลือ 50 วัน · ไม่ขยับ 20 วัน"), ins.slice(-1200));
+  assert.ok(aiLog[aiLog.length - 1].tools.some((x) => x.name === "list_targets"));
+  // morning: ไม่ขยับ 2 อัน เรียงนานสุด
+  const f = ctx.morningFacts_(ctx.newCtx_());
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f.stalled)), ["ภาษาอังกฤษ — ไม่ขยับ 100 วัน (40%)", "เก็บเงินสำรอง — ไม่ขยับ 20 วัน (30%)"]);
+  assert.ok(ctx.morningTemplate_(f).includes("💤 โปรเจกต์ไม่ขยับ\n• ภาษาอังกฤษ"));
+  // ติ๊กงานผ่าน Jack → cache สรุป target ถูกล้าง
+  cacheMap.tgt = "[]";
+  aiScript = once([{ name: "complete_task", args: { ref: "k.tasks#w2" } }]);
+  post([msg("เขียนโค้ดเสร็จแล้ว")]);
+  assert.ok(!cacheMap.tgt || cacheMap.tgt !== "[]");
 });
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));
