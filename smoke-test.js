@@ -47,7 +47,8 @@ const SEED={
  "tasks":[
   {"id":"t1","projectId":"p3","title":"งานเสร็จแล้ว","note":"","status":"done","dueDate":"2026-08-10","recurrence":"none","weight":1,"completions":{}},
   {"id":"t2","projectId":"p3","title":"งานยังไม่เสร็จ","note":"","status":"pending","dueDate":"2026-08-30","recurrence":"none","weight":1,"completions":{}},
-  {"id":"t3","projectId":null,"title":"งานประจำวัน","note":"","status":"pending","dueDate":null,"recurrence":"daily","weight":1,"completions":{}}],
+  {"id":"t3","projectId":null,"title":"งานประจำวัน","note":"","status":"pending","dueDate":null,"recurrence":"daily","weight":1,"completions":{}},
+  {"id":"t4","projectId":"p1","title":"ฝึกทุกวัน","note":"","status":"pending","dueDate":null,"recurrence":"daily","weight":1,"completions":{},"createdAt":"2026-08-01"}],
  "checkins":[
   {"id":"ck1","projectId":"p2","date":"2026-03-01","value":120000,"note":"ยกมา"},
   {"id":"ck2","projectId":"p2","date":"2026-08-01","value":180000,"note":""}],
@@ -1071,6 +1072,29 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   await p.locator('.prj-card').first().click().catch(()=>{}); await p.waitForTimeout(1600);
   const mDet=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
   check('มือถือ · หน้ารายละเอียดโปรเจกต์ไม่ล้นแนวนอน',mDet.sw<=mDet.iw+2,`scrollWidth ${mDet.sw} vs ${mDet.iw}`);
+
+  console.log('\n[ข้อ 56 ขั้นที่ 3] การ์ด "วันนี้" จัดกลุ่มตาม target + หลุดจังหวะ');
+  await mobileGo('Home'); await p.waitForTimeout(800);
+  const td=await p.evaluate(()=>{
+    const c=document.querySelector('.db-feature'); if(!c) return null;
+    const groups=[...c.querySelectorAll('.td-group')].map(g=>({name:g.querySelector('.td-gname').textContent,items:[...g.querySelectorAll('.db-tname')].map(x=>x.textContent),left:g.querySelector('.td-gleft').textContent}));
+    const off=[...c.querySelectorAll('.td-off-row')].map(r=>r.innerText.replace(/\s+/g,' ').trim());
+    return {title:c.querySelector('.db-title').textContent,groups,off,count:c.querySelector('.db-count').innerText,sw:document.documentElement.scrollWidth,iw:window.innerWidth,
+      subs:[...c.querySelectorAll('.db-tsub')].map(x=>x.textContent)};
+  });
+  check('การ์ด "วันนี้": หัวการ์ดชื่อ วันนี้',td&&td.title==='วันนี้',JSON.stringify(td&&td.title));
+  const gn=td?td.groups.map(g=>g.name):[];
+  check('การ์ด "วันนี้": จัดกลุ่มตาม target (โปรเจกต์ก่อน · "ไม่มี target" ท้ายสุด)',gn.includes('โปรเจกต์กำหนดเอง')&&gn.includes('โปรเจกต์แบบงาน')&&gn[gn.length-1]==='ไม่มี target'&&td.groups.find(g=>g.name==='โปรเจกต์กำหนดเอง').items.includes('ฝึกทุกวัน')&&td.groups.find(g=>g.name==='ไม่มี target').items.includes('งานประจำวัน')&&td.groups.find(g=>g.name==='โปรเจกต์แบบงาน').items.includes('งานยังไม่เสร็จ')&&!JSON.stringify(td.groups).includes('งานเสร็จแล้ว'),JSON.stringify(td&&td.groups));
+  check('การ์ด "วันนี้": เตือนหลุดจังหวะ (งานประจำที่มี createdAt แต่ไม่เคยทำ) · งานเก่าไม่มี createdAt ไม่เตือน',td&&td.off.length===1&&/โปรเจกต์กำหนดเอง/.test(td.off[0])&&/ฝึกทุกวัน/.test(td.off[0])&&/ไม่ได้ทำมา \d+ วัน/.test(td.off[0])&&!td.off.some(x=>/งานประจำวัน/.test(x)),JSON.stringify(td&&td.off));
+  check('การ์ด "วันนี้": งานเลยกำหนดบอกวันที่ · งานประจำบอกความถี่ · มือถือไม่ล้น',td&&td.subs.some(x=>/^เลยกำหนด/.test(x))&&td.subs.some(x=>/^ทุกวัน/.test(x))&&td.sw<=td.iw+2,JSON.stringify(td&&[td.subs,td.sw]));
+  const beforeLeft=td.groups.find(g=>g.name==='โปรเจกต์กำหนดเอง').left;
+  await p.evaluate(()=>{ const row=[...document.querySelectorAll('.db-feature .db-trow')].find(r=>r.querySelector('.db-tname').textContent==='ฝึกทุกวัน'); row.querySelector('.db-tcheck').click(); });
+  await p.waitForTimeout(700);
+  const td2=await p.evaluate(()=>{ const c=document.querySelector('.db-feature'); const g=[...c.querySelectorAll('.td-group')].find(g=>g.querySelector('.td-gname').textContent==='โปรเจกต์กำหนดเอง'); const row=[...g.querySelectorAll('.db-trow')].find(r=>r.querySelector('.db-tname').textContent==='ฝึกทุกวัน');
+    return {left:g.querySelector('.td-gleft').textContent,done:row.classList.contains('done'),off:c.querySelectorAll('.td-off-row').length,saved:(()=>{try{const d=JSON.parse(localStorage.getItem('secretaryData')||'null');return d&&(d.tasks||[]).find(t=>t.id==='t4');}catch(e){return 'x';}})()}; });
+  check('การ์ด "วันนี้": แตะติ๊ก → เสร็จ + ตัวนับกลุ่มเปลี่ยน (ติ๊กวันนี้ไม่ลบว่าพลาดวันก่อนๆ)',td2.done&&td2.left!==beforeLeft&&td2.off===1,JSON.stringify([beforeLeft,td2.left,td2.done,td2.off]));
+  await p.evaluate(()=>{ const row=[...document.querySelectorAll('.db-feature .db-trow')].find(r=>r.querySelector('.db-tname').textContent==='ฝึกทุกวัน'); row.querySelector('.db-tcheck').click(); });
+  await p.waitForTimeout(500);
 
   console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
   await mobileGo('Home'); await p.waitForTimeout(600);

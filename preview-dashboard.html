@@ -1244,6 +1244,63 @@ function taskIsOverdue(t){
   if(isRecurring(t)||t.status==="done"||!t.dueDate) return false;
   return t.dueDate<todayISO();
 }
+/* ═══ ข้อ 56 ขั้นที่ 3: จังหวะงานประจำ (สูตรเดียวกับ taskRhythm_ ใน line-bot/Bot.gs — แก้ต้องแก้คู่กัน) ═══
+   นับ "รอบที่พลาดติดกัน" ย้อนจากรอบก่อนหน้า (ไม่นับรอบปัจจุบัน — วันนี้/สัปดาห์นี้/เดือนนี้ยังทำทัน)
+   หยุดเมื่อเจอรอบที่ทำ หรือถึงรอบที่สร้างงาน (createdAt) · งานเก่าที่ไม่มี createdAt และไม่เคยทำเลย = ไม่รู้ว่าเริ่มเมื่อไหร่ → ไม่เตือน
+   หลุดจังหวะ = ทุกวัน พลาด ≥2 วันติด · ทุกสัปดาห์/ทุกเดือน พลาด ≥1 รอบ */
+const RHYTHM_MIN_MISSED={daily:2,weekly:1,monthly:1};
+const RHYTHM_MAX=120;
+function prevPeriodDate(rec,dateStr){ return rec==="weekly"?shiftISO(mondayISO(dateStr),{d:-7}):rec==="monthly"?shiftISO(dateStr.slice(0,7)+"-01",{m:-1}):shiftISO(dateStr,{d:-1}); }
+function taskRhythm(t,today=todayISO()){
+  if(!isRecurring(t)) return null;
+  const comp=t.completions||{};
+  const born=t.createdAt?periodKey(t.recurrence,String(t.createdAt).slice(0,10)):null;
+  let d=prevPeriodDate(t.recurrence,today), missed=0, found=false;
+  for(let i=0;i<RHYTHM_MAX;i++){
+    const k=periodKey(t.recurrence,d);
+    if(born&&k<born) break;
+    if(comp[k]){ found=true; break; }
+    missed++; d=prevPeriodDate(t.recurrence,d);
+  }
+  if(!found&&!born) return {missed:0,unknown:true,off:false,score:0};
+  const unit=t.recurrence==="daily"?"วัน":t.recurrence==="weekly"?"สัปดาห์":"เดือน";
+  return {missed,unit,off:missed>=RHYTHM_MIN_MISSED[t.recurrence],score:missed*(t.recurrence==="daily"?1:t.recurrence==="weekly"?7:30)};
+}
+function rhythmText(r){ return r.missed>=RHYTHM_MAX?"ไม่ได้ทำนานแล้ว":`ไม่ได้ทำมา ${r.missed} ${r.unit}`; }
+/* target ที่หลุดจังหวะ (เรียงจากหลุดนานสุด) — งานประจำที่ไม่อยู่ในโปรเจกต์ขึ้นเป็นรายการของตัวเอง · ข้ามโปรเจกต์ archived/paused */
+function offRhythmTargets(data,today=todayISO()){
+  const projById={}; (data.projects||[]).forEach(p=>projById[p.id]=p);
+  const groups={};
+  (data.tasks||[]).forEach(t=>{
+    const r=taskRhythm(t,today); if(!r||!r.off) return;
+    const p=t.projectId?projById[t.projectId]:null;
+    if(p&&(p.status==="archived"||p.status==="paused")) return;
+    const key=p?p.id:"t:"+t.id;
+    const g=groups[key]||(groups[key]={key,project:p||null,title:p?p.title:t.title,color:p?p.color:null,routines:[],score:0});
+    g.routines.push({task:t,r}); g.score=Math.max(g.score,r.score);
+  });
+  return Object.values(groups).map(g=>({...g,routines:g.routines.sort((a,b)=>b.r.score-a.r.score)})).sort((a,b)=>b.score-a.score);
+}
+/* รายการ "วันนี้": งานประจำรอบนี้ (รวมที่ติ๊กแล้ว ให้กดยกเลิกได้) + งานครั้งเดียวกำหนดวันนี้ + งานเลยกำหนดที่ยังไม่เสร็จ · จัดกลุ่มตาม target */
+function todayGroups(data,today=todayISO()){
+  const projById={}; (data.projects||[]).forEach(p=>projById[p.id]=p);
+  const order=(data.projects||[]).map(p=>p.id);
+  const groups={};
+  (data.tasks||[]).forEach(t=>{
+    if(!t||!t.id) return;
+    const p=t.projectId?projById[t.projectId]:null;
+    let show=false;
+    if(isRecurring(t)) show=!(p&&(p.status==="archived"||p.status==="paused"));
+    else if(t.dueDate===today) show=true;
+    else if(t.status!=="done"&&t.dueDate&&t.dueDate<today) show=true;
+    if(!show) return;
+    const key=p?p.id:"_none";
+    (groups[key]||(groups[key]={key,project:p,items:[]})).items.push(t);
+  });
+  const rank=(t)=>taskDoneOn(t,today)?2:taskIsOverdue(t)?0:1;
+  return Object.values(groups).map(g=>({...g,items:g.items.slice().sort((a,b)=>rank(a)-rank(b)),left:g.items.filter(t=>!taskDoneOn(t,today)).length}))
+    .sort((a,b)=>a.key==="_none"?1:b.key==="_none"?-1:order.indexOf(a.key)-order.indexOf(b.key));
+}
 function projectCheckins(data,projectId){
   return (data.checkins||[]).filter(c=>c.projectId===projectId).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
 }
@@ -5894,7 +5951,7 @@ function TaskModal({onClose,onSave,initial,projects,defaultProjectId}) {
     ?{...initial,dueDate:initial.dueDate||"",note:initial.note||""}
     :{title:"",note:"",projectId:defaultProjectId!==undefined?defaultProjectId:null,dueDate:smartDailyDate(),recurrence:"none",weight:1,status:"pending",completions:{}});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const save=()=>{ if(!form.title.trim()) return; onSave({...form,id:initial?.id||uid(),title:form.title.trim(),note:(form.note||"").trim(),weight:Number(form.weight)||1,dueDate:form.recurrence!=="none"?null:(form.dueDate||null),completions:form.completions||{}}); };
+  const save=()=>{ if(!form.title.trim()) return; onSave({...form,id:initial?.id||uid(),createdAt:(initial&&initial.createdAt)||form.createdAt||todayISO(),title:form.title.trim(),note:(form.note||"").trim(),weight:Number(form.weight)||1,dueDate:form.recurrence!=="none"?null:(form.dueDate||null),completions:form.completions||{}}); };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
@@ -7856,12 +7913,16 @@ function DashMomentumCard({data,setPage}){
 }
 
 function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
+  /* ข้อ 56 ขั้นที่ 3: การ์ด "วันนี้" — จัดกลุ่มตาม target + เตือนหลุดจังหวะ 1–2 อันบนสุด (แตะติ๊กได้เหมือนเดิม) */
   const [showAll,setShowAll]=useState(false);
   const tasks=data.tasks||[];
-  const projById={}; (data.projects||[]).forEach(p=>projById[p.id]=p);
-  const list=tasks.filter(taskIsDueToday);
-  const doneCount=list.filter(t=>taskDoneOn(t)).length;
-  const shown=showAll?list:list.slice(0,6);
+  const groups=todayGroups(data);
+  const all=groups.reduce((a,g)=>a.concat(g.items),[]);
+  const doneCount=all.filter(t=>taskDoneOn(t)).length;
+  const off=offRhythmTargets(data).slice(0,2);
+  const LIMIT=8;
+  let budget=showAll?Infinity:LIMIT;
+  const shownGroups=groups.map(g=>{ const items=g.items.slice(0,Math.max(0,budget)); budget-=items.length; return {...g,items}; }).filter(g=>g.items.length);
   const tmr=shiftISO(todayISO(),{d:1});
   const tmrList=tasks.filter(t=>!isRecurring(t)&&t.status!=="done"&&t.dueDate===tmr);
   const toggle=(t)=>{
@@ -7869,36 +7930,61 @@ function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
     persist({...data,tasks:toggleTaskInList(tasks,t.id),activity:willBeDone?logActivity(data,{source:"task",text:`ทำงานสำเร็จ "${t.title}"`,status:"completed"}):data.activity});
   };
   const sub=(t)=>{
-    const p=projById[t.projectId];
-    if(p) return p.title;
-    if(isRecurring(t)) return "ทำซ้ำ";
-    return t.dueDate?thaiDate(t.dueDate):"";
+    if(isRecurring(t)){
+      const lab={daily:"ทุกวัน",weekly:"ทุกสัปดาห์",monthly:"ทุกเดือน"}[t.recurrence];
+      const r=!taskDoneOn(t)&&taskRhythm(t);
+      return r&&r.off?`${lab} · ${rhythmText(r)}`:lab;
+    }
+    if(taskIsOverdue(t)) return `เลยกำหนด ${thaiDate(t.dueDate)}`;
+    return "";
   };
   return (
     <div className="db-card db-feature">
       <div className="db-head">
-        <div><div className="db-title">Today's Tasks</div><div className="db-note">{thaiDate(todayISO())}</div></div>
-        <div className="db-count db-mono"><b>{doneCount}</b>/{list.length}</div>
+        <div><div className="db-title">วันนี้</div><div className="db-note">{thaiDate(todayISO())}</div></div>
+        <div className="db-count db-mono"><b>{doneCount}</b>/{all.length}</div>
       </div>
-      {list.length===0&&<div className="db-empty">วันนี้ยังไม่มีงาน — กด + บันทึกเร็ว เพื่อเพิ่ม</div>}
-      <div className="db-tasklist">
-        {shown.map(t=>{
-          const isDone=taskDoneOn(t), late=!isDone&&taskIsOverdue(t);
-          return (
-            <div key={t.id} className={`db-trow${isDone?" done":""}${late?" late":""}`} onClick={()=>onEditTask(t)} role="button">
-              <div className="db-ticon">{isDone?<Check size={13}/>:late?<AlertCircle size={13}/>:<Clock size={13}/>}</div>
-              <div className="db-tmain">
-                <div className="db-tname">{t.title}</div>
-                {sub(t)&&<div className="db-tsub">{sub(t)}</div>}
-              </div>
-              <div className={`db-tcheck${isDone?" on":""}`} onClick={(e)=>{e.stopPropagation();toggle(t);}} role="button"/>
+      {off.length>0&&(
+        <div className="td-off">
+          <div className="td-off-lab"><AlertCircle size={12}/> หลุดจังหวะ</div>
+          {off.map(g=>(
+            <div className="td-off-row" key={g.key}>
+              <span className="td-dot" style={{background:g.color||"var(--ink-5)"}}/>
+              <span className="td-off-name">{g.title}</span>
+              <span className="td-off-why">{g.project?g.routines[0].task.title+" · ":""}{rhythmText(g.routines[0].r)}</span>
             </div>
-          );
-        })}
+          ))}
+        </div>
+      )}
+      {all.length===0&&<div className="db-empty">วันนี้ยังไม่มีงาน — กด + บันทึกเร็ว เพื่อเพิ่ม</div>}
+      <div className="db-tasklist">
+        {shownGroups.map(g=>(
+          <div className="td-group" key={g.key}>
+            <div className="td-ghead">
+              <span className="td-dot" style={{background:g.project?(g.project.color||"var(--accent)"):"var(--ink-5)"}}/>
+              <span className="td-gname">{g.project?g.project.title:"ไม่มี target"}</span>
+              <span className="td-gleft db-mono">{g.left?`เหลือ ${g.left}`:"ครบ ✓"}</span>
+            </div>
+            {g.items.map(t=>{
+              const isDone=taskDoneOn(t), late=!isDone&&taskIsOverdue(t);
+              const r=!isDone&&taskRhythm(t); const warn=!!(r&&r.off);
+              return (
+                <div key={t.id} className={`db-trow${isDone?" done":""}${late||warn?" late":""}`} onClick={()=>onEditTask(t)} role="button">
+                  <div className="db-ticon">{isDone?<Check size={13}/>:late||warn?<AlertCircle size={13}/>:<Clock size={13}/>}</div>
+                  <div className="db-tmain">
+                    <div className="db-tname">{t.title}</div>
+                    {sub(t)&&<div className="db-tsub">{sub(t)}</div>}
+                  </div>
+                  <div className={`db-tcheck${isDone?" on":""}`} onClick={(e)=>{e.stopPropagation();toggle(t);}} role="button" aria-label={isDone?"ยกเลิกติ๊ก":"ติ๊กว่าเสร็จ"}/>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
-      {list.length>6&&(
+      {all.length>LIMIT&&(
         <button className="db-chip" style={{width:"100%",marginTop:10,borderRadius:14}} onClick={()=>setShowAll(v=>!v)}>
-          {showAll?<>ย่อ <ChevronUp size={13}/></>:<>อีก {list.length-6} งาน <ChevronDown size={13}/></>}
+          {showAll?<>ย่อ <ChevronUp size={13}/></>:<>อีก {all.length-LIMIT} งาน <ChevronDown size={13}/></>}
         </button>
       )}
       {tmrList.length>0&&(
@@ -8275,7 +8361,7 @@ function SecretaryDashboard() {
       persist({...data,notes:[...notes,{id:uid(),text,color:NOTE_COLORS[notes.length%NOTE_COLORS.length]}],activity:logActivity(data,{source:"note",text:`เพิ่มโน้ต "${text.slice(0,32)}${text.length>32?"…":""}"`})});
     } else if(type==="task"){
       const rec=section==="daily"?"none":section;
-      persist({...data,tasks:[...(data.tasks||[]),{id:uid(),projectId:null,title:text,note:"",status:"pending",dueDate:rec==="none"?smartDailyDate():null,recurrence:rec,weight:1,completions:{}}],activity:logActivity(data,{source:"task",text:`เพิ่มงาน "${text}"`})});
+      persist({...data,tasks:[...(data.tasks||[]),{id:uid(),projectId:null,title:text,note:"",status:"pending",dueDate:rec==="none"?smartDailyDate():null,recurrence:rec,weight:1,completions:{},createdAt:todayISO()}],activity:logActivity(data,{source:"task",text:`เพิ่มงาน "${text}"`})});
     } else if(type==="expense"){
       persist({...data,finance:{...data.finance,expenses:[...data.finance.expenses,{id:uid(),date:todayISO(),amount:-Math.abs(amount),category,memo:text,source:"manual"}]},activity:logActivity(data,{source:"expense",text:`บันทึกรายจ่าย ${category} -฿${Math.abs(amount).toLocaleString()}`})});
     } else if(type==="journal"){

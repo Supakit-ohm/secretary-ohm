@@ -155,10 +155,16 @@ function handlePostback_(ev) {
   }
   if (data.a === "done") {                                  // ปุ่ม "✓ ชื่องาน" ใต้รายการงาน
     var ctx1 = newCtx_();
-    var res = toolCompleteTask_({ ref: data.ref }, ctx1);
+    var res = toolCompleteTask_({ ref: data.ref, date: data.d }, ctx1);
     var txt = !res.ok ? "ติ๊กไม่ได้ครับ: " + res.error : res.already ? "อันนี้ติ๊กไว้แล้วครับ: " + res.title : "เสร็จแล้ว ✓ " + res.title;
     rememberRecords_(ctx1.records);
-    lineReply_(ev.replyToken, [textMsg_(txt, quickItemsFor_(ctx1.records))]);
+    var qd = quickItemsFor_(ctx1.records) || [];
+    if (data.src === "eve") {                               // ขั้นที่ 3: ปุ่ม ✓ ตอน 20:00 → ต่อปุ่มงานประจำที่เหลือให้กดต่อได้เลย
+      var left = routinesLeft_(ctx1, data.d || ctx1.today);
+      if (res.ok && !left.length) txt += "\nงานประจำวันนี้ครบแล้ว 🎉";
+      qd = qd.concat(left.slice(0, 13 - qd.length).map(function (x) { return tickBtn_(x, data.d || ctx1.today); }));
+    }
+    lineReply_(ev.replyToken, [textMsg_(txt, qd.length ? qd : null)]);
     return;
   }
   if (data.a === "forget") {                                // ปุ่ม "ลืม: …" (หลังจำ / ในรายการความจำ)
@@ -326,11 +332,11 @@ var TOOLS = [
       recurrence: { type: "string", enum: ["none", "daily", "weekly", "monthly"], description: "งานประจำ ไม่ใส่ = ครั้งเดียว" },
       note: { type: "string" },
       kind: { type: "string", enum: ["must", "want"], description: "ใช้ตอนโอมวางแผนพรุ่งนี้: must = ต้องทำ · want = อยากทำ (ไม่บังคับ)" } }, required: ["title"] } },
-  { name: "list_tasks", description: "ดูงานที่ค้าง/งานวันนี้/งานที่ใกล้ถึงกำหนด (คืน ref ของแต่ละงานด้วย)",
+  { name: "list_tasks", description: "ดูงานที่ค้าง/งานวันนี้/งานประจำที่ยังไม่ติ๊ก/งานที่ใกล้ถึงกำหนด + target ที่หลุดจังหวะ (offRhythm) (คืน ref ของแต่ละงานด้วย)",
     parameters: { type: "object", properties: {
       scope: { type: "string", enum: ["today", "all"], description: "today = ค้าง+วันนี้ · all = รวมงานอนาคตและไม่มีกำหนด" } } } },
-  { name: "complete_task", description: "ทำเครื่องหมายว่างานเสร็จแล้ว (ใช้ ref จาก list_tasks)",
-    parameters: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"] } },
+  { name: "complete_task", description: "ทำเครื่องหมายว่างานเสร็จแล้ว (ใช้ ref จาก list_tasks) · งานประจำที่ทำเมื่อวานแต่ลืมติ๊ก ใส่ date = เมื่อวาน (ย้อนได้ไม่เกิน 1 วัน)",
+    parameters: { type: "object", properties: { ref: { type: "string" }, date: { type: "string", description: "YYYY-MM-DD วันนี้หรือเมื่อวานเท่านั้น ไม่ใส่ = วันนี้" } }, required: ["ref"] } },
   { name: "add_journal", description: "เขียน Journal (ต่อท้ายบันทึกของวันนั้นถ้ามีอยู่แล้ว)",
     parameters: { type: "object", properties: {
       text: { type: "string", description: "เนื้อหาตามที่โอมเล่า เรียบเรียงให้อ่านลื่นได้แต่ห้ามเติมเรื่องที่โอมไม่ได้พูด" },
@@ -456,7 +462,7 @@ function toolAddTask_(a, ctx) {
   var kind = a.kind === "want" || a.kind === "must" ? a.kind : null;            // ขั้นที่ 10: ต้องทำ/อยากทำ (ตอนวางแผนพรุ่งนี้)
   var note = clean_(a.note, 500);
   if (kind && !note) note = kind === "want" ? "อยากทำ" : "ต้องทำ";
-  var item = { id: id, projectId: null, title: title, note: note, status: "pending", dueDate: due, recurrence: rec, weight: 1, completions: {}, via: "line" };
+  var item = { id: id, projectId: null, title: title, note: note, status: "pending", dueDate: due, recurrence: rec, weight: 1, completions: {}, createdAt: ctx.today, via: "line" };
   if (kind) item.kind = kind;
   var plan = cacheGetJson_("plan");                                             // เพิ่มระหว่างโหมดวางแผนคืนนี้ + กำหนดพรุ่งนี้ → ให้สรุปเช้าโชว์เป็น "แผนเมื่อคืน"
   if (plan && rec === "none" && due === plan.target) item.plannedOn = plan.evening;
@@ -488,6 +494,7 @@ function toolListTasks_(a, ctx) {
     else if (t.dueDate <= week) out.upcoming7d.push(row);
   });
   out.overdue.sort(function (x, y) { return x.dueDate < y.dueDate ? -1 : 1; });
+  out.offRhythm = offRhythm_(tasks, projects, today).slice(0, 5);      // ขั้นที่ 3: target ที่หลุดจังหวะ (ระบบคำนวณ — Jack เล่าตาม ห้ามคิดเอง)
   if (a.scope !== "all") { out.upcomingCount = out.upcoming7d.length; out.noDateCount = out.noDate.length; delete out.upcoming7d; delete out.noDate; }
   else { out.noDate = out.noDate.slice(0, 20); }
   out.overdue = out.overdue.slice(0, 20);
@@ -497,15 +504,17 @@ function toolListTasks_(a, ctx) {
 function toolCompleteTask_(a, ctx) {
   var r = parseRef_(a.ref);
   if (!r || r.doc !== "k.tasks") return { ok: false, error: "ref งานไม่ถูกต้อง" };
+  var day = validDate_(a.date) || ctx.today;
+  if (day !== ctx.today && day !== addDays_(ctx.today, -1)) return { ok: false, error: "ติ๊กย้อนหลังได้ไม่เกิน 1 วัน (วันนี้หรือเมื่อวาน)" };
   var actId = uid_(), prev = null, title = "";
   var res = mutate_([{ id: "k.tasks", def: [] }, { id: "k.activity", def: [] }], function (G) {
     var f = arrFind_(G["k.tasks"], r.id);
     if (!f) return { ok: false, error: "ไม่พบงานนี้ (อาจถูกลบไปแล้ว)" };
     var t = f.chunk.value[f.index];
     prev = JSON.parse(JSON.stringify(t)); title = t.title;
-    if (taskDoneOn_(t, ctx.today)) return { ok: true, already: true, title: t.title };
+    if (taskDoneOn_(t, day)) return { ok: true, already: true, title: t.title };
     var nt = JSON.parse(JSON.stringify(t));
-    if (isRecurring_(nt)) { nt.completions = nt.completions || {}; nt.completions[periodKey_(nt.recurrence, ctx.today)] = true; }
+    if (isRecurring_(nt)) { nt.completions = nt.completions || {}; nt.completions[periodKey_(nt.recurrence, day)] = true; }
     else { nt.status = "done"; nt.completedAt = new Date().toISOString(); }
     f.chunk.value[f.index] = nt; f.chunk.dirty = true;
     pushActivity_(G, actId, "task", "ทำงานสำเร็จ \"" + t.title + "\" (LINE)", "completed");
@@ -642,6 +651,51 @@ function financeDataAsOf_(lists, today) {
   return best;
 }
 function addMonths_(month, n) { var d = new Date(month + "-01T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); }
+
+// ---------- ขั้นที่ 3 (ข้อ 56): จังหวะงานประจำ — สูตรเดียวกับ taskRhythm()/offRhythmTargets() ในแอป (แก้ต้องแก้คู่กัน) ----------
+// นับรอบที่พลาดติดกันย้อนจากรอบก่อนหน้า (ไม่นับรอบปัจจุบัน) หยุดเมื่อเจอรอบที่ทำ/ถึงรอบที่สร้างงาน · ไม่มี createdAt + ไม่เคยทำ = ไม่เตือน
+var RHYTHM_MIN_MISSED = { daily: 2, weekly: 1, monthly: 1 };
+var RHYTHM_MAX = 120;
+function prevPeriodDate_(rec, d) {
+  if (rec === "weekly") return addDays_(mondayOf_(d), -7);
+  if (rec === "monthly") return addMonths_(d.slice(0, 7), -1) + "-01";
+  return addDays_(d, -1);
+}
+function taskRhythm_(t, today) {
+  if (!isRecurring_(t)) return null;
+  var comp = t.completions || {};
+  var born = t.createdAt ? periodKey_(t.recurrence, String(t.createdAt).slice(0, 10)) : null;
+  var d = prevPeriodDate_(t.recurrence, today), missed = 0, found = false;
+  for (var i = 0; i < RHYTHM_MAX; i++) {
+    var k = periodKey_(t.recurrence, d);
+    if (born && k < born) break;
+    if (comp[k]) { found = true; break; }
+    missed++; d = prevPeriodDate_(t.recurrence, d);
+  }
+  if (!found && !born) return { missed: 0, unknown: true, off: false, score: 0 };
+  var unit = t.recurrence === "daily" ? "วัน" : t.recurrence === "weekly" ? "สัปดาห์" : "เดือน";
+  return { missed: missed, unit: unit, off: missed >= RHYTHM_MIN_MISSED[t.recurrence], score: missed * (t.recurrence === "daily" ? 1 : t.recurrence === "weekly" ? 7 : 30) };
+}
+function rhythmText_(r) { return r.missed >= RHYTHM_MAX ? "ไม่ได้ทำนานแล้ว" : "ไม่ได้ทำมา " + r.missed + " " + r.unit; }
+// target ที่หลุดจังหวะ เรียงจากหลุดนานสุด → [{target, routine, why, ref}] · งานประจำที่ไม่อยู่ในโปรเจกต์ = target ของตัวเอง · ข้าม archived/paused
+function offRhythm_(tasks, projects, today) {
+  var byId = {}, groups = {}, keys = [];
+  (Array.isArray(projects) ? projects : []).forEach(function (p) { if (p && p.id) byId[p.id] = p; });
+  (tasks || []).forEach(function (t) {
+    if (!t || !t.id) return;
+    var r = taskRhythm_(t, today);
+    if (!r || !r.off) return;
+    var p = t.projectId ? byId[t.projectId] : null;
+    if (p && (p.status === "archived" || p.status === "paused")) return;
+    var key = p ? p.id : "t:" + t.id;
+    var g = groups[key];
+    if (!g) { g = groups[key] = { target: p ? p.title : t.title, hasProject: !!p, best: null, score: -1 }; keys.push(key); }
+    if (r.score > g.score) { g.score = r.score; g.best = { t: t, r: r }; }
+  });
+  return keys.map(function (k) { return groups[k]; }).sort(function (a, b) { return b.score - a.score; }).map(function (g) {
+    return { target: g.target, routine: g.hasProject ? g.best.t.title : null, why: rhythmText_(g.best.r), ref: "k.tasks#" + g.best.t.id };
+  });
+}
 
 function toolListTasksFrom_(tasks, today) {
   var overdue = 0, due = 0, titles = [];
@@ -908,6 +962,18 @@ function memoryListMsg_() {
 var TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 function thDate_(iso) { return Number(iso.slice(8, 10)) + " " + TH_MONTHS[Number(iso.slice(5, 7)) - 1]; }
 
+// ขั้นที่ 3: งานประจำรอบนี้ที่ยังไม่ติ๊ก (ของวันนั้น) · ข้ามโปรเจกต์ archived/paused
+function routinesLeft_(ctx, day) {
+  var G = readGroups_([{ id: "k.tasks", def: [] }, { id: "k.projects", def: null }]);
+  var projects = G["k.projects"].chunks[0].value || [], skip = {};
+  (Array.isArray(projects) ? projects : []).forEach(function (p) { if (p && (p.status === "archived" || p.status === "paused")) skip[p.id] = true; });
+  return arrAll_(G["k.tasks"]).filter(function (t) { return t && t.id && isRecurring_(t) && !skip[t.projectId] && !taskDoneOn_(t, day); })
+    .map(function (t) { return { ref: "k.tasks#" + t.id, title: t.title, recurrence: t.recurrence }; });
+}
+function tickBtn_(x, day) {
+  return { type: "action", action: { type: "postback", label: ("✓ " + x.title).slice(0, 20), data: "a=done&src=eve&d=" + day + "&ref=" + x.ref, displayText: "เสร็จแล้ว: " + String(x.title).slice(0, 200) } };
+}
+
 function menuTasks_(ctx) {
   var t = toolListTasks_({ scope: "all" }, ctx);
   var lines = ["📋 งาน · วัน" + TH_DAYS[ctx.weekday] + " " + thDate_(ctx.today)];
@@ -925,6 +991,10 @@ function menuTasks_(ctx) {
     t.recurringToday.forEach(function (x) { lines.push("• " + x.title); tick.push(x); });
   }
   if (!tick.length) lines.push("", "วันนี้ว่างครับ ไม่มีงานค้าง 🎉");
+  if (t.offRhythm && t.offRhythm.length) {
+    lines.push("", "⏸️ หลุดจังหวะ");
+    t.offRhythm.slice(0, 2).forEach(function (x) { lines.push("• " + x.target + (x.routine ? " · " + x.routine : "") + " — " + x.why); });
+  }
   if (t.upcoming7d.length) {
     var next = t.upcoming7d.map(function (x) { return x.dueDate; }).sort()[0];
     lines.push("", "อีก 7 วันข้างหน้า: " + t.upcoming7d.length + " งาน (ใกล้สุด " + thDate_(next) + ")");
@@ -1570,6 +1640,7 @@ function morningFacts_(ctx) {
     tasksToday: t.today.filter(function (x) { return !plannedRefs[x.ref]; }).slice(0, 8).map(function (x) { return x.title + (x.project ? " · " + x.project : ""); }),
     recurringToday: t.recurringToday.slice(0, 8).map(function (x) { return x.title; }),
     upcoming7dCount: t.upcoming7d.length,
+    offRhythm: (t.offRhythm || []).slice(0, 2).map(function (x) { return x.target + (x.routine ? " · " + x.routine : "") + " — " + x.why; }),
     eventsToday: evs.filter(function (v) { return v.date === ctx.today; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; }),
     eventsTomorrow: evs.filter(function (v) { return v.date !== ctx.today; }).map(function (v) { return (v.time ? v.time + " " : "") + v.title; })
   };
@@ -1584,7 +1655,7 @@ function buildMorning_(ctx) {
       var mem = memoryItems_();
       var instructions = PERSONA + "\n\n" +
         "งานตอนนี้: Jack ส่งสรุปเช้าให้โอมอัตโนมัติ " + pad2_(CONFIG.MORNING_HOUR) + ":00 โดยระบบจัดรายการงาน/นัด/งบไว้ให้แล้ว (ข้อมูลเดียวกับ JSON ที่ให้) หน้าที่ของคุณคือเขียนคำพูดเพื่อนปิดท้าย 1-2 ประโยค (ไม่เกิน 2 บรรทัด)\n" +
-        "- ชี้สิ่งที่ควรทำก่อน / ทวงแผนที่โอมวางไว้เมื่อคืน (plannedLastNight) ตามที่เห็นในข้อมูล เลือกเรื่องที่สำคัญที่สุดเรื่องเดียว\n" +
+        "- ชี้สิ่งที่ควรทำก่อน / ชวนกลับมาทำ target ที่หลุดจังหวะ (offRhythm) แบบเพื่อน ไม่ตำหนิ / ทวงแผนที่โอมวางไว้เมื่อคืน (plannedLastNight) ตามที่เห็นในข้อมูล เลือกเรื่องที่สำคัญที่สุดเรื่องเดียว\n" +
         "- ห้ามพูดถึงเรื่องเงิน งบ รายจ่าย รายรับ การลงทุน\n" +
         "- ห้ามทักทาย ห้ามทวนตัวเลขหรือรายการทั้งหมด ใช้เฉพาะข้อเท็จจริงที่มีในข้อมูล ห้ามแต่งเพิ่ม · ไม่ใช้ Markdown ไม่ต้องขึ้นต้นด้วยสัญลักษณ์" +
         (mem.length ? "\n\nสิ่งที่ Jack จำเกี่ยวกับโอม (ใช้ถ้าเกี่ยว):\n" + mem.map(function (m) { return "• " + m.text; }).join("\n") : "");
@@ -1616,6 +1687,10 @@ function morningTemplate_(f) {
     f.tasksToday.forEach(function (x) { L.push("• " + x); });
     if (f.recurringToday.length) L.push("• 🔁 งานประจำ: " + f.recurringToday.join(", "));
   }
+  if (f.offRhythm && f.offRhythm.length) {
+    L.push("", "⏸️ หลุดจังหวะ");
+    f.offRhythm.forEach(function (x) { L.push("• " + x); });
+  }
   if (f.eventsToday.length || f.eventsTomorrow.length) {
     L.push("", "📅 นัดหมาย");
     f.eventsToday.forEach(function (x) { L.push("• วันนี้ " + x); });
@@ -1646,6 +1721,8 @@ var JOURNAL_QUESTIONS = [
   "วันนี้อยากขอบคุณใครหรืออะไรบ้าง?"
 ];
 
+var EVE_TICK_MAX = 6;                                       // ปุ่ม Quick Reply สูงสุด 13 = อารมณ์ 5 + ✓ 6 + Journal + ข้าม
+
 function buildEveningPlan_(ctx) {
   var year = ctx.today.slice(0, 4);
   var G = readGroups_([{ id: "g.journal." + year, def: [] }, { id: "k.tasks", def: [] }]);
@@ -1666,12 +1743,20 @@ function buildEveningPlan_(ctx) {
       .map(function (ev) { return (ev.startTime ? ev.startTime + " " : "") + ev.title; });
   } catch (err) { noteError_(err); }
 
+  var routines = [];
+  try { routines = routinesLeft_(ctx, ctx.today); } catch (err) { noteError_(err); }
   var L = ["🌙 สรุปวันนี้ · " + "วัน" + TH_DAYS[ctx.weekday] + " " + thDate_(ctx.today)];
   var sum = [];
   if (done) sum.push("• ✅ ทำงานเสร็จ " + done + " อย่าง");
   if (left) sum.push("• ⏳ งานค้างอยู่ " + left + " อย่าง");
   L = L.concat(sum.length ? sum : ["• วันนี้เงียบๆ ไม่มีบันทึกอะไรเลยครับ"]);
   if (left >= 5) L.push("ค้างเยอะนะครับ พรุ่งนี้เลือกเฉพาะที่ต้องเสร็จจริงๆ ก็พอ");
+  if (routines.length) {                                    // ขั้นที่ 3: งานประจำที่ยังไม่ติ๊ก → ปุ่ม ✓ ด้านล่าง
+    L.push("", "🔁 งานประจำที่ยังไม่ติ๊ก" + (routines.length > EVE_TICK_MAX ? " (" + routines.length + ")" : ""));
+    routines.slice(0, EVE_TICK_MAX).forEach(function (x) { L.push("• " + x.title); });
+    if (routines.length > EVE_TICK_MAX) L.push("• …อีก " + (routines.length - EVE_TICK_MAX) + " อย่าง (กดปุ่มแล้วจะขึ้นอันถัดไป)");
+    L.push("ทำแล้วแตะ ✓ ด้านล่างได้เลย");
+  }
 
   var wd = "วัน" + TH_DAYS[(ctx.weekday + 1) % 7];
   L.push("", "📌 พรุ่งนี้ (" + wd + " " + thDate_(tomorrow) + ")");
@@ -1688,6 +1773,7 @@ function buildEveningPlan_(ctx) {
   var quick = MOODS.map(function (m) {
     return { type: "action", action: { type: "postback", label: m.e + " " + m.l, data: "a=mood&v=" + m.v + "&d=" + ctx.today, displayText: m.e + " " + m.l } };
   });
+  routines.slice(0, EVE_TICK_MAX).forEach(function (x) { quick.push(tickBtn_(x, ctx.today)); });
   if (!wrote) quick.push({ type: "action", action: { type: "postback", label: "✍️ เขียน Journal", data: "a=noop", inputOption: "openKeyboard", fillInText: "journal วันนี้ " } });
   quick.push({ type: "action", action: { type: "postback", label: "ข้ามวันนี้", data: "a=skipj", displayText: "ข้ามวันนี้" } });
   return textMsg_(L.join("\n"), quick);

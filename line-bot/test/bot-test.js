@@ -826,7 +826,7 @@ test("20:00 วางแผนพรุ่งนี้: ยังไม่เข
   assert.ok(m.text.includes("📌 พรุ่งนี้") && m.text.includes("1) พรุ่งนี้ต้องทำอะไรบ้าง?") && m.text.includes("2) อยากทำอะไรบ้าง?"), m.text);
   assert.ok(m.text.includes("😌 วันนี้รู้สึกยังไงครับ?") && m.text.includes("📝 ถ้าอยากเขียน Journal (ไม่บังคับ)"), m.text);
   assert.ok(!/NaN|undefined|null/.test(m.text), m.text);
-  const q = m.quickReply.items.map((i) => i.action);
+  const q = m.quickReply.items.map((i) => i.action).filter((a) => !/^a=done&src=eve/.test(a.data || ""));   // ขั้นที่ 3: ปุ่ม ✓ งานประจำอยู่หลังปุ่มอารมณ์ (เทสต์แยกด้านล่าง)
   assert.deepStrictEqual(q.slice(0, 5).map((a) => a.data), [1, 2, 3, 4, 5].map((v) => "a=mood&v=" + v + "&d=" + TODAY));
   assert.deepStrictEqual(q.slice(0, 5).map((a) => a.label), ["😩 แย่มาก", "😕 ไม่ค่อยดี", "😐 กลางๆ", "🙂 ดี", "🤩 ดีมาก"]);
   assert.strictEqual(q[5].inputOption, "openKeyboard"); assert.strictEqual(q[5].fillInText, "journal วันนี้ ");
@@ -849,7 +849,7 @@ test("20:00: วันนี้เขียน Journal แล้ว → ยั�
   assert.strictEqual(pushCount() - p0, 1);
   m = lastPush().messages[0];
   assert.ok(m.text.includes("1) พรุ่งนี้ต้องทำอะไรบ้าง?") && !m.text.includes("Journal") && !m.text.includes("📝"), m.text);
-  const q = m.quickReply.items.map((i) => i.action);
+  const q = m.quickReply.items.map((i) => i.action).filter((a) => !/^a=done&src=eve/.test(a.data || ""));
   assert.strictEqual(q.length, 6);
   assert.ok(!q.some((a) => a.fillInText) && q[5].data === "a=skipj");
   assert.strictEqual(ctx.eveningJournalPush(), "already");
@@ -1471,6 +1471,124 @@ test("ขั้นที่ 1: ปุ่ม แก้ ของรายกา�
   post([msg("120")]);
   const ins = aiLog[aiLog.length - 1].instructions;
   assert.ok(!ins.includes("ขนมทดสอบขั้น1") && !ins.includes("กดปุ่ม \"แก้\""), ins.slice(-500));
+});
+
+
+// =================== ข้อ 56 ขั้นที่ 3: Target + วันนี้ + หลุดจังหวะ ===================
+const setTasks = (arr) => { store["k.tasks"] = { json: JSON.stringify(arr), by: "app", updateTime: ts() }; };
+const setProjects = (arr) => { store["k.projects"] = { json: JSON.stringify(arr), by: "app", updateTime: ts() }; };
+const dAgo = (n) => ctx.addDays_(TODAY, -n);
+test("ขั้นที่ 3: taskRhythm_ — นับรอบที่พลาดติดกัน (ไม่นับรอบนี้) · createdAt · ไม่เคยทำ+ไม่มี createdAt = ไม่เตือน", () => {
+  const R = (t, d) => ctx.taskRhythm_(Object.assign({ id: "x", recurrence: "daily", completions: {} }, t), d || TODAY);
+  const c = (...ds) => Object.fromEntries(ds.map((d) => [d, true]));
+  assert.strictEqual(R({ completions: c(dAgo(1)) }).missed, 0);
+  assert.strictEqual(R({ completions: c(dAgo(1)) }).off, false);
+  assert.strictEqual(R({ completions: c(dAgo(2)) }).missed, 1);
+  assert.strictEqual(R({ completions: c(dAgo(2)) }).off, false);            // พลาดเมื่อวานวันเดียว ยังไม่เตือน
+  const r3 = R({ completions: c(dAgo(3), TODAY) });
+  assert.deepStrictEqual([r3.missed, r3.off, r3.unit], [2, true, "วัน"]);     // ติ๊กวันนี้ไม่ลบความจริงว่าพลาด 2 วันก่อนหน้า
+  assert.strictEqual(R({}).unknown, true); assert.strictEqual(R({}).off, false);
+  assert.strictEqual(R({ createdAt: TODAY }).missed, 0);                     // เพิ่งสร้างวันนี้
+  assert.strictEqual(R({ createdAt: dAgo(1) }).missed, 1);
+  assert.strictEqual(R({ createdAt: dAgo(5) }).missed, 5);
+  assert.strictEqual(R({ createdAt: dAgo(5) }).off, true);
+  // ทุกสัปดาห์: สัปดาห์ก่อนไม่ได้ทำ = หลุด · ทุกเดือน: เดือนก่อนไม่ได้ทำ = หลุด
+  const wk = ctx.mondayOf_(TODAY), lastWk = ctx.addDays_(wk, -7), wk2 = ctx.addDays_(wk, -14);
+  assert.strictEqual(ctx.taskRhythm_({ recurrence: "weekly", completions: c(lastWk) }, TODAY).off, false);
+  const rw = ctx.taskRhythm_({ recurrence: "weekly", completions: c(wk2) }, TODAY);
+  assert.deepStrictEqual([rw.missed, rw.off, rw.unit, rw.score], [1, true, "สัปดาห์", 7]);
+  const pm = ctx.addMonths_(MONTH, -1), pm2 = ctx.addMonths_(MONTH, -2);
+  assert.strictEqual(ctx.taskRhythm_({ recurrence: "monthly", completions: c(pm) }, TODAY).off, false);
+  assert.strictEqual(ctx.taskRhythm_({ recurrence: "monthly", completions: c(pm2) }, TODAY).missed, 1);
+  assert.strictEqual(ctx.taskRhythm_({ recurrence: "none" }, TODAY), null);
+  // ข้ามปี / ต้นเดือน
+  assert.strictEqual(ctx.prevPeriodDate_("monthly", "2026-01-15"), "2025-12-01");
+  assert.strictEqual(ctx.prevPeriodDate_("daily", "2026-03-01"), "2026-02-28");
+  assert.strictEqual(ctx.prevPeriodDate_("weekly", "2026-09-30"), "2026-09-21");
+});
+
+test("ขั้นที่ 3: offRhythm_ — จัดกลุ่มตาม target · เรียงหลุดนานสุด · ข้าม archived/paused · งานไม่มีโปรเจกต์เป็น target เอง", () => {
+  const c = (...ds) => Object.fromEntries(ds.map((d) => [d, true]));
+  const tasks = [
+    { id: "a1", projectId: "pH", title: "วิ่ง", recurrence: "daily", completions: c(dAgo(4)) },          // พลาด 3 วัน
+    { id: "a2", projectId: "pH", title: "ยืดเหยียด", recurrence: "daily", completions: c(dAgo(10)) },   // พลาด 9 วัน → ตัวแทน target
+    { id: "a3", projectId: "pE", title: "ฟังพอดแคสต์", recurrence: "weekly", completions: c(ctx.addDays_(ctx.mondayOf_(TODAY), -21)) }, // 2 สัปดาห์ = 14
+    { id: "a4", projectId: "pP", title: "งานของโปรเจกต์ที่พัก", recurrence: "daily", completions: c(dAgo(30)) },
+    { id: "a5", projectId: null, title: "นั่งสมาธิ", recurrence: "daily", createdAt: dAgo(3), completions: {} },  // 3
+    { id: "a6", projectId: "pH", title: "งานปกติ", recurrence: "none", status: "pending", dueDate: dAgo(5) }
+  ];
+  const projects = [{ id: "pH", title: "สุขภาพดี", status: "active" }, { id: "pE", title: "อังกฤษ", status: "active" }, { id: "pP", title: "พักไว้", status: "paused" }];
+  const out = ctx.offRhythm_(tasks, projects, TODAY);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(out.map((x) => [x.target, x.routine, x.why]))), [["อังกฤษ", "ฟังพอดแคสต์", "ไม่ได้ทำมา 2 สัปดาห์"], ["สุขภาพดี", "ยืดเหยียด", "ไม่ได้ทำมา 9 วัน"], ["นั่งสมาธิ", null, "ไม่ได้ทำมา 3 วัน"]]);
+  assert.strictEqual(out[1].ref, "k.tasks#a2");
+});
+
+test("ขั้นที่ 3: สรุปเช้าเตือนหลุดจังหวะ 1–2 อัน · list_tasks คืน offRhythm · ปุ่มงานวันนี้บอกด้วย · งานใหม่จาก LINE มี createdAt", () => {
+  const c = (...ds) => Object.fromEntries(ds.map((d) => [d, true]));
+  setProjects([{ id: "pH", title: "สุขภาพดี", status: "active" }, { id: "pE", title: "อังกฤษ", status: "active" }, { id: "pX", title: "โปรเจกต์ที่สาม", status: "active" }]);
+  setTasks([
+    { id: "r1", projectId: "pH", title: "วิ่ง", status: "pending", recurrence: "daily", weight: 1, completions: c(dAgo(6)) },
+    { id: "r2", projectId: "pE", title: "ท่องศัพท์", status: "pending", recurrence: "daily", weight: 1, completions: c(dAgo(3)) },
+    { id: "r3", projectId: "pX", title: "งานสาม", status: "pending", recurrence: "daily", weight: 1, completions: c(dAgo(2)) },   // พลาด 1 วัน
+    { id: "r4", projectId: "pX", title: "ตรงจังหวะ", status: "pending", recurrence: "daily", weight: 1, completions: c(dAgo(1)) }
+  ]);
+  const f = ctx.morningFacts_(ctx.newCtx_());
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f.offRhythm)), ["สุขภาพดี · วิ่ง — ไม่ได้ทำมา 5 วัน", "อังกฤษ · ท่องศัพท์ — ไม่ได้ทำมา 2 วัน"]);
+  const t = ctx.morningTemplate_(f);
+  assert.ok(t.includes("\n\n⏸️ หลุดจังหวะ\n• สุขภาพดี · วิ่ง — ไม่ได้ทำมา 5 วัน\n• อังกฤษ · ท่องศัพท์ — ไม่ได้ทำมา 2 วัน"), t);
+  assert.ok(!t.includes("งานสาม —"), "เตือนแค่ 2 อัน");
+  aiScript = () => ({ text: "กลับมาวิ่งหน่อยนะครับ" });
+  assert.strictEqual(ctx.testMorningPush(), "sent");
+  const b = aiLog[aiLog.length - 1];
+  assert.ok(JSON.parse(b.input[0].content).offRhythm.length === 2 && b.instructions.includes("หลุดจังหวะ"));
+  const lt = ctx.toolListTasks_({ scope: "today" }, ctx.newCtx_());
+  assert.strictEqual(lt.offRhythm.length, 2);                                     // งานสาม พลาดแค่เมื่อวาน = ยังไม่หลุด
+  post([pb("a=menu&m=tasks")]);
+  assert.ok(lastReply().text.includes("⏸️ หลุดจังหวะ\n• สุขภาพดี · วิ่ง — ไม่ได้ทำมา 5 วัน"), lastReply().text);
+  aiScript = once([{ name: "add_task", args: { title: "ออกกำลังกาย", recurrence: "daily" } }]);
+  post([msg("เพิ่มงานประจำ ออกกำลังกาย ทุกวัน")]);
+  const nt = app().tasks.find((x) => x.title === "ออกกำลังกาย");
+  assert.strictEqual(nt.createdAt, TODAY);
+  canonical();
+});
+
+test("ขั้นที่ 3: 20:00 มีรายการ + ปุ่ม ✓ งานประจำที่ยังไม่ติ๊ก (สูงสุด 6) · กดแล้วติ๊กได้ + ขึ้นปุ่มอันที่เหลือ · ครบแล้วบอก", () => {
+  setProjects([{ id: "pH", title: "สุขภาพดี", status: "active" }, { id: "pP", title: "พักไว้", status: "paused" }]);
+  const arr = [];
+  for (let i = 1; i <= 8; i++) arr.push({ id: "e" + i, projectId: "pH", title: "ประจำ" + i, status: "pending", recurrence: "daily", weight: 1, completions: {} });
+  arr.push({ id: "eP", projectId: "pP", title: "ของโปรเจกต์ที่พัก", status: "pending", recurrence: "daily", weight: 1, completions: {} });
+  arr.push({ id: "eD", projectId: "pH", title: "ทำแล้ว", status: "pending", recurrence: "daily", weight: 1, completions: { [TODAY]: true } });
+  setTasks(arr);
+  clearTodayJournal();
+  assert.strictEqual(ctx.eveningJournalPush(), "sent");
+  const m = lastPush().messages[0];
+  assert.ok(m.text.includes("🔁 งานประจำที่ยังไม่ติ๊ก (8)") && m.text.includes("• ประจำ1") && m.text.includes("…อีก 2 อย่าง") && !m.text.includes("ของโปรเจกต์ที่พัก") && !m.text.includes("• ทำแล้ว"), m.text);
+  const q = m.quickReply.items.map((i) => i.action);
+  assert.ok(q.length <= 13);
+  const ticks = q.filter((a) => /^a=done&src=eve/.test(a.data));
+  assert.strictEqual(ticks.length, 6);
+  assert.deepStrictEqual(q.slice(0, 5).map((a) => a.data.slice(0, 6)), Array(5).fill("a=mood"));
+  assert.strictEqual(q[q.length - 1].data, "a=skipj");
+  assert.ok(ticks[0].data.includes("&d=" + TODAY) && ticks[0].label.startsWith("✓ "));
+  const n = aiLog.length;
+  post([pb(ticks[0].data)]);
+  assert.strictEqual(aiLog.length, n, "ไม่ใช้ AI");
+  assert.strictEqual(app().tasks.find((x) => x.id === "e1").completions[TODAY], true);
+  const r = lastReply();
+  assert.ok(r.text.startsWith("เสร็จแล้ว ✓ ประจำ1"), r.text);
+  const next = r.quickReply.items.map((i) => i.action).filter((a) => /^a=done&src=eve/.test(a.data));
+  assert.strictEqual(next.length, 7);                                              // ปุ่มยกเลิก 1 + ที่เหลือ 7
+  assert.ok(r.quickReply.items[0].action.data.startsWith("a=undo"));
+  // ติ๊กที่เหลือทีละอัน → อันสุดท้ายบอกครบ
+  for (let i = 2; i <= 8; i++) post([pb("a=done&src=eve&d=" + TODAY + "&ref=k.tasks#e" + i)]);
+  assert.ok(lastReply().text.includes("งานประจำวันนี้ครบแล้ว"), lastReply().text);
+  // ปุ่มเก่าข้ามวัน: ของเมื่อวานติ๊กได้ (ลงวันที่ในปุ่ม) · เกิน 1 วันไม่ได้
+  post([pb("a=done&src=eve&d=" + dAgo(1) + "&ref=k.tasks#e1")]);
+  assert.strictEqual(app().tasks.find((x) => x.id === "e1").completions[dAgo(1)], true);
+  post([pb("a=done&src=eve&d=" + dAgo(2) + "&ref=k.tasks#e1")]);
+  assert.ok(lastReply().text.includes("ไม่เกิน 1 วัน"), lastReply().text);
+  assert.ok(!app().tasks.find((x) => x.id === "e1").completions[dAgo(2)]);
+  canonical();
 });
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));
