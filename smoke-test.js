@@ -1096,6 +1096,83 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   await p.evaluate(()=>{ const row=[...document.querySelectorAll('.db-feature .db-trow')].find(r=>r.querySelector('.db-tname').textContent==='ฝึกทุกวัน'); row.querySelector('.db-tcheck').click(); });
   await p.waitForTimeout(500);
 
+  console.log('\n[ข้อ 56 ขั้นที่ 4] XP / Level 3 ด้าน');
+  await mobileGo('Home'); await p.waitForTimeout(800);
+  const lvRead=()=>p.evaluate(()=>[...document.querySelectorAll('.xp-card .xp-row')].map(r=>({side:r.querySelector('.xp-side').textContent,lv:r.querySelector('.xp-lv').textContent,sub:r.querySelector('.xp-sub').textContent,week:(r.querySelector('.xp-week')||{}).textContent||""})));
+  const lv0=await lvRead();
+  /* xp.start = วันที่เทสต์รัน → ของที่เทสต์ก่อนหน้าทำ "วันนี้" (หนังสือจบ/รีวิว/Journal/งาน) ได้ XP จริง · ของใน seed ที่ลงวันที่ก่อนหน้าไม่ได้ */
+  const num=(x)=>{const m=x.sub.match(/^([\d,]+) \/ ([\d,]+)/);return [Number(x.lv.replace(/\D/g,'')),Number(m[1].replace(/,/g,''))];};
+  check('Level: การ์ด 3 ด้าน Wealth/Health/Growth · Wealth/Health เริ่ม 0 (seed เก่าไม่ backfill)',lv0.length===3&&lv0.map(x=>x.side).join()==='Wealth,Health,Growth'&&lv0[0].sub.startsWith('0 / 100')&&lv0[1].sub.startsWith('0 / 100'),JSON.stringify(lv0));
+  const chip=await p.evaluate(()=>{ const row=[...document.querySelectorAll('.db-feature .db-trow')].find(r=>r.querySelector('.db-tname').textContent==='งานประจำวัน'); return row&&(row.querySelector('.td-xp')||{}).textContent; });
+  check('การ์ดวันนี้: งานที่ยังไม่ติ๊กบอก +XP',chip==='+5',String(chip));
+  await p.evaluate(()=>{ const row=[...document.querySelectorAll('.db-feature .db-trow')].find(r=>r.querySelector('.db-tname').textContent==='งานประจำวัน'); row.querySelector('.db-tcheck').click(); });
+  await p.waitForTimeout(700);
+  const lv1=await lvRead();
+  const toastTxt=await p.evaluate(()=>[...document.querySelectorAll('.xp-toast .ms-toast-title')].map(x=>x.textContent));
+  check('ติ๊กงานประจำ (ไม่มี target) → Growth +5 · สัปดาห์นี้ +5 · toast +5 XP',num(lv1[2])[1]===num(lv0[2])[1]+5&&num(lv1[2])[0]===num(lv0[2])[0]&&Number(lv1[2].week)===Number(lv0[2].week||0)+5&&lv1[0].sub.startsWith('0 /')&&toastTxt.some(t=>t==='+5 XP · Growth'),JSON.stringify([lv1,toastTxt]));
+  await p.evaluate(()=>{ const row=[...document.querySelectorAll('.db-feature .db-trow')].find(r=>r.querySelector('.db-tname').textContent==='งานประจำวัน'); row.querySelector('.db-tcheck').click(); });
+  await p.waitForTimeout(700);
+  const lv2=await lvRead();
+  check('ยกเลิกติ๊ก → XP หักคืน (กลับเท่าเดิม)',lv2[2].sub===lv0[2].sub&&lv2[2].week===lv0[2].week,JSON.stringify([lv0[2],lv2[2]]));
+  await p.locator('.xp-card .db-chip').click(); await p.waitForTimeout(600);
+  const md=await p.evaluate(()=>({open:!!document.querySelector('.xp-modal'),badges:document.querySelectorAll('.xp-badge').length,got:document.querySelectorAll('.xp-badge.got').length,rules:!!document.querySelector('.xp-rules'),start:document.querySelector('.xp-modal').innerText.includes('เริ่มนับ'),sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
+  check('หน้าต่างประวัติ XP: เหรียญ 9 อัน + กติกา + วันเริ่มนับ · มือถือไม่ล้น',md.open&&md.badges===9&&md.got>=1&&md.rules&&md.start&&md.sw<=md.iw+2,JSON.stringify(md));
+  await p.locator('.xp-modal .modal-close').click(); await p.waitForTimeout(300);
+  const U=await p.evaluate(()=>{
+    const T=todayISO(), d=(n)=>shiftISO(T,{d:n}), out={};
+    const L=(n)=>{const x=xpLevel(n);return [x.level,x.into,x.need];};
+    out.levels=[L(0),L(99),L(100),L(299),L(300),L(600),L(1000)];
+    const base={xp:{start:d(-20)},projects:[{id:"pf",title:"เงิน",category:"finance",milestones:[{id:"a",pct:25,reachedAt:d(-3)},{id:"b",pct:50,reachedAt:d(-40)}],xpDoneAt:d(-1)},{id:"ph",title:"ร่างกาย",category:"health",xpDoneAt:"before"}],
+      tasks:[],bookQueue:[],mediaReviews:[],journal:[],finance:{income:[],expenses:[],investments:[]},reviews:{}};
+    const comp={}; for(let i=-10;i<=0;i++) if(i!==-2) comp[d(i)]=true;                // ขาด d(-2) → ช่วงติด 7 วัน = d(-1)..d(-7)? ไม่ถึง / d(-10..-3)=8 วัน ได้โบนัส 1
+    base.tasks=[{id:"r",projectId:"ph",title:"วิ่ง",recurrence:"daily",completions:{...comp,[d(-30)]:true}},
+      {id:"o1",projectId:"pf",title:"จ่ายหนี้",recurrence:"none",status:"done",completedAt:new Date(d(-1)+"T10:00:00").toISOString()},
+      {id:"o2",projectId:null,title:"เก่า",recurrence:"none",status:"done",completedAt:new Date(d(-25)+"T10:00:00").toISOString()},
+      {id:"o3",projectId:null,title:"ไม่เสร็จ",recurrence:"none",status:"pending"}];
+    base.bookQueue=[{id:"b1",title:"A",status:"done",finishedDate:d(-5),rating:8,reviewText:"1\n2\n3"},{id:"b2",title:"B",status:"done",finishedDate:d(-4),rating:8,reviewText:"สั้น"},
+      {id:"b3",title:"C",status:"done",finishedDate:d(-4),rating:0,quotes:[{id:"q"}]},{id:"b4",title:"D",status:"done",finishedDate:d(-4),rating:7,reviewText:"x",quotes:[{id:"q"}]},{id:"b5",title:"E",status:"done",finishedDate:d(-60),rating:9,reviewText:"1\n2\n3"},{id:"b6",title:"F",status:"reading",finishedDate:d(-1)}];
+    base.mediaReviews=[1,2,3].map(i=>({id:"m"+i,title:"ep"+i,type:"podcast",reviewText:"ดี",date:d(-2)})).concat([{id:"m4",title:"ไม่มีรีวิว",type:"video",reviewText:"",date:d(-1)},{id:"m5",title:"อนาคต",type:"video",reviewText:"x",date:d(3)}]);
+    base.journal=[{date:d(-1),entry:"x"},{date:d(-1),entry:"ซ้ำวันเดิม"},{date:d(-2),entry:"  "},{date:d(-2),mood:3},{date:d(-30),entry:"เก่า"}];
+    const X=computeXP(base,T);
+    const by=(src)=>X.events.filter(e=>e.src===src);
+    out.routine=by("routine").length; out.streak=by("streak").map(e=>e.date); out.task=by("task").map(e=>e.side+":"+e.pts);
+    out.ms=by("milestone").map(e=>e.side); out.proj=by("project").map(e=>e.side);
+    out.book=by("book").length; out.sum=by("bookSummary").map(e=>e.label).sort();
+    out.media=by("media").length; out.journal=by("journal").length;
+    out.sides=X.sides.map(s=>[s.key,s.total]);
+    const sumSide=(k)=>X.events.filter(e=>e.side===k).reduce((a,e)=>a+e.pts,0);
+    out.consistent=X.sides.every(s=>s.total===sumSide(s.key));
+    out.badges=X.badges.filter(b=>b.got).map(b=>b.key);
+    // Wealth รายเดือน
+    const cm=T.slice(0,7), m1=shiftISO(cm+"-01",{m:-1}).slice(0,7), m2=shiftISO(cm+"-01",{m:-2}).slice(0,7);
+    const W={xp:{start:m2+"-01",savingRateTarget:20,snapshots:{[m2]:{nw:100000,debt:50000},[m1]:{nw:120000,debt:40000},[cm]:{nw:90000,debt:45000}}},projects:[],tasks:[],
+      finance:{income:[{id:"i",date:m1+"-25",month:m1,amount:30000}],expenses:[{id:"e",date:m1+"-05",amount:-20000,category:"อาหาร"}],investments:[{id:"v",date:m1+"-25",amount:3000,type:"retirement"}]},
+      reviews:{[m1]:{rating:4,updatedAt:new Date(m1+"-28T09:00:00").toISOString()}}};
+    const XW=computeXP(W,T);
+    out.wealth=XW.events.filter(e=>e.src==="wealth").map(e=>e.m+"|"+e.label.split(" ")[0]).sort();
+    out.w4=XW.badges.find(b=>b.key==="wealth4").got;
+    W.xp.savingRateTarget=40; out.wealthHi=computeXP(W,T).events.filter(e=>e.src==="wealth").length;
+    // syncXpMeta: เปิดระบบครั้งแรก → start=วันนี้, โปรเจกต์ที่ครบแล้ว = before · ครั้งถัดไปครบ = วันนี้ · ลดลง = ลบ
+    const S0={projects:[{id:"p",title:"x",measureType:"manual",manualValue:100,category:"personal"},{id:"q",title:"y",measureType:"manual",manualValue:50}],tasks:[],finance:{debts:[],cashAccounts:[{balance:1000}],investmentValues:{},cryptoHoldings:[],fxRate:{}}};
+    const s1=syncXpMeta(S0,T);
+    out.sync1=[s1.xp.start,s1.projects[0].xpDoneAt,s1.projects[1].xpDoneAt,JSON.stringify(s1.xp.snapshots)];
+    const S1={...S0,xp:s1.xp,projects:[s1.projects[0],{...s1.projects[1],manualValue:100}]};
+    const s2=syncXpMeta(S1,T); out.sync2=s2.projects[1].xpDoneAt;
+    const s3=syncXpMeta({...S1,projects:s2.projects},T); out.sync3=s3;             // ไม่มีอะไรเปลี่ยน = null (กัน persist วน)
+    const s4=syncXpMeta({...S1,projects:[s2.projects[0],{...s2.projects[1],manualValue:80}]},T); out.sync4="xpDoneAt" in s4.projects[1];
+    return out;
+  });
+  check('XP: สูตรเลเวล 100 × เลเวลปัจจุบัน',JSON.stringify(U.levels)===JSON.stringify([[1,0,100],[1,99,100],[2,0,200],[2,199,200],[3,0,300],[4,0,400],[5,0,500]]),JSON.stringify(U.levels));
+  check('XP: งานประจำนับเฉพาะหลังวันเริ่ม (10 วัน) · โบนัส 7 วันติดได้ครั้งเดียวต่อช่วง',U.routine===10&&U.streak.length===1,JSON.stringify([U.routine,U.streak]));
+  check('XP: งานครั้งเดียว +10 ตามหมวด (การเงิน→wealth) · เสร็จก่อนเริ่ม/ยังไม่เสร็จไม่นับ',JSON.stringify(U.task)==='["wealth:10"]',JSON.stringify(U.task));
+  check('XP: หมุด +50 เฉพาะที่ถึงหลังเริ่ม · ปิดโปรเจกต์ +150 ("before" ไม่นับ)',JSON.stringify(U.ms)==='["wealth"]'&&JSON.stringify(U.proj)==='["wealth"]',JSON.stringify([U.ms,U.proj]));
+  check('XP: หนังสือจบ +30 (จบก่อนเริ่มไม่นับ) · สรุป = ดาว + (รีวิว ≥3 บรรทัด หรือคำคม)',U.book===4&&JSON.stringify(U.sum)==='["สรุปหนังสือ · A","สรุปหนังสือ · D"]',JSON.stringify([U.book,U.sum]));
+  check('XP: รีวิววิดีโอ/พอดแคสต์ ≤2/วัน · ต้องมีรีวิว · อนาคตไม่นับ · Journal 5/วัน (ว่าง/มีแต่อารมณ์ไม่นับ)',U.media===2&&U.journal===1,JSON.stringify([U.media,U.journal]));
+  check('XP: ผลรวมแต่ละด้านตรงกับประวัติ · ได้เหรียญก้าวแรก/ติดกัน/ปิดจ๊อบ/นักสรุป',U.consistent&&['first','streak','project','book'].every(k=>U.badges.includes(k)),JSON.stringify([U.sides,U.badges]));
+  check('XP Wealth รายเดือน: ออมถึงเป้า + net worth เพิ่ม + หนี้ลด (เดือนที่ปิดแล้ว) + รีวิวเดือน · เดือนนี้ที่ nw ลดไม่นับ · เหรียญเดือนทอง',U.wealth.length===4&&U.wealth.every(x=>x.startsWith(U.wealth[0].slice(0,7)))&&U.w4,JSON.stringify(U.wealth));
+  check('XP Wealth: ปรับเป้าอัตราออมสูงขึ้น (40%) → ข้อออมไม่ผ่าน',U.wealthHi===3,String(U.wealthHi));
+  check('syncXpMeta: เปิดครั้งแรกตั้ง start + โปรเจกต์ที่ครบอยู่แล้ว=before + จด net worth · ครบทีหลัง=วันนี้ · ไม่มีอะไรเปลี่ยน=null · ต่ำกว่า 100% = ลบวัน',U.sync1[1]==='before'&&U.sync1[2]===undefined&&/"nw":1000/.test(U.sync1[3])&&/^\d{4}-/.test(U.sync2)&&U.sync3===null&&U.sync4===false,JSON.stringify([U.sync1,U.sync2,U.sync3,U.sync4]));
+
   console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
   await mobileGo('Home'); await p.waitForTimeout(600);
   const hd=await p.evaluate(()=>{

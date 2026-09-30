@@ -7746,8 +7746,260 @@ function useCountUp(target,ms=800){
   },[target,ms]);
   return v;
 }
+/* ═══════════════════════════════════════════════════════════════════
+   ข้อ 56 ขั้นที่ 4: XP / Level 3 ด้าน (Wealth · Health · Growth)
+   หลัก: XP "คำนวณจากข้อมูลจริงทุกครั้ง" ไม่มีสมุดบัญชี XP แยก → ลบ/ยกเลิกรายการ = XP หายเองอัตโนมัติ (หักคืน)
+         ไม่ลดตามเวลา · นับเฉพาะของที่เกิดตั้งแต่ xp.start (วันเปิดระบบ) — ไม่ backfill ข้อมูลเก่า
+   เก็บเพิ่มแค่: data.xp = {start, savingRateTarget, snapshots:{"YYYY-MM":{nw,debt}}} + project.xpDoneAt (วันที่ครบ 100%)
+   ด้าน: หมวด target การเงิน→Wealth · สุขภาพ→Health · ที่เหลือ/ไม่มี target→Growth
+   ยังไม่มีแหล่งแต้ม: ออกกำลังกาย/นอน/น้ำ/ทดสอบสมรรถนะ/ตรวจสุขภาพ (ขั้นที่ 7 Health) — ค่าแต้มกำหนดไว้แล้วใน XP_PTS
+   ═══════════════════════════════════════════════════════════════════ */
+const XP_SIDES=[
+  {key:"wealth",label:"Wealth",th:"การเงิน",emoji:"💰",color:"var(--gold)"},
+  {key:"health",label:"Health",th:"สุขภาพ",emoji:"❤️",color:"#f2777a"},
+  {key:"growth",label:"Growth",th:"การเติบโต",emoji:"🌱",color:"var(--accent)"},
+];
+const XP_PTS={routine:5,task:10,milestone:50,project:150,bookDone:30,bookSummary:120,media:10,journal:5,exercise:15,sleep:10,water:5,wealthMonth:75,fitnessUp:30,checkup:100,streak7:20};
+const XP_MEDIA_PER_DAY=2;
+const XP_DEFAULT_SAVING_TARGET=20;
+const XP_TITLES={
+  wealth:[[1,"ผู้เริ่มเก็บ"],[3,"นักออม"],[5,"นักวางแผนการเงิน"],[8,"ผู้สร้างความมั่งคั่ง"],[12,"นายทุนตัวจริง"],[20,"เจ้าแห่งความมั่งคั่ง"]],
+  health:[[1,"เริ่มขยับ"],[3,"คนแข็งแรง"],[5,"นักกีฬาในบ้าน"],[8,"ร่างกายแกร่ง"],[12,"เครื่องจักรพลังสูง"],[20,"ตำนานสุขภาพ"]],
+  growth:[[1,"นักเรียนรู้หน้าใหม่"],[3,"นักสะสมความรู้"],[5,"ผู้พัฒนาตัวเอง"],[8,"นักปราชญ์รุ่นใหม่"],[12,"ปรมาจารย์"],[20,"ตำนานแห่งการเติบโต"]],
+};
+const XP_BADGES=[
+  {key:"first",emoji:"✨",name:"ก้าวแรก",desc:"ได้ XP ครั้งแรก",test:(ev)=>ev.length>0},
+  {key:"streak",emoji:"🔥",name:"ติดกัน 7 วัน",desc:"ทำงานประจำรายวันครบ 7 วันติด",test:(ev)=>ev.some(e=>e.src==="streak")},
+  {key:"project",emoji:"🏁",name:"ปิดจ๊อบ",desc:"ปิดโปรเจกต์ (ครบ 100%) ครั้งแรก",test:(ev)=>ev.some(e=>e.src==="project")},
+  {key:"book",emoji:"📚",name:"นักสรุป",desc:"สรุปหนังสือเล่มแรก",test:(ev)=>ev.some(e=>e.src==="bookSummary")},
+  {key:"journal30",emoji:"📝",name:"นักบันทึก",desc:"เขียน Journal ครบ 30 วัน",test:(ev)=>ev.filter(e=>e.src==="journal").length>=30},
+  {key:"wealth4",emoji:"💎",name:"เดือนทอง",desc:"ได้ XP การเงินรายเดือนครบ 4 เรื่องในเดือนเดียว",test:(ev)=>{ const c={}; ev.forEach(e=>{ if(e.src==="wealth") c[e.m]=(c[e.m]||0)+1; }); return Object.values(c).some(n=>n>=4); }},
+  {key:"lv5",emoji:"⭐",name:"เลเวล 5",desc:"ด้านใดด้านหนึ่งถึง Lv5",test:(ev,s)=>s.some(x=>x.level>=5)},
+  {key:"lv10",emoji:"🌟",name:"เลเวล 10",desc:"ด้านใดด้านหนึ่งถึง Lv10",test:(ev,s)=>s.some(x=>x.level>=10)},
+  {key:"balance",emoji:"⚖️",name:"สมดุล",desc:"ทั้ง 3 ด้านถึง Lv3",test:(ev,s)=>s.every(x=>x.level>=3)},
+];
+function xpSideOfCategory(cat){ return cat==="finance"?"wealth":cat==="health"?"health":"growth"; }
+function xpLocalDate(v){ if(!v) return null; const s=String(v); return /T/.test(s)?isoDate(new Date(s)):s.slice(0,10); }
+function xpMonthEnd(m){ return shiftISO(shiftISO(m+"-01",{m:1}),{d:-1}); }
+function xpPrevMonth(m){ return shiftISO(m+"-01",{m:-1}).slice(0,7); }
+/* สรุปหนังสือ = มีดาว + (รีวิว ≥3 บรรทัด หรือ มีคำคม/บทเรียน ≥1) */
+function bookHasSummary(b){
+  const lines=String((b&&b.reviewText)||"").split(/\n/).filter(l=>l.trim()).length;
+  return Number(b&&b.rating)>0&&(lines>=3||((b&&b.quotes)||[]).length>=1);
+}
+/* XP ไปเลเวลถัดไป = 100 × เลเวลปัจจุบัน */
+function xpLevel(total){ let level=1,need=100,into=total; while(into>=need){ into-=need; level++; need=100*level; } return {level,into,need,total}; }
+function xpTitle(side,lv){ let t=XP_TITLES[side][0][1]; XP_TITLES[side].forEach(([l,n])=>{ if(lv>=l) t=n; }); return t; }
+function xpNetWorthNow(data){ return Math.round(totalCash(data)+portfolioValue(data)-totalDebtBalance(data)); }
+function computeXP(data,today=todayISO()){
+  const xp=(data&&data.xp)||{}, start=xp.start||null;
+  const ev=[];
+  const add=(date,side,pts,label,src,extra)=>{ if(start&&date&&date>=start&&date<=today) ev.push({date,side,pts,label,src,...(extra||{})}); };
+  if(start){
+    const projById={}; (data.projects||[]).forEach(p=>{ if(p&&p.id) projById[p.id]=p; });
+    (data.tasks||[]).forEach(t=>{
+      if(!t||!t.id) return;
+      const p=t.projectId&&projById[t.projectId];
+      const side=p?xpSideOfCategory(p.category):"growth";
+      if(isRecurring(t)){
+        const startKey=periodKey(t.recurrence,start);
+        const comp=t.completions||{};
+        const keys=Object.keys(comp).filter(k=>comp[k]&&k>=startKey).sort();
+        keys.forEach(k=>{ const d=t.recurrence==="monthly"?k+"-01":k; add(d<start?start:d,side,XP_PTS.routine,`งานประจำ · ${t.title}`,"routine"); });
+        if(t.recurrence==="daily"){                     // โบนัสติดกันครบ 7 วัน: ครั้งเดียวต่อ 1 ช่วงที่ติดกัน (ไม่ทบที่ 14/21)
+          let run=0,prev=null;
+          keys.forEach(k=>{ run=(prev&&shiftISO(prev,{d:1})===k)?run+1:1; prev=k; if(run===7) add(k,side,XP_PTS.streak7,`ติดกัน 7 วัน · ${t.title}`,"streak"); });
+        }
+      } else if(t.status==="done"){
+        add(xpLocalDate(t.completedAt),side,XP_PTS.task,`งานเสร็จ · ${t.title}`,"task");
+      }
+    });
+    (data.projects||[]).forEach(p=>{
+      if(!p) return;
+      const side=xpSideOfCategory(p.category);
+      (p.milestones||[]).forEach(m=>{ if(m&&m.reachedAt) add(String(m.reachedAt).slice(0,10),side,XP_PTS.milestone,`ถึงหมุด ${milestoneLabel(m)} · ${p.title}`,"milestone"); });
+      if(p.xpDoneAt&&/^\d{4}-\d{2}-\d{2}$/.test(p.xpDoneAt)) add(p.xpDoneAt,side,XP_PTS.project,`ปิดโปรเจกต์ · ${p.title}`,"project");
+    });
+    (data.bookQueue||[]).forEach(b=>{
+      if(!b||b.status!=="done"||!b.finishedDate) return;
+      const fd=String(b.finishedDate).slice(0,10);
+      if(fd<start) return;                              // จบก่อนเปิดระบบ = ไม่นับทั้งจบและสรุป
+      add(fd,"growth",XP_PTS.bookDone,`อ่านจบ · ${b.title}`,"book");
+      if(bookHasSummary(b)) add(fd,"growth",XP_PTS.bookSummary,`สรุปหนังสือ · ${b.title}`,"bookSummary");
+    });
+    const perDay={};
+    (data.mediaReviews||[]).filter(r=>r&&r.date&&String(r.reviewText||"").trim())
+      .slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.id).localeCompare(String(b.id)))
+      .forEach(r=>{ const d=String(r.date).slice(0,10); if(d<start||d>today) return; perDay[d]=(perDay[d]||0)+1; if(perDay[d]<=XP_MEDIA_PER_DAY) add(d,"growth",XP_PTS.media,`รีวิว${r.type==="podcast"?"พอดแคสต์":"วิดีโอ"} · ${r.title}`,"media"); });
+    const jd=new Set();
+    (data.journal||[]).forEach(j=>{ if(j&&j.date&&String(j.entry||"").trim()) jd.add(String(j.date).slice(0,10)); });
+    jd.forEach(d=>add(d,"growth",XP_PTS.journal,"เขียน Journal","journal"));
+    /* Wealth รายเดือน (75/เรื่อง): เดือนที่ปิดแล้วเท่านั้น (ข้อมูล import เดือนละครั้ง) ยกเว้นทำรีวิวเดือน */
+    const cur=today.slice(0,7), sm=start.slice(0,7), snaps=xp.snapshots||{};
+    const target=Number(xp.savingRateTarget)||XP_DEFAULT_SAVING_TARGET;
+    const fin=data.finance||{};
+    const months=new Set();
+    (fin.income||[]).forEach(i=>months.add(String(i.month||i.date||"").slice(0,7)));
+    Object.keys(snaps).forEach(m=>months.add(m));
+    Object.keys(data.reviews||{}).forEach(m=>months.add(m));
+    [...months].filter(m=>/^\d{4}-\d{2}$/.test(m)&&m>=sm&&m<=cur).sort().forEach(m=>{
+      const end=xpMonthEnd(m), W=(label,date)=>add(date||end,"wealth",XP_PTS.wealthMonth,label,"wealth",{m});
+      if(m<cur){
+        const R=buildMonthReview(data,m);
+        if(R.totalIncome>0&&R.savingRate>=target) W(`อัตราออม ${m} ถึงเป้า (${R.savingRate.toFixed(0)}% ≥ ${target}%)`);
+        const a=snaps[m], b=snaps[xpPrevMonth(m)];
+        if(a&&b&&a.nw>b.nw) W(`Net worth ${m} เพิ่มขึ้น`);
+        if(a&&b&&b.debt>0&&a.debt<b.debt) W(`หนี้ ${m} ลดลง`);
+      }
+      const rv=(data.reviews||{})[m];
+      if(rv) W(`ทำรีวิวเดือน ${m}`,xpLocalDate(rv.updatedAt)||end);
+    });
+  }
+  const sums={wealth:0,health:0,growth:0}, week={wealth:0,health:0,growth:0}, mon=mondayISO(today);
+  ev.forEach(e=>{ sums[e.side]+=e.pts; if(e.date>=mon) week[e.side]+=e.pts; });
+  ev.sort((a,b)=>b.date.localeCompare(a.date));
+  const sides=XP_SIDES.map(s=>{ const L=xpLevel(sums[s.key]); return {...s,...L,week:week[s.key],title:xpTitle(s.key,L.level)}; });
+  const badges=XP_BADGES.map(b=>({key:b.key,emoji:b.emoji,name:b.name,desc:b.desc,got:!!b.test(ev,sides)}));
+  return {start,events:ev,sides,badges,weekTotal:week.wealth+week.health+week.growth,savingRateTarget:Number(xp.savingRateTarget)||XP_DEFAULT_SAVING_TARGET};
+}
+/* ข้อมูลเสริมที่ XP ต้องการ (เรียกใน effect เดียวกับ syncMilestones): ตั้ง xp.start ครั้งแรก · ประทับวันครบ 100% ของโปรเจกต์
+   (ครบอยู่แล้วตอนเปิดระบบ = "before" ไม่ได้แต้ม · ลดต่ำกว่า 100% = ลบวัน → แต้มหาย) · จด net worth/หนี้ ของเดือนนี้ (ใช้เทียบเดือนก่อน) */
+function syncXpMeta(data,today=todayISO()){
+  let changed=false;
+  const init=!(data.xp&&data.xp.start);
+  const xp={...(data.xp||{})};
+  if(init){ xp.start=today; changed=true; }
+  let projects=data.projects;
+  if(Array.isArray(projects)){
+    let touched=false;
+    const np=projects.map(p=>{
+      if(!p) return p;
+      const done=projectProgress(p,data)>=100;
+      if(done&&!p.xpDoneAt){ touched=true; return {...p,xpDoneAt:init?"before":today}; }
+      if(!done&&p.xpDoneAt){ touched=true; const {xpDoneAt,...rest}=p; return rest; }
+      return p;
+    });
+    if(touched){ projects=np; changed=true; }
+  }
+  if(data.finance){
+    const m=today.slice(0,7), nw=xpNetWorthNow(data), debt=Math.round(totalDebtBalance(data));
+    const snaps=xp.snapshots||{}, s=snaps[m];
+    if(!s||s.nw!==nw||s.debt!==debt){ xp.snapshots={...snaps,[m]:{nw,debt}}; changed=true; }
+  }
+  return changed?{xp,projects}:null;
+}
+/* แต้มของงานตอนติ๊ก (ใช้โชว์ "+5"/"+10" ในการ์ดวันนี้) */
+function xpForTask(t){ return isRecurring(t)?XP_PTS.routine:XP_PTS.task; }
+
+function DashLevelCard({data,onOpen}){
+  const XP=useMemo(()=>computeXP(data),[data]);
+  return (
+    <div className="db-card xp-card">
+      <div className="db-head">
+        <div><div className="db-title">Level</div><div className="db-note">สัปดาห์นี้ <b className="db-mono" style={{color:"var(--accent-soft)"}}>+{XP.weekTotal}</b> XP</div></div>
+        <button className="db-chip" onClick={onOpen}>ประวัติ XP</button>
+      </div>
+      <div className="xp-rows">
+        {XP.sides.map(s=>(
+          <button type="button" className="xp-row" key={s.key} onClick={onOpen} style={{"--xp-color":s.color}}>
+            <div className="xp-row-top">
+              <span className="xp-emoji" aria-hidden="true">{s.emoji}</span>
+              <span className="xp-side">{s.label}</span>
+              <span className="xp-lv db-mono">Lv {s.level}</span>
+              <span className="xp-title">{s.title}</span>
+              {s.week>0&&<span className="xp-week db-mono">+{s.week}</span>}
+            </div>
+            <div className="xp-bar"><div className="xp-fill" style={{width:`${Math.min(100,s.into/s.need*100)}%`}}/></div>
+            <div className="xp-sub db-mono">{s.into.toLocaleString()} / {s.need.toLocaleString()} XP</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function XpModal({data,persist,onClose}){
+  const XP=useMemo(()=>computeXP(data),[data]);
+  const [target,setTarget]=useState(String(XP.savingRateTarget));
+  const [limit,setLimit]=useState(40);
+  const saveTarget=()=>{ const v=Math.max(1,Math.min(90,Number(target)||XP_DEFAULT_SAVING_TARGET)); setTarget(String(v)); persist({...data,xp:{...(data.xp||{}),savingRateTarget:v}}); };
+  const sideOf=(k)=>XP_SIDES.find(s=>s.key===k);
+  const shown=XP.events.slice(0,limit);
+  let lastDate=null;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal xp-modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>Level · ประวัติ XP</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          <div className="xp-mside">
+            {XP.sides.map(s=>(
+              <div className="xp-mside-item" key={s.key} style={{"--xp-color":s.color}}>
+                <div className="xp-mside-lv">{s.emoji} Lv {s.level}</div>
+                <div className="xp-mside-title">{s.title}</div>
+                <div className="xp-mside-sub db-mono">รวม {s.total.toLocaleString()} XP</div>
+              </div>
+            ))}
+          </div>
+          <div className="field-label" style={{marginTop:4}}>เหรียญความสำเร็จ</div>
+          <div className="xp-badges">
+            {XP.badges.map(b=>(
+              <div key={b.key} className={`xp-badge${b.got?" got":""}`} title={b.desc}>
+                <div className="xp-badge-emoji">{b.emoji}</div>
+                <div className="xp-badge-name">{b.name}</div>
+                <div className="xp-badge-desc">{b.desc}</div>
+              </div>
+            ))}
+          </div>
+          <div className="field-label" style={{marginTop:6}}>ประวัติ XP {XP.start&&<span style={{fontWeight:400,color:"var(--ink-5)"}}>· เริ่มนับ {thaiDate(XP.start)}</span>}</div>
+          {XP.events.length===0&&<div className="db-empty">ยังไม่มี XP — ติ๊กงานในการ์ด "วันนี้" เพื่อเริ่มสะสม</div>}
+          <div className="xp-hist">
+            {shown.map((e,i)=>{
+              const head=e.date!==lastDate; lastDate=e.date; const s=sideOf(e.side);
+              return (
+                <React.Fragment key={i}>
+                  {head&&<div className="xp-hist-date">{thaiDate(e.date)}</div>}
+                  <div className="xp-hist-row">
+                    <span className="xp-hist-pts db-mono" style={{color:s.color}}>+{e.pts}</span>
+                    <span className="xp-hist-side">{s.emoji}</span>
+                    <span className="xp-hist-label">{e.label}</span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+          {XP.events.length>limit&&<button className="db-chip" style={{width:"100%",borderRadius:12}} onClick={()=>setLimit(l=>l+60)}>ดูเพิ่ม ({XP.events.length-limit})</button>}
+          <div className="xp-set">
+            <label className="field-label">เป้าอัตราออมรายเดือน (ใช้ให้ XP Wealth)</label>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <input type="number" className="modal-input" style={{maxWidth:100}} value={target} onChange={e=>setTarget(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveTarget()}/>
+              <span style={{color:"var(--ink-3)",fontSize:13}}>%</span>
+              <button className="db-chip" onClick={saveTarget}>บันทึก</button>
+            </div>
+          </div>
+          <details className="xp-rules">
+            <summary>กติกาแต้ม</summary>
+            <div>งานประจำตรงรอบ +5 · งานครั้งเดียว +10 · ถึงหมุด +50 · ปิดโปรเจกต์ +150 → ด้านตามหมวด target (การเงิน=Wealth · สุขภาพ=Health · อื่นๆ/ไม่มี target=Growth)</div>
+            <div>งานประจำรายวันติดกันครบ 7 วัน +20 (ครั้งเดียวต่อช่วง) · หนังสือจบ +30 + สรุป +120 (ดาว + รีวิว ≥3 บรรทัด หรือมีคำคม) · รีวิววิดีโอ/พอดแคสต์ +10 (≤2/วัน) · Journal +5/วัน → Growth</div>
+            <div>รายเดือน (เดือนที่ปิดแล้ว) อัตราออมถึงเป้า / Net worth เพิ่ม / หนี้ลด +75 ต่อเรื่อง · ทำรีวิวเดือน +75 → Wealth</div>
+            <div>สุขภาพ (ออกกำลังกาย นอน น้ำ ทดสอบสมรรถนะ ตรวจประจำปี) เริ่มนับเมื่อทำหน้า Health ใหม่ · ลบ/ยกเลิกรายการ = XP หายตาม · XP ไม่ลดตามเวลา · เลเวลถัดไปใช้ 100 × เลเวลปัจจุบัน</div>
+          </details>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MilestoneToast({toast,onClose}) {
-  useEffect(()=>{ const t=setTimeout(onClose,7000); return()=>clearTimeout(t); },[]);
+  useEffect(()=>{ const t=setTimeout(onClose,toast.kind==="xp"?3200:7000); return()=>clearTimeout(t); },[]);
+  if(toast.kind==="xp") return (
+    <div className="ms-toast xp-toast" style={{"--goal-color":toast.color||"var(--accent)"}}>
+      <div className="ms-toast-icon xp-toast-icon">{toast.emoji}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div className="ms-toast-title">+{toast.pts} XP · {toast.label}</div>
+        {toast.levelUp&&<div className="ms-toast-sub">เลเวลอัป! Lv {toast.levelUp} · {toast.title}</div>}
+      </div>
+      <button className="ms-toast-x" onClick={onClose}><X size={13}/></button>
+    </div>
+  );
   return (
     <div className="ms-toast" style={{"--goal-color":toast.color||"var(--accent)"}}>
       <div className="ms-toast-icon"><Flag size={13}/></div>
@@ -7975,6 +8227,7 @@ function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
                     <div className="db-tname">{t.title}</div>
                     {sub(t)&&<div className="db-tsub">{sub(t)}</div>}
                   </div>
+                  {!isDone&&<span className="td-xp db-mono">+{xpForTask(t)}</span>}
                   <div className={`db-tcheck${isDone?" on":""}`} onClick={(e)=>{e.stopPropagation();toggle(t);}} role="button" aria-label={isDone?"ยกเลิกติ๊ก":"ติ๊กว่าเสร็จ"}/>
                 </div>
               );
@@ -8294,6 +8547,17 @@ function SecretaryDashboard() {
   const [showDashTask,setShowDashTask]=useState(false);
   const [editDashTask,setEditDashTask]=useState(null);
   const [toasts,setToasts]=useState([]);
+  const [showXp,setShowXp]=useState(false);
+  /* ข้อ 56 ขั้นที่ 4: XP เพิ่ม → toast "+N XP" (เทียบกับรอบก่อน · รอบแรกหลังโหลดไม่เด้ง) */
+  const xpNow=useMemo(()=>data?computeXP(data):null,[data]);
+  const xpPrev=useRef(null);
+  useEffect(()=>{
+    if(!xpNow) return;
+    const prev=xpPrev.current; xpPrev.current=xpNow;
+    if(!prev||prev.start!==xpNow.start) return;
+    const gains=xpNow.sides.map((s,i)=>({s,d:s.total-prev.sides[i].total,up:s.level>prev.sides[i].level})).filter(x=>x.d>0);
+    if(gains.length) setToasts(t=>[...t,...gains.map(g=>({id:uid(),kind:"xp",pts:g.d,label:g.s.label,emoji:g.s.emoji,color:g.s.color,levelUp:g.up?g.s.level:null,title:g.s.title}))].slice(-3));
+  },[xpNow]);
   useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),30000); return()=>clearInterval(t); },[]);
   useEffect(()=>{
     const onKey=(e)=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); setShowQuick(true); } };
@@ -8307,16 +8571,18 @@ function SecretaryDashboard() {
     if(!data) return;
     const nextLog=recordProgressSnapshot(data);
     const ms=syncMilestones(data);
-    if(!nextLog&&!ms) return;
+    const xm=syncXpMeta(ms?{...data,projects:ms.projects}:data);   // ข้อ 56 ขั้นที่ 4
+    if(!nextLog&&!ms&&!xm) return;
     const next={...data};
     if(nextLog) next.progressLog=nextLog;
+    if(xm){ next.xp=xm.xp; if(xm.projects) next.projects=xm.projects; }
     if(ms){
-      next.projects=ms.projects;
+      next.projects=xm&&xm.projects?xm.projects:ms.projects;
       next.activity=ms.reached.reduce((acc,r)=>logActivity({activity:acc},{source:"goal",text:`ถึงหมุด ${r.label} ของ "${r.title}"`,status:"completed"}),data.activity||[]);
     }
     persist(next);
     if(ms&&ms.reached.length) setToasts(prev=>[...prev,...ms.reached].slice(-3));
-  },[data&&data.projects,data&&data.tasks,data&&data.checkins]);
+  },[data&&data.projects,data&&data.tasks,data&&data.checkins,data&&data.finance,data&&data.xp]);
   const monthReview=useMemo(()=>data?buildMonthReview(data,currentMonthKey()):null,[data]);
   const dateStr=now.toLocaleDateString("th-TH",{weekday:"long",day:"numeric",month:"long",year:"numeric",calendar:"buddhist"});
   const timeStr=now.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
@@ -8398,6 +8664,7 @@ function SecretaryDashboard() {
   })();
   return (
     <div className="app">
+      {showXp&&data&&<XpModal data={data} persist={persist} onClose={()=>setShowXp(false)}/>}
       {toasts.length>0&&(
         <div className="ms-toast-wrap">
           {toasts.map(t=><MilestoneToast key={t.id} toast={t} onClose={()=>setToasts(prev=>prev.filter(x=>x.id!==t.id))}/>)}
@@ -8419,6 +8686,7 @@ function SecretaryDashboard() {
             {page===0&&(
               <>
                 <DashHero data={data} greetEn={greetEn} dateStr={dateStr} timeStr={timeStr} message={assistantMessage} review={monthReview} setPage={setPage}/>
+                <DashLevelCard data={data} onOpen={()=>setShowXp(true)}/>
                 <div className="db-bento">
                   <DashMomentumCard data={data} setPage={setPage}/>
                   <DashMovementCard data={data} setPage={setPage}/>

@@ -1280,3 +1280,42 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .td-ghead{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-2);padding:0 2px;min-width:0;}
 .td-gname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
 .td-gleft{font-size:10.5px;color:var(--ink-5);flex-shrink:0;}
+
+/* ═══ ข้อ 56 ขั้นที่ 4: Level / XP ═══ */
+.xp-card{margin-bottom:16px;}
+.xp-rows{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:4px;}
+.xp-row{display:flex;flex-direction:column;gap:7px;text-align:left;font-family:'Noto Sans Thai',sans-serif;color:var(--ink);background:rgba(255,255,255,.032);border:1px solid rgba(255,255,255,.05);border-radius:16px;padding:12px 14px;cursor:pointer;min-width:0;transition:background .15s;}
+.xp-row:hover{background:rgba(255,255,255,.06);}
+.xp-row-top{display:flex;align-items:baseline;gap:7px;min-width:0;}
+.xp-emoji{font-size:15px;align-self:center;}
+.xp-side{font-weight:700;font-size:14px;}
+.xp-lv{font-size:12.5px;font-weight:700;color:var(--xp-color);}
+.xp-title{font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
+.xp-week{font-size:11px;color:var(--accent-soft);background:var(--accent-dim);border-radius:999px;padding:1px 7px;flex-shrink:0;}
+.xp-bar{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden;}
+.xp-fill{height:100%;border-radius:999px;background:var(--xp-color);transition:width .5s ease;}
+.xp-sub{font-size:10.5px;color:var(--ink-5);}
+@media(max-width:760px){.xp-rows{grid-template-columns:1fr;gap:8px;}.xp-row{padding:10px 12px;gap:6px;}}
+.td-xp{font-size:10.5px;color:var(--accent-soft);flex-shrink:0;opacity:.85;}
+.xp-toast-icon{font-size:14px;}
+.xp-mside{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.xp-mside-item{border:1px solid var(--line);border-top:3px solid var(--xp-color);border-radius:12px;padding:10px;min-width:0;}
+.xp-mside-lv{font-weight:700;font-size:14px;}
+.xp-mside-title{font-size:11.5px;color:var(--ink-2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.xp-mside-sub{font-size:10.5px;color:var(--ink-5);margin-top:4px;}
+.xp-badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;}
+.xp-badge{border:1px dashed var(--line);border-radius:12px;padding:9px;text-align:center;opacity:.42;filter:grayscale(1);}
+.xp-badge.got{opacity:1;filter:none;border-style:solid;border-color:var(--line-strong);background:var(--chip-bg);}
+.xp-badge-emoji{font-size:20px;}
+.xp-badge-name{font-size:12px;font-weight:700;margin-top:3px;}
+.xp-badge-desc{font-size:10.5px;color:var(--ink-5);margin-top:2px;line-height:1.35;}
+.xp-hist{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow-y:auto;}
+.xp-hist-date{font-size:11px;color:var(--ink-5);margin-top:6px;}
+.xp-hist-row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;min-width:0;}
+.xp-hist-pts{width:40px;flex-shrink:0;font-weight:700;}
+.xp-hist-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ink);}
+.xp-set{margin-top:8px;}
+.xp-rules{font-size:11.5px;color:var(--ink-2);line-height:1.6;}
+.xp-rules summary{cursor:pointer;color:var(--ink);font-weight:600;margin-bottom:4px;}
+.xp-rules div{margin-top:4px;}
+@media(max-width:560px){.xp-mside{gap:6px;}.xp-mside-item{padding:8px;}.xp-mside-lv{font-size:13px;}.xp-badges{grid-template-columns:repeat(3,1fr);gap:6px;}.xp-badge-desc{display:none;}}
