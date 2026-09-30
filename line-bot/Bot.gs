@@ -26,6 +26,7 @@ function doGet() {
 }
 
 function doPost(e) {
+  if (e && e.parameter && e.parameter.h) return healthPost_(e);   // ขั้นที่ 8: iOS Shortcuts ส่งข้อมูลสุขภาพ (Garmin → Apple Health) — ดูหัวข้อ 16
   var out = ContentService.createTextOutput("ok");
   try {
     var key = e && e.parameter && e.parameter.k;
@@ -1596,6 +1597,8 @@ function statusText_() {
     var q = lineApiGet_("/v2/bot/message/quota/consumption");
     if (q.code === 200) lines.push("• โควตา push LINE ใช้ไป " + JSON.parse(q.text).totalUsage + " ข้อความ (ฟรี ~300/เดือน)");
   } catch (e) {}
+  var hl = prop_("HEALTH_LAST");
+  lines.push("• ข้อมูลสุขภาพจาก Shortcut: " + (hl ? "ล่าสุด " + Utilities.formatDate(new Date(hl), TZ, "d/M HH:mm") : (prop_("HEALTH_KEY") ? "ยังไม่เคยส่งมา" : "ยังไม่ได้ตั้ง (รัน setupHealthLink)")));
   var le = prop_("LAST_ERROR");
   if (le) lines.push("• error ล่าสุด: " + le.slice(0, 200));
   return lines.join("\n");
@@ -2287,4 +2290,185 @@ function toolGetCheckup_(a, ctx) {
     xray: cur.xray && cur.xray.impression || "", ekg: cur.ekg || "", hearing: cur.hearing || {}, doctorAdvice: cur.advice || "",
     allDates: list.map(function (c) { return c.date; }),
     note: "ข้อมูลตามใบรายงานโรงพยาบาล — เล่าตามนี้ ห้ามแปลผล/วินิจฉัย ถ้ามีค่าผิดปกติแนะนำปรึกษาแพทย์" };
+}
+
+// ============================================================
+// 16) ขั้นที่ 8 (ข้อ 56): Garmin → Apple Health → iOS Shortcuts → Jack
+// Garmin ไม่มี API สำหรับบุคคล (ห้ามใช้ไลบรารีไม่เป็นทางการ) → Garmin Connect ส่งเข้า Apple Health → Shortcut อ่าน Health แล้ว POST มาที่นี่
+// URL = WEBAPP_URL?h=<HEALTH_KEY> (รัน setupHealthLink() ได้ลิงก์) · รหัสแยกจาก LINE — หลุดก็แค่รีเซ็ตด้วย resetHealthLink()
+// ข้อมูลที่รับ (form หรือ JSON · ทุกช่องไม่บังคับ):
+//   sleepSamples = ช่วงการนอน 24 ชม.ล่าสุด 1 บรรทัด/ช่วง "ค่า|ระยะเวลา" → รวมเฉพาะช่วงหลับ ลงวันนี้ (Shortcut ในคู่มือใช้ตัวนี้)
+//   sleep    = หรือส่งเวลานอนรวมเมื่อคืนมาเลย → ลงวันนี้ (ตัวเลขไม่มีหน่วย: ≤24 = ชั่วโมง, ≤1440 = นาที, มากกว่า = วินาที · หรือ "7:20" / "7 hr 20 min")
+//   steps    = ก้าวทั้งวันของเมื่อวาน · rhr = ชีพจรขณะพัก (เมื่อวาน) · weight = กก. (วันนี้)
+//   workouts = ออกกำลังกายของเมื่อวาน 1 บรรทัด/ครั้ง "ประเภท|นาที" (เช่น Running|32) → แทนที่รายการ src:"health" เดิมของวันนั้น (ส่งซ้ำไม่ซ้อน)
+//   date     = วันที่ "วันนี้" ของเครื่อง (YYYY-MM-DD) ไม่ส่ง = วันนี้ตามเวลาไทย
+// ส่งซ้ำได้ทั้งวัน (เขียนทับค่าเดิม) · ไม่ใช้ AI · ไม่ทักใน LINE
+// ============================================================
+var WORKOUT_TH = { running: "วิ่ง", run: "วิ่ง", walking: "เดิน", walk: "เดิน", hiking: "เดิน", cycling: "ปั่นจักรยาน", biking: "ปั่นจักรยาน", swimming: "ว่ายน้ำ",
+  "traditional strength training": "เวทเทรนนิ่ง", "functional strength training": "เวทเทรนนิ่ง", "strength training": "เวทเทรนนิ่ง", strength: "เวทเทรนนิ่ง",
+  yoga: "โยคะ/ยืดเหยียด", pilates: "โยคะ/ยืดเหยียด", flexibility: "โยคะ/ยืดเหยียด", "cooldown": "โยคะ/ยืดเหยียด" };
+function jsonOut_(o) {
+  var out = ContentService.createTextOutput(JSON.stringify(o));
+  if (out.setMimeType && ContentService.MimeType) out.setMimeType(ContentService.MimeType.JSON);
+  return out;
+}
+function healthNum_(v) {
+  var t = String(v == null ? "" : v).replace(/,/g, "").trim();
+  var m = t.match(/-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+// เวลานอน → นาที (Shortcuts ส่งมาได้หลายรูป ขึ้นกับรุ่น iOS/ภาษา)
+function sleepMinutes_(v) {
+  var t = String(v == null ? "" : v).replace(/,/g, "").trim().toLowerCase();
+  if (!t) return null;
+  var hm = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hm) return Number(hm[1]) * 60 + Number(hm[2]);
+  var h = t.match(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|ชม|ชั่วโมง)/), mi = t.match(/(\d+(?:\.\d+)?)\s*(minutes|minute|mins|min|m(?![a-z])|นาที)/);
+  if (h || mi) return Math.round((h ? Number(h[1]) * 60 : 0) + (mi ? Number(mi[1]) : 0));
+  var n = healthNum_(t);
+  if (n == null || n <= 0) return null;
+  if (n <= 24) return Math.round(n * 60);
+  if (n <= 1440) return Math.round(n);
+  return Math.round(n / 60);
+}
+// ระยะเวลาต่อรายการ → นาที: "0:32:10" · "1:05" · "45:30" (mm:ss) · "1 hr 5 min" · "32 min" · "32" (นาที) · "1920" (>600 = วินาที)
+function durationMinutes_(v) {
+  var t = String(v == null ? "" : v).replace(/,/g, "").trim().toLowerCase();
+  if (!t) return null;
+  var hm = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (hm) {
+    if (hm[3] == null && Number(hm[1]) > 12) return Number(hm[1]) + (Number(hm[2]) >= 30 ? 1 : 0);
+    return Number(hm[1]) * 60 + Number(hm[2]) + (hm[3] != null && Number(hm[3]) >= 30 ? 1 : 0);
+  }
+  var h = t.match(/(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr|h(?![a-z])|ชั่วโมง|ชม)/), mi = t.match(/(\d+(?:\.\d+)?)\s*(minutes|minute|mins|min|m(?![a-z])|นาที)/), se = t.match(/(\d+(?:\.\d+)?)\s*(seconds|second|secs|sec|s(?![a-z])|วินาที)/);
+  if (h || mi || se) return Math.round((h ? Number(h[1]) * 60 : 0) + (mi ? Number(mi[1]) : 0) + (se ? Number(se[1]) / 60 : 0));
+  var n = healthNum_(t);
+  if (n == null || n <= 0) return null;
+  return n > 600 ? Math.round(n / 60) : Math.round(n);
+}
+function workoutMinutes_(v) { return durationMinutes_(v); }
+// ช่วงการนอนจาก Apple Health 1 บรรทัด/ช่วง "ค่า|ระยะเวลา" (เช่น "Asleep Core|1:10:00") → รวมเฉพาะช่วงที่หลับ (ไม่นับ In Bed / Awake)
+// ถ้ามีแต่ In Bed (บางแหล่งไม่แยกช่วงหลับ) → ใช้ยอด In Bed แทน
+function sleepFromSamples_(text) {
+  var asleep = 0, inBed = 0, n = 0;
+  String(text || "").split(/\n|;/).forEach(function (line) {
+    var l = line.trim(); if (!l) return;
+    var parts = l.split("|"), val = (parts.length > 1 ? parts[0] : "").toLowerCase(), min = durationMinutes_(parts.length > 1 ? parts.slice(1).join("|") : l);
+    if (!min) return;
+    n++;
+    if (/in ?bed|บนเตียง|inbed/.test(val)) inBed += min;
+    else if (/awake|ตื่น/.test(val)) return;
+    else asleep += min;
+  });
+  if (!n) return null;
+  return asleep || inBed || null;
+}
+// "yyyy-MM-dd|ค่า" 1 บรรทัด/วัน (Shortcut: Find Health Samples + Group by Day + Format Date) → {date: ตัวเลข} (วันเดียวกันหลายแถว = รวม)
+function parseDated_(text) {
+  var out = {}, any = false;
+  String(text || "").split(/\n|;/).forEach(function (line) {
+    var parts = line.trim().split("|");
+    if (parts.length < 2 || !validDate_(parts[0].trim())) return;
+    var v = healthNum_(parts[1]);
+    if (v == null) return;
+    out[parts[0].trim()] = (out[parts[0].trim()] || 0) + v; any = true;
+  });
+  return any ? out : null;
+}
+function parseWorkouts_(text) {
+  return String(text || "").split(/\n|;/).map(function (line) {
+    var l = line.trim(); if (!l) return null;
+    var parts = l.split("|");
+    var name = (parts.length > 1 ? parts[0] : l.replace(/[\d:.,]+\s*(min|นาที)?$/i, "")).trim();
+    var min = workoutMinutes_(parts.length > 1 ? parts[1] : (l.match(/[\d:.,]+\s*(min|นาที)?$/i) || [""])[0]);
+    var key = name.toLowerCase().replace(/^hkworkoutactivitytype/, "").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+    return { type: WORKOUT_TH[key] || (name ? name.slice(0, 40) : "อื่นๆ"), min: min, raw: name.slice(0, 40), date: parts.length > 2 ? validDate_(parts[2].trim()) : null };
+  }).filter(function (w) { return w && (w.min || w.raw); }).slice(0, 10);
+}
+function healthPost_(e) {
+  var expect = prop_("HEALTH_KEY");
+  if (!expect || e.parameter.h !== expect) return jsonOut_({ ok: false, error: "ลิงก์ไม่ถูกต้อง" });
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    var p = {};
+    Object.keys(e.parameter || {}).forEach(function (k) { p[k] = e.parameter[k]; });
+    var raw = e.postData && e.postData.contents;
+    if (raw && /^\s*\{/.test(raw)) { try { var js = JSON.parse(raw); Object.keys(js).forEach(function (k) { p[k] = js[k]; }); } catch (x) {} }
+    var ctx = newCtx_();
+    var today = validDate_(p.date) || ctx.today;
+    if (today > addDays_(ctx.today, 1)) today = ctx.today;
+    var yday = addDays_(today, -1);
+    var steps = healthNum_(p.steps), rhr = healthNum_(p.rhr);
+    var sleep = p.sleepSamples != null ? sleepFromSamples_(Array.isArray(p.sleepSamples) ? p.sleepSamples.join("\n") : p.sleepSamples) : sleepMinutes_(p.sleep), weight = healthNum_(p.weight);
+    if (sleep != null && (sleep < 30 || sleep > 16 * 60)) sleep = null;          // ค่าเพี้ยน (เช่นหน่วยผิด) ไม่บันทึก
+    if (weight != null && (weight < 20 || weight > 300)) weight = null;
+    var wk = p.workouts != null ? parseWorkouts_(Array.isArray(p.workouts) ? p.workouts.join("\n") : p.workouts) : null;
+    var saved = {};
+    var byDay = {};
+    var put = function (d, f) { if (!validDate_(d) || d > today || d < addDays_(today, -7)) return; (byDay[d] = byDay[d] || []).push(f); };
+    if (sleep != null) { put(today, function (h) { h.sleepMin = sleep; }); saved.sleepMin = sleep; }
+    if (weight != null) { put(today, function (h) { h.weight = weight; }); saved.weight = weight; }
+    // ก้าว/ชีพจร: "yyyy-MM-dd|ค่า" ต่อวัน หรือตัวเลขเดียว (= ของเมื่อวาน)
+    var stepsD = /\|/.test(String(p.steps || "")) ? parseDated_(p.steps) : (steps != null ? (function () { var o = {}; o[yday] = steps; return o; })() : null);
+    var rhrD = /\|/.test(String(p.rhr || "")) ? parseDated_(p.rhr) : (rhr != null ? (function () { var o = {}; o[yday] = rhr; return o; })() : null);
+    Object.keys(stepsD || {}).forEach(function (d) { var v = stepsD[d]; if (v >= 0 && v <= 150000) { put(d, function (h) { h.steps = Math.round(v); }); saved.steps = saved.steps || {}; saved.steps[d] = Math.round(v); } });
+    Object.keys(rhrD || {}).forEach(function (d) { var v = rhrD[d]; if (v >= 25 && v <= 150) { put(d, function (h) { h.restingHR = Math.round(v); }); saved.restingHR = Math.round(v); } });
+    // ออกกำลังกาย: ลงวันของแต่ละครั้ง (ไม่มีวันที่ = เมื่อวาน) · แทนที่ของ src:"health" เดิมของ "วันนี้+เมื่อวาน" (ส่งซ้ำไม่ซ้อน ลบใน Health แล้วหายตาม) · ที่จดเองไม่แตะ
+    if (wk) {
+      var wkBy = {}; wkBy[today] = []; wkBy[yday] = [];
+      wk.forEach(function (w) { var d = w.date || yday; (wkBy[d] = wkBy[d] || []).push(w); });
+      Object.keys(wkBy).forEach(function (d) {
+        put(d, function (h) {
+          var keep = (h.exercise || []).filter(function (x) { return x && x.src !== "health"; });
+          h.exercise = keep.concat(wkBy[d].map(function (w) { return { id: uid_(), type: w.type, min: w.min, src: "health" }; }));
+          if (!h.exercise.length) delete h.exercise;
+        });
+      });
+      saved.workouts = wk.length;
+    }
+    var dry = String(p.dry || "") === "1";                        // ทดสอบ: อ่าน/แปลงค่าอย่างเดียว ไม่เขียน
+    if (!dry && Object.keys(byDay).length) {                      // เขียนทุกวันในครั้งเดียว (1 commit)
+      mutate_([{ id: HEALTH_DOC, def: [] }], function (G) {
+        var g = G[HEALTH_DOC];
+        Object.keys(byDay).forEach(function (d) {
+          var found = null;
+          g.chunks.forEach(function (c) { (c.value || []).forEach(function (h, i) { if (!found && h && h.date === d) found = { c: c, i: i }; }); });
+          var h = found ? JSON.parse(JSON.stringify(found.c.value[found.i])) : { id: uid_(), date: d };
+          byDay[d].forEach(function (f) { f(h); });
+          var hasData = ["sleepMin", "waterL", "steps", "restingHR", "weight"].some(function (k) { return h[k] != null; }) || (h.exercise || []).length;
+          if (!hasData) { if (found) { found.c.value.splice(found.i, 1); found.c.dirty = true; } return; }
+          h.src = "garmin";
+          if (found) { found.c.value[found.i] = h; found.c.dirty = true; } else arrPush_(g, h);
+        });
+      });
+    }
+    if (!dry) props_().setProperty("HEALTH_LAST", new Date().toISOString());
+    var S = healthSettings_();
+    var msg = [];
+    if (saved.sleepMin != null) msg.push("นอน " + Math.floor(saved.sleepMin / 60) + ":" + pad2_(saved.sleepMin % 60) + (saved.sleepMin >= S.sleepGoalMin ? " ✓" : ""));
+    if (saved.steps && saved.steps[yday] != null) msg.push("ก้าวเมื่อวาน " + fmt_(saved.steps[yday]));
+    if (saved.workouts) msg.push("ออกกำลังกาย " + saved.workouts + " ครั้ง");
+    if (saved.restingHR != null) msg.push("ชีพจรพัก " + saved.restingHR);
+    return jsonOut_({ ok: true, dry: dry, today: today, yesterday: yday, saved: saved, message: (dry ? "[ทดสอบ ไม่ได้บันทึก] " : "") + (msg.length ? "Jack บันทึกแล้ว: " + msg.join(" · ") : "Jack: ไม่มีข้อมูลใหม่") });
+  } catch (err) {
+    noteError_(err);
+    return jsonOut_({ ok: false, error: shortErr_(err) });
+  } finally { try { lock.releaseLock(); } catch (x) {} }
+}
+// รันครั้งเดียว → ได้ลิงก์ไปใส่ใน Shortcut (อย่าแชร์ลิงก์นี้)
+function setupHealthLink() {
+  var base = prop_("WEBAPP_URL");
+  if (!base) { console.log("ใส่ Script Property WEBAPP_URL ก่อน (URL ที่ได้ตอน Deploy ลงท้าย /exec)"); return; }
+  if (!prop_("HEALTH_KEY")) props_().setProperty("HEALTH_KEY", Utilities.getUuid().replace(/-/g, ""));
+  var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + "h=" + prop_("HEALTH_KEY");
+  console.log("✅ ลิงก์สำหรับ Shortcut (ก็อปทั้งบรรทัด อย่าแชร์):\n" + url);
+  return url;
+}
+function resetHealthLink() { props_().deleteProperty("HEALTH_KEY"); return setupHealthLink(); }
+// ลองส่งข้อมูลปลอมเหมือน Shortcut จาก editor (dry = ไม่เขียนลงข้อมูลจริง) — ดูว่าแปลงค่าถูก
+function testHealthPost() {
+  if (!prop_("HEALTH_KEY")) setupHealthLink();
+  var r = healthPost_({ parameter: { h: prop_("HEALTH_KEY"), dry: "1", sleepSamples: "In Bed|8:00:00\nAsleep Core|4:10:00\nAsleep Deep|1:20:00\nAsleep REM|1:45:00\nAwake|0:20:00", steps: "8432", rhr: "54", workouts: "Running|0:32:00" }, postData: { contents: "" } });
+  console.log(r.getContent ? r.getContent() : r);
 }

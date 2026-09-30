@@ -1875,4 +1875,83 @@ test("ขั้นที่ 7B: get_checkup — ล่าสุด/ตามป�
   canonical();
 });
 
+
+// =================== ข้อ 56 ขั้นที่ 8: Shortcuts → Jack (ข้อมูล Garmin ผ่าน Apple Health) ===================
+const hpost = (params, body) => { const r = ctx.doPost({ parameter: params, postData: { contents: body || "" } }); return JSON.parse(r.t); };
+test("ขั้นที่ 8: รหัสผิด/ไม่ได้ตั้ง → ปฏิเสธ ไม่เขียนอะไร · setupHealthLink สร้างลิงก์ ?h= แยกจาก LINE", () => {
+  delete propsMap.HEALTH_KEY; propsMap.WEBAPP_URL = "https://script.google.com/macros/s/X/exec";
+  setDoc("k.healthDaily", []);
+  assert.strictEqual(hpost({ h: "abc", sleep: "7" }).ok, false);
+  const url = ctx.setupHealthLink();
+  assert.ok(url.startsWith("https://script.google.com/macros/s/X/exec?h=") && propsMap.HEALTH_KEY && propsMap.HEALTH_KEY !== propsMap.WEBHOOK_KEY);
+  assert.strictEqual(hpost({ h: "wrong", sleep: "7" }).ok, false);
+  assert.strictEqual((app().healthDaily || []).length, 0);
+  const n = lineLog.length;
+  hpost({ h: propsMap.HEALTH_KEY, sleep: "7" });
+  assert.strictEqual(lineLog.length, n, "ไม่ทักใน LINE");
+});
+
+test("ขั้นที่ 8: form ของ Shortcut → นอนลงวันนี้ · ก้าว/ชีพจร/ออกกำลังกายลงเมื่อวาน · ข้อความตอบกลับสำหรับแจ้งเตือน · ส่งซ้ำไม่ซ้อน · รายการที่จดเองไม่หาย", () => {
+  const K = propsMap.HEALTH_KEY, Y = ctx.addDays_(TODAY, -1);
+  setDoc("k.healthDaily", [{ id: "m", date: Y, exercise: [{ id: "e0", type: "โยคะ/ยืดเหยียด", min: 20, src: "app" }] }]);
+  let r = hpost({ h: K, sleepSamples: "In Bed|8:10:00\nAsleep Core|4:00:00\nAsleep Deep|1:30:00\nAsleep REM|2:00:00\nAwake|0:15:00", steps: "8,432", rhr: "54 bpm", workouts: "Running|0:32:05\nTraditional Strength Training|45 min" });
+  assert.strictEqual(r.ok, true);
+  assert.ok(/นอน 7:30 ✓ · ก้าวเมื่อวาน 8,432 · ออกกำลังกาย 2 ครั้ง · ชีพจรพัก 54/.test(r.message), r.message);
+  const t = hDay(TODAY), y = hDay(Y);
+  assert.deepStrictEqual([t.sleepMin, t.src], [450, "garmin"]);
+  assert.deepStrictEqual([y.steps, y.restingHR, y.exercise.length], [8432, 54, 3]);
+  assert.deepStrictEqual(y.exercise.map((e) => [e.type, e.min, e.src]), [["โยคะ/ยืดเหยียด", 20, "app"], ["วิ่ง", 32, "health"], ["เวทเทรนนิ่ง", 45, "health"]]);
+  r = hpost({ h: K, sleep: "7.5", steps: "9001", workouts: "Running|32\nTraditional Strength Training|45" });
+  assert.strictEqual(hDay(Y).exercise.length, 3, "ส่งซ้ำ = แทนที่ของเดิมจาก Health ไม่ซ้อน");
+  assert.strictEqual(hDay(Y).steps, 9001);
+  r = hpost({ h: K, workouts: "" });
+  assert.deepStrictEqual(hDay(Y).exercise.map((e) => e.src), ["app"], "ไม่มีออกกำลังกาย = ลบเฉพาะที่มาจาก Health");
+  canonical();
+});
+
+test("ขั้นที่ 8: แปลงหน่วยเวลานอน/ออกกำลังกายได้หลายรูป · JSON body · ค่าเพี้ยนไม่บันทึก · สถานะ jack บอกเวลาส่งล่าสุด", () => {
+  assert.deepStrictEqual(["7.5", "450", "27000", "7:20", "7 hr 20 min", "6 ชม 45 นาที", "", "abc"].map(ctx.sleepMinutes_), [450, 450, 450, 440, 440, 405, null, null]);
+  assert.deepStrictEqual(["32", "0:32:10", "1:05", "45:30", "1920"].map(ctx.workoutMinutes_), [32, 32, 65, 46, 32]);
+  assert.deepStrictEqual(["1 hr 5 min", "32 min", "45 วินาที", "2 ชม"].map(ctx.durationMinutes_), [65, 32, 1, 120]);
+  assert.strictEqual(ctx.sleepFromSamples_("In Bed|8:00:00\nAsleep Core|3:00:00\nAsleep Deep|1:30:00\nAsleep REM|2:00:00\nAwake|0:20:00"), 390);
+  assert.strictEqual(ctx.sleepFromSamples_("In Bed|7:40:00"), 460, "มีแต่ In Bed = ใช้ยอดนั้น");
+  assert.strictEqual(ctx.sleepFromSamples_("อยู่บนเตียง|8 ชม\nหลับ|6 ชม 50 นาที\nตื่น|15 นาที"), 410, "ภาษาไทย");
+  assert.strictEqual(ctx.sleepFromSamples_(""), null);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.parseWorkouts_("Walking|40\nHKWorkoutActivityTypeCycling|25\nYoga 30 min").map((w) => [w.type, w.min]))), [["เดิน", 40], ["ปั่นจักรยาน", 25], ["โยคะ/ยืดเหยียด", 30]]);
+  const K = propsMap.HEALTH_KEY, D = "2026-02-10";
+  setDoc("k.healthDaily", []);
+  const r = hpost({ h: K }, JSON.stringify({ date: D, sleep: 380, steps: 999999, rhr: 5, weight: 71.2 }));
+  assert.strictEqual(r.ok, true);
+  const h = (app().healthDaily || []).find((x) => x.date === D);
+  assert.deepStrictEqual([h.sleepMin, h.weight], [380, 71.2]);
+  assert.ok(!(app().healthDaily || []).find((x) => x.date === "2026-02-09"), "ก้าว/ชีพจรเพี้ยน = ไม่บันทึก เลยไม่มีรายการเมื่อวาน");
+  post([msg("สถานะ jack")]);
+  assert.ok(/ข้อมูลสุขภาพจาก Shortcut: ล่าสุด/.test(lastReply().text), lastReply().text);
+});
+
+
+test("ขั้นที่ 8: รูปแบบคู่มือ Shortcut — ก้าว/ชีพจรรายวัน 'yyyy-MM-dd|ค่า' (Group by Day) · ออกกำลังกาย 'ประเภท|เวลา|yyyy-MM-dd' ลงวันของมันเอง · วันเกิน 7 วัน/อนาคตไม่รับ", () => {
+  const K = propsMap.HEALTH_KEY, Y = ctx.addDays_(TODAY, -1), Y2 = ctx.addDays_(TODAY, -2);
+  setDoc("k.healthDaily", [{ id: "a", date: TODAY, exercise: [{ id: "w0", type: "วิ่ง", min: 10, src: "health" }] }]);
+  const r = hpost({ h: K, steps: `${Y}|9,120\n${TODAY}|1,050\n2020-01-01|500`, rhr: `${Y}|53`,
+    workouts: `Walking|0:40:00|${Y2}\nRunning|0:25:00|${TODAY}` });
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual([hDay(Y).steps, hDay(Y).restingHR, hDay(TODAY).steps], [9120, 53, 1050]);
+  assert.ok(!(app().healthDaily || []).find((h) => h.date === "2020-01-01"));
+  assert.deepStrictEqual(hDay(Y2).exercise.map((e) => [e.type, e.min]), [["เดิน", 40]]);
+  assert.deepStrictEqual(hDay(TODAY).exercise.map((e) => [e.type, e.min]), [["วิ่ง", 25]], "แทนของเดิมจาก Health วันนี้");
+  assert.ok(/ก้าวเมื่อวาน 9,120/.test(r.message) && /ชีพจรพัก 53/.test(r.message), r.message);
+  canonical();
+});
+
+
+test("ขั้นที่ 8: dry=1 (testHealthPost) แปลงค่าให้ดูแต่ไม่เขียนข้อมูล/ไม่อัปเดตเวลาส่งล่าสุด", () => {
+  setDoc("k.healthDaily", []);
+  const before = propsMap.HEALTH_LAST;
+  const r = hpost({ h: propsMap.HEALTH_KEY, dry: "1", sleep: "7", steps: "5000" });
+  assert.ok(r.ok && r.dry && r.message.startsWith("[ทดสอบ ไม่ได้บันทึก]") && r.saved.sleepMin === 420, JSON.stringify(r));
+  assert.strictEqual((app().healthDaily || []).length, 0);
+  assert.strictEqual(propsMap.HEALTH_LAST, before);
+});
+
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));
