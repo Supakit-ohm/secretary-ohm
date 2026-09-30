@@ -880,7 +880,7 @@ test("ปุ่มอารมณ์: เก็บ mood ลง Journal วัน
   assert.strictEqual(j.entry, "วันนี้เหนื่อยหน่อย"); assert.strictEqual(j.mood, 2);   // เขียนต่อ mood ไม่หาย
   post([pb("a=mood&v=5&d=" + TODAY)]);
   assert.strictEqual(todayJournal().entry, "วันนี้เหนื่อยหน่อย"); assert.strictEqual(todayJournal().mood, 5);
-  assert.ok(!lastReply().quickReply);                                                // เขียนแล้ว ไม่ชวนซ้ำ
+  assert.ok(!((lastReply().quickReply || { items: [] }).items.some((i) => i.action.fillInText)));   // เขียนแล้ว ไม่ชวนซ้ำ (ปุ่มน้ำขั้นที่ 7A ยังอยู่ได้)
   post([pb("a=mood&v=9&d=" + TODAY)]);
   assert.ok(lastReply().text.includes("ไม่ได้"));
   post([pb("a=mood&v=3&d=2020-01-05")]);                                            // ปุ่มเก่า ลงวันที่ในปุ่ม
@@ -1782,6 +1782,74 @@ test("ขั้นที่ 6: ทริกเกอร์วันอาทิ�
   assert.strictEqual(pushCount() - p0, 1);
   assert.ok(lastPush().messages[0].text.includes("สัปดาห์นี้ดีครับ"));
   assert.ok(app().journalReflections.some((r) => r.week === mon));
+});
+
+
+// =================== ข้อ 56 ขั้นที่ 7A: Health ===================
+const hDay = (d) => (app().healthDaily || []).find((h) => h.date === d);
+test("ขั้นที่ 7A: log_health — นอน/น้ำ (ตั้งยอด/บวกเพิ่ม)/ออกกำลังกาย (ต่อท้าย)/น้ำหนัก · เทียบเป้า · ล่วงหน้าไม่ได้ · ค่าเพี้ยนไม่รับ", () => {
+  delete store["k.healthDaily"]; setDoc("k.healthSettings", { sleepGoalMin: 420, waterGoalL: 2 });
+  aiScript = once([{ name: "log_health", args: { sleepHours: 7.5, waterL: 1.5, exerciseType: "วิ่ง", exerciseMin: 30 } }], "จดแล้วครับ");
+  post([msg("เมื่อคืนนอน 7 ชั่วโมงครึ่ง ดื่มน้ำไป 1.5 ลิตร วิ่ง 30 นาที")]);
+  let h = hDay(TODAY);
+  assert.deepStrictEqual([h.sleepMin, h.waterL, h.exercise.length, h.exercise[0].type, h.exercise[0].min, h.exercise[0].src], [450, 1.5, 1, "วิ่ง", 30, "line"]);
+  const out = JSON.parse(aiLog[aiLog.length - 1].input.find((x) => x.type === "function_call_output").output);
+  assert.deepStrictEqual([out.goals.sleepHit, out.goals.waterHit], [true, false]);
+  aiScript = once([{ name: "log_health", args: { waterAddL: 0.5, exerciseType: "เวทเทรนนิ่ง", exerciseMin: 45, weight: 72.4 } }]);
+  post([msg("ดื่มน้ำเพิ่มอีกครึ่งลิตร เล่นเวท 45 นาที หนัก 72.4")]);
+  h = hDay(TODAY);
+  assert.deepStrictEqual([h.waterL, h.exercise.length, h.weight], [2, 2, 72.4]);
+  const bad = ctx.toolLogHealth_({ date: ctx.addDays_(TODAY, 1), waterL: 1 }, ctx.newCtx_());
+  assert.strictEqual(bad.ok, false);
+  assert.strictEqual(ctx.toolLogHealth_({ sleepHours: 40 }, ctx.newCtx_()).ok, false);
+  assert.ok(aiLog[aiLog.length - 1].instructions.includes("ห้ามแปลผล/วินิจฉัยทางการแพทย์"));
+  canonical();
+});
+
+test("ขั้นที่ 7A: get_health สรุปย้อนหลังเทียบเป้า + สถานะทดสอบสมรรถนะ", () => {
+  const d = (n) => ctx.addDays_(TODAY, n);
+  setDoc("k.healthDaily", [{ id: "a", date: d(-1), sleepMin: 480, waterL: 2.5 }, { id: "b", date: d(-2), sleepMin: 300, exercise: [{ id: "x", type: "เดิน", min: 20 }] }, { id: "c", date: d(-20), sleepMin: 480 }]);
+  setDoc("k.fitnessTests", [{ id: "t1", date: d(-100), values: { pushup: 20 } }]);
+  const g = ctx.toolGetHealth_({ days: 7 }, ctx.newCtx_());
+  assert.strictEqual(g.rows.length, 2);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.summary)), { sleepHitDays: 1, waterHitDays: 1, exerciseDays: 1 });
+  assert.strictEqual(g.rows[0].exercise[0], "เดิน 20 นาที");
+  assert.deepStrictEqual([g.fitnessTest.last, g.fitnessTest.due, g.fitnessTest.nextDue], [d(-100), true, d(-10)]);
+});
+
+test("ขั้นที่ 7A: กดอารมณ์ → ถามน้ำต่อด้วยปุ่ม 4 ระดับ · กดน้ำ = ตั้งยอดวันนั้น + บอกถึงเป้า · บันทึกน้ำแล้วไม่ถามซ้ำ · ปุ่มเก่าเกิน 1 วันไม่รับ", () => {
+  setDoc("k.healthDaily", []);
+  clearTodayJournal();
+  post([pb("a=mood&v=4&d=" + TODAY)]);
+  let r = lastReply();
+  assert.ok(r.text.includes("💧 วันนี้ดื่มน้ำประมาณเท่าไหร่ครับ?"), r.text);
+  const w = r.quickReply.items.filter((i) => /^a=water/.test(i.action.data));
+  assert.deepStrictEqual(w.map((i) => i.action.label), ["💧 ไม่ถึง 1L", "💧 1.5L", "💧 2L", "💧 2.5L ขึ้นไป"]);
+  assert.ok(r.quickReply.items.some((i) => i.action.fillInText === "journal วันนี้ "));
+  const n = aiLog.length;
+  post([pb(w[2].action.data)]);
+  assert.strictEqual(aiLog.length, n);
+  assert.strictEqual(hDay(TODAY).waterL, 2);
+  assert.ok(lastReply().text.includes("บันทึกน้ำ 2 ลิตรแล้วครับ ✓ ถึงเป้า"), lastReply().text);
+  post([pb("a=mood&v=5&d=" + TODAY)]);
+  assert.ok(!lastReply().text.includes("ดื่มน้ำ"), "บันทึกน้ำแล้วไม่ถามซ้ำ");
+  post([pb("a=water&v=2&d=" + ctx.addDays_(TODAY, -3))]);
+  assert.ok(lastReply().text.includes("เก่าเกิน 1 วัน"));
+  canonical();
+});
+
+test("ขั้นที่ 7A: สรุปเช้าวันเสาร์เตือนครบรอบทดสอบสมรรถนะ (วันอื่นไม่เตือน · ยังไม่ครบไม่เตือน)", () => {
+  const d = (n) => ctx.addDays_(TODAY, n);
+  setDoc("k.fitnessTests", [{ id: "t1", date: d(-95), values: { pushup: 20 } }]);
+  const sat = { today: TODAY, time: "07:00", hour: 7, weekday: 6, records: [] };
+  const f = ctx.morningFacts_(sat);
+  assert.ok(/^ครบรอบทดสอบสมรรถนะแล้ว \(ล่าสุด /.test(f.fitnessDue), f.fitnessDue);
+  assert.ok(ctx.morningTemplate_(f).includes("\n\n🏋️ ครบรอบทดสอบสมรรถนะแล้ว"));
+  assert.strictEqual(ctx.morningFacts_({ ...sat, weekday: 3 }).fitnessDue, null);
+  setDoc("k.fitnessTests", [{ id: "t1", date: d(-10), values: {} }]);
+  assert.strictEqual(ctx.morningFacts_(sat).fitnessDue, null);
+  setDoc("k.fitnessTests", []);
+  assert.ok(/ยังไม่เคยทดสอบ/.test(ctx.morningFacts_(sat).fitnessDue));
 });
 
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));

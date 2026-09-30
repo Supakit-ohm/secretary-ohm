@@ -1218,6 +1218,42 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const jm4=await p.evaluate(()=>({today:!!document.querySelector('.jr-cell.today.sel'),part:document.querySelectorAll('.jr-part textarea')[0].value}));
   check('เลื่อนเดือนก่อน → มีปุ่ม "วันนี้" · กดกลับมาแล้วเห็นบันทึกวันนี้เดิม',jm3.back&&jm4.today&&jm4.part==='ทดสอบระบบ',JSON.stringify([jm3,jm4]));
 
+  console.log('\n[ข้อ 56 ขั้นที่ 7A] Health');
+  await mobileGo('Home'); await p.waitForTimeout(500);
+  const hx0=await lvRead();
+  await mobileGo('Health'); await p.waitForTimeout(800);
+  const hp=await p.evaluate(()=>({titles:[...document.querySelectorAll('.hl-page .db-title')].map(x=>x.textContent),bars:document.querySelectorAll('.hl-bar').length,sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
+  check('Health: การ์ดสุขภาพวันนี้ / 7 วัน / ทดสอบสมรรถนะ / ตรวจประจำปี · กราฟ 3 แถว × 7 วัน · มือถือไม่ล้น',hp.titles.join('|')==='สุขภาพวันนี้|7 วันล่าสุด|ทดสอบสมรรถนะ (ทุก 3 เดือน)|ตรวจสุขภาพประจำปี'&&hp.bars===21&&hp.sw<=hp.iw+2,JSON.stringify(hp));
+  await p.locator('.hl-day .db-chip:has-text("+500 มล.")').click(); await p.waitForTimeout(300);
+  await p.locator('.hl-day .db-chip:has-text("+500 มล.")').click(); await p.waitForTimeout(300);
+  await p.locator('.hl-day .db-chip:has-text("+ เพิ่ม")').click(); await p.waitForTimeout(300);
+  await p.locator('.hl-day .hl-num').nth(0).fill('8'); await p.locator('.hl-day .jr-actions .modal-btn-save').click(); await p.waitForTimeout(500);
+  const hday=await p.evaluate(()=>({water:document.querySelector('.hl-water').textContent,ex:[...document.querySelectorAll('.hl-ex')].map(x=>x.innerText.replace(/\s+/g,' ')),ok:[...document.querySelectorAll('.hl-ok')].map(x=>x.textContent)}));
+  check('น้ำ +500 ×2 = 1 ลิตร (บันทึกทันที) · เพิ่มออกกำลังกาย วิ่ง 30 นาที · นอน 8 ชม. ถึงเป้า',/^1 /.test(hday.water)&&hday.ex.length===1&&/วิ่ง 30 นาที/.test(hday.ex[0])&&hday.ok.includes('✓ ถึงเป้า'),JSON.stringify(hday));
+  await p.locator('.hl-fit .db-chip:has-text("บันทึกผลทดสอบ")').click(); await p.waitForTimeout(400);
+  const nf=await p.evaluate(()=>document.querySelectorAll('.hl-test-modal .hl-test-grid input').length);
+  await p.locator('.hl-test-modal input[type=date]').fill(await p.evaluate(()=>shiftISO(todayISO(),{d:-100})));
+  await p.locator('.hl-test-modal .hl-test-grid input').nth(1).fill('20'); await p.locator('.hl-test-modal .hl-test-grid input').nth(3).fill('60'); await p.locator('.hl-test-modal .hl-test-grid input').nth(11).fill('62');
+  await p.locator('.hl-test-modal .modal-btn-save').click(); await p.waitForTimeout(400);
+  await p.locator('.hl-fit .db-chip:has-text("บันทึกผลทดสอบ")').click(); await p.waitForTimeout(400);
+  const ph=await p.evaluate(()=>document.querySelectorAll('.hl-test-modal .hl-test-grid input')[1].placeholder);
+  await p.locator('.hl-test-modal .hl-test-grid input').nth(1).fill('25'); await p.locator('.hl-test-modal .hl-test-grid input').nth(11).fill('58'); await p.locator('.hl-test-modal .hl-test-grid input').nth(12).fill('71');
+  await p.locator('.hl-test-modal .modal-btn-save').click(); await p.waitForTimeout(500);
+  const ft=await p.evaluate(()=>({polys:document.querySelectorAll('.hl-radar-first,.hl-radar-latest').length,rows:[...document.querySelectorAll('.hl-fit-row')].map(r=>r.innerText.replace(/\s+/g,' ')),tests:[...document.querySelectorAll('.hl-test')].map(x=>x.innerText.replace(/\s+/g,' ')),note:document.querySelector('.hl-fit .db-note').textContent}));
+  check('ทดสอบสมรรถนะ: ฟอร์ม 14 ค่า · ครั้งที่ 2 เห็นค่าครั้งก่อนเป็น placeholder',nf===14&&ph==='ครั้งก่อน 20',JSON.stringify([nf,ph]));
+  check('ทดสอบสมรรถนะ: กราฟใยแมงมุมครั้งแรก vs ล่าสุด · ตารางเทียบ (วิดพื้น +5 ดี · ชีพจร −4 ดี) · รายการ 2 ครั้ง "ดีขึ้น 2" · ครั้งถัดไปอีก 90 วัน',ft.polys===2&&ft.rows.some(r=>/วิดพื้น.*20 → 25.*\+5/.test(r))&&ft.rows.some(r=>/ชีพจร.*62 → 58.*-4/.test(r))&&ft.tests.length===2&&/ดีขึ้น 2/.test(ft.tests[0])&&/อีก 90 วัน/.test(ft.note),JSON.stringify(ft));
+  await mobileGo('Home'); await p.waitForTimeout(600);
+  const hx1=await lvRead();
+  check('XP Health: ออกกำลังกาย +15 · นอนถึงเป้า +10 · ทดสอบดีขึ้น 2 ค่า +60 (น้ำยังไม่ถึงเป้า 2L) = +85',num(hx1[1])[1]===num(hx0[1])[1]+85&&num(hx1[1])[0]===num(hx0[1])[0],JSON.stringify([hx0[1],hx1[1]]));
+  const HU=await p.evaluate(()=>{
+    const imp=fitnessImprovements({values:{pushup:10,rhr:60,weight:70,waist:90,plank:30}},{values:{pushup:12,rhr:62,weight:68,waist:88,plank:30}}).map(f=>f.k);
+    const m1=migrateOldHealth({health:[{id:"h1",date:"2026-08-14",weight:70,sleep:8},{id:"h2",date:"2026-08-15",weight:70,sleep:7},{id:"z",date:"2026-08-20",weight:73,sleep:6.5}],healthDaily:[]});
+    const m2=migrateOldHealth({healthMigrated:true,health:[{id:"z",date:"2026-08-20",weight:73}]});
+    return {imp,m1:m1.healthDaily.map(h=>[h.date,h.weight,h.sleepMin]),flag:m1.healthMigrated,m2};
+  });
+  check('fitnessImprovements: มากดีกว่า/น้อยดีกว่า (ชีพจร รอบเอว) · น้ำหนักไม่นับ · เท่าเดิมไม่นับ',JSON.stringify(HU.imp)==='["pushup","waist"]',JSON.stringify(HU.imp));
+  check('ย้าย health เก่า → healthDaily ครั้งเดียว (ข้ามแถวตัวอย่าง h1/h2 น้ำหนัก 70)',JSON.stringify(HU.m1)==='[["2026-08-20",73,390]]'&&HU.flag&&HU.m2===null,JSON.stringify(HU));
+
   console.log('\n[ข้อ 56 ขั้นที่ 2] ส่วนหัวมือถือแถวเดียว + เมนู Jack + เปลี่ยนชื่อ');
   await mobileGo('Home'); await p.waitForTimeout(600);
   const hd=await p.evaluate(()=>{

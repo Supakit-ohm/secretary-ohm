@@ -1834,8 +1834,10 @@ function prepareLoadedData(parsed) {
         const withTracker=migrated
           ? {...withFixedDates,projects:migrated.projects,tasks:migrated.tasks,checkins:migrated.checkins}
           : {...withFixedDates,projects:withFixedDates.projects||[],tasks:withFixedDates.tasks||[],checkins:withFixedDates.checkins||[]};
-        const {data:cleaned,changed}=applyResets(withTracker);
-        return {cleaned,needsSave:!!(changed||dateFixed||invTyped||migrated)};
+        const hm=migrateOldHealth(withTracker);                         // ข้อ 56 ขั้นที่ 7A: health เก่า → healthDaily ครั้งเดียว
+        const withHealth=hm?{...withTracker,...hm}:withTracker;
+        const {data:cleaned,changed}=applyResets(withHealth);
+        return {cleaned,needsSave:!!(changed||dateFixed||invTyped||migrated||hm)};
 }
 function useSecretaryData() {
   const [data,setData]=useState(null);
@@ -6541,67 +6543,266 @@ function TrackerPage({data,persist}) {
     </div>
   );
 }
-function HealthPage({data,persist}) {
-  const [health,setHealth]=useState(data.health||[]);
-  const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({date:todayISO(),weight:"",energy:5,sleep:8,mood:8});
-  const addEntry=()=>{ if(!form.weight) return; persist({...data,health:[...health,{id:uid(),...form,weight:parseFloat(form.weight)}]}); setForm({date:todayISO(),weight:"",energy:5,sleep:8,mood:8}); setShowForm(false); };
-  const today=health.filter(h=>h.date===todayISO())[0];
+/* ═══════════════════════════════════════════════════════════════════
+   ข้อ 56 ขั้นที่ 7A: Health — ติดตามการนอน · ออกกำลังกาย · ดื่มน้ำ (ไม่ติดตามการกิน) + ทดสอบสมรรถนะทุก 3 เดือน
+   ข้อมูล (root):
+     healthDaily[]    = {id, date, sleepMin?, waterL?, steps?, restingHR?, weight?, exercise?:[{id,type,min,note,src}], src?}  วันละ 1 รายการ
+                        (ขั้นที่ 8: Garmin → Apple Health → iOS Shortcuts → Jack จะเติม sleepMin/steps/restingHR/exercise ให้เอง)
+     healthSettings   = {sleepGoalMin, waterGoalL}
+     fitnessTests[]   = {id, date, values:{<field>:number}, notes}
+     checkups[]       = ขั้นที่ 7B (import PDF ใบตรวจสุขภาพ)
+   Jack ไม่แปลผลทางการแพทย์ · ชื่อฟิลด์ต้องตรงกับ line-bot/Bot.gs (HEALTH_* / FITNESS_FIELDS)
+   ═══════════════════════════════════════════════════════════════════ */
+const HEALTH_DEFAULTS={sleepGoalMin:420,waterGoalL:2};
+const EXERCISE_TYPES=["วิ่ง","เดิน","ปั่นจักรยาน","ว่ายน้ำ","เวทเทรนนิ่ง","โยคะ/ยืดเหยียด","กีฬา","อื่นๆ"];
+const FITNESS_FIELDS=[
+  {k:"run12",l:"วิ่ง/เดิน 12 นาที",u:"ม.",dir:1,radar:"วิ่ง 12'"},
+  {k:"pushup",l:"วิดพื้น strict สูงสุด",u:"ครั้ง",dir:1,radar:"วิดพื้น"},
+  {k:"pullup",l:"ดึงข้อ strict สูงสุด",u:"ครั้ง",dir:1,radar:"ดึงข้อ"},
+  {k:"plank",l:"แพลงก์ค้างนานสุด",u:"วินาที",dir:1,radar:"แพลงก์"},
+  {k:"squat60",l:"สควอท 60 วินาที",u:"ครั้ง",dir:1,radar:"สควอท"},
+  {k:"kneeWallL",l:"Knee-to-wall ซ้าย (ดีสุด)",u:"ซม.",dir:1},
+  {k:"kneeWallR",l:"Knee-to-wall ขวา (ดีสุด)",u:"ซม.",dir:1},
+  {k:"gripL",l:"แรงบีบมือ ซ้าย (ดีสุด 3 ครั้ง)",u:"กก.",dir:1},
+  {k:"gripR",l:"แรงบีบมือ ขวา (ดีสุด 3 ครั้ง)",u:"กก.",dir:1},
+  {k:"sitReach",l:"นั่งงอตัว sit-and-reach",u:"ซม.",dir:1,radar:"ยืดหยุ่น"},
+  {k:"vo2max",l:"VO2max (Garmin)",u:"",dir:1,radar:"VO2max"},
+  {k:"rhr",l:"ชีพจรขณะพัก (Garmin)",u:"bpm",dir:-1},
+  {k:"weight",l:"น้ำหนัก",u:"กก.",dir:0},
+  {k:"waist",l:"รอบเอว (เฉลี่ย 2 ครั้ง)",u:"ซม.",dir:-1},
+];
+const FITNESS_EVERY_DAYS=90;
+function healthSettings(data){ return {...HEALTH_DEFAULTS,...((data&&data.healthSettings)||{})}; }
+function healthDayMap(data){ const m={}; ((data&&data.healthDaily)||[]).forEach(h=>{ if(h&&h.date&&!m[h.date]) m[h.date]=h; }); return m; }
+function sortedTests(data){ return ((data&&data.fitnessTests)||[]).filter(t=>t&&t.date).slice().sort((a,b)=>a.date.localeCompare(b.date)); }
+function fmtSleep(min){ if(min==null||min==="") return "–"; const m=Math.round(Number(min)); return `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`; }
+function exMinutes(h){ return ((h&&h.exercise)||[]).reduce((a,e)=>a+(Number(e.min)||0),0); }
+/* ค่าที่ "ดีขึ้น" เทียบกับครั้งก่อน (dir 0 = ไม่นับ เช่นน้ำหนัก) */
+function fitnessImprovements(prev,cur){
+  if(!prev||!cur) return [];
+  return FITNESS_FIELDS.filter(f=>f.dir!==0).filter(f=>{
+    const a=Number(prev.values&&prev.values[f.k]), b=Number(cur.values&&cur.values[f.k]);
+    return isFinite(a)&&isFinite(b)&&prev.values[f.k]!==""&&cur.values[f.k]!==""&&prev.values[f.k]!=null&&cur.values[f.k]!=null&&(f.dir>0?b>a:b<a);
+  });
+}
+/* ย้ายข้อมูล health แบบเก่า {date,weight,energy,sleep,mood} → healthDaily ครั้งเดียว (ข้ามแถวตัวอย่างของแอป h1/h2 น้ำหนัก 70) */
+function migrateOldHealth(d){
+  if(d.healthMigrated) return null;
+  const old=Array.isArray(d.health)?d.health:[];
+  const demo=(h)=>(h.id==="h1"||h.id==="h2")&&Number(h.weight)===70;
+  const daily=Array.isArray(d.healthDaily)?d.healthDaily.slice():[];
+  const have=new Set(daily.map(h=>h.date));
+  old.filter(h=>h&&h.date&&!demo(h)&&!have.has(h.date)).forEach(h=>{
+    const it={id:uid(),date:h.date,src:"old"};
+    if(Number(h.weight)>0) it.weight=Number(h.weight);
+    if(Number(h.sleep)>0) it.sleepMin=Math.round(Number(h.sleep)*60);
+    daily.push(it); have.add(h.date);
+  });
+  return {healthDaily:daily,healthMigrated:true};
+}
+
+function FitnessRadar({first,latest}){
+  const axes=FITNESS_FIELDS.filter(f=>f.radar);
+  const val=(t,f)=>{ const v=Number(t&&t.values&&t.values[f.k]); return isFinite(v)&&t.values[f.k]!==""&&t.values[f.k]!=null?v:null; };
+  const pts=(t)=>axes.map((f,i)=>{ const a=val(first,f), b=val(latest,f), mx=Math.max(a||0,b||0), v=val(t,f); const r=mx>0&&v!=null?v/mx:0; const ang=-Math.PI/2+i*2*Math.PI/axes.length; return [100+Math.cos(ang)*80*r,100+Math.sin(ang)*80*r]; });
+  const poly=(p)=>p.map(x=>x.map(n=>n.toFixed(1)).join(",")).join(" ");
   return (
-    <div className="page-content">
-      <div className="card">
-        <div className="card-head"><Heart size={15}/> Health &amp; Wellness</div>
-        {today&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:14}}>
-            <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8}}>
-              <div style={{fontSize:12.5,color:"var(--ink-2)"}}>น้ำหนัก</div>
-              <div style={{fontSize:20,fontWeight:600,color:"#fb923c"}}>{today.weight} kg</div>
-            </div>
-            <div style={{display:"grid",gap:6}}>
-              <div style={{background:"var(--surface-sunken)",padding:8,borderRadius:8,textAlign:"center",fontSize:13}}>
-                <div style={{fontSize:11,color:"var(--ink-2)"}}>พลังงาน</div>
-                <div style={{color:"#60a5fa"}}>{"⭐".repeat(today.energy)}</div>
-              </div>
-              <div style={{background:"var(--surface-sunken)",padding:8,borderRadius:8,textAlign:"center",fontSize:13}}>
-                <div style={{fontSize:11,color:"var(--ink-2)"}}>นอน</div>
-                <div style={{color:"#34d399"}}>{"⭐".repeat(today.sleep)}</div>
-              </div>
+    <svg viewBox="-22 -4 244 208" className="hl-radar" role="img" aria-label="กราฟใยแมงมุม ครั้งแรกเทียบล่าสุด">
+      {[0.25,0.5,0.75,1].map(r=><polygon key={r} points={poly(axes.map((_,i)=>{const ang=-Math.PI/2+i*2*Math.PI/axes.length;return [100+Math.cos(ang)*80*r,100+Math.sin(ang)*80*r];}))} className="hl-radar-grid"/>)}
+      {axes.map((f,i)=>{ const ang=-Math.PI/2+i*2*Math.PI/axes.length; return (
+        <g key={f.k}><line x1="100" y1="100" x2={100+Math.cos(ang)*80} y2={100+Math.sin(ang)*80} className="hl-radar-grid"/>
+          <text x={100+Math.cos(ang)*93} y={100+Math.sin(ang)*93+3} textAnchor="middle" className="hl-radar-lab">{f.radar}</text></g>); })}
+      {first&&latest&&first!==latest&&<polygon points={poly(pts(first))} className="hl-radar-first"/>}
+      {latest&&<polygon points={poly(pts(latest))} className="hl-radar-latest"/>}
+    </svg>
+  );
+}
+function FitnessTestModal({initial,prev,onClose,onSave,onDelete}){
+  const [date,setDate]=useState(initial?initial.date:todayISO());
+  const [vals,setVals]=useState(()=>{ const v={}; FITNESS_FIELDS.forEach(f=>{ const x=initial&&initial.values&&initial.values[f.k]; v[f.k]=x==null?"":String(x); }); return v; });
+  const [notes,setNotes]=useState(initial?initial.notes||"":"");
+  const any=FITNESS_FIELDS.some(f=>vals[f.k]!=="");
+  const save=()=>{ const values={}; FITNESS_FIELDS.forEach(f=>{ if(vals[f.k]!==""&&isFinite(Number(vals[f.k]))) values[f.k]=Number(vals[f.k]); }); onSave({id:initial?initial.id:uid(),date,values,notes:notes.trim()}); };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal hl-test-modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>{initial?"แก้ผลทดสอบสมรรถนะ":"บันทึกผลทดสอบสมรรถนะ"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          <div className="pf-note">กติกา: เวลา/วอร์มอัพ/ลำดับเหมือนเดิมทุกครั้ง · วิ่ง 12 นาทีแยกวัน (กลับมาเติมทีหลังได้) · knee-to-wall ดีสุด 2–3 ครั้ง/ข้าง · แรงบีบมือดีสุด 3 ครั้ง/ข้าง · รอบเอวเฉลี่ย 2 ครั้ง · ไม่ต้องกรอกครบ</div>
+          <div><label className="field-label">วันที่ทดสอบ</label><input type="date" className="modal-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="hl-test-grid">
+            {FITNESS_FIELDS.map(f=>{ const pv=prev&&prev.values&&prev.values[f.k]; return (
+              <div key={f.k}>
+                <label className="field-label">{f.l}{f.u?` (${f.u})`:""}</label>
+                <input type="number" inputMode="decimal" className="modal-input" value={vals[f.k]} onChange={e=>setVals(v=>({...v,[f.k]:e.target.value}))} placeholder={pv!=null?`ครั้งก่อน ${pv}`:""}/>
+              </div>); })}
+          </div>
+          <div><label className="field-label">หมายเหตุ</label><textarea className="modal-input" rows={2} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="เช่น นอนน้อย เจ็บเข่าซ้าย ทดสอบตอนเย็น"/></div>
+        </div>
+        <div className="modal-foot">
+          {initial&&onDelete&&<button className="del-txt-btn" onClick={()=>{ if(window.confirm("ลบผลทดสอบครั้งนี้?")) onDelete(initial.id); }}>ลบ</button>}
+          <button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button>
+          <button className="modal-btn-save" onClick={save} disabled={!any||!date}>บันทึก</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function HealthPage({data,persist}) {
+  const today=todayISO();
+  const [date,setDate]=useState(today);
+  const S=healthSettings(data);
+  const hm=useMemo(()=>healthDayMap(data),[data.healthDaily]);
+  const cur=hm[date]||null;
+  const toForm=(h)=>({sleepH:h&&h.sleepMin!=null?String(Math.floor(h.sleepMin/60)):"",sleepM:h&&h.sleepMin!=null?String(Math.round(h.sleepMin%60)):"",waterL:h&&h.waterL!=null?String(h.waterL):"",weight:h&&h.weight!=null?String(h.weight):"",steps:h&&h.steps!=null?String(h.steps):"",restingHR:h&&h.restingHR!=null?String(h.restingHR):""});
+  const [form,setForm]=useState(()=>toForm(cur));
+  const [dirty,setDirty]=useState(false);
+  const [exType,setExType]=useState(EXERCISE_TYPES[0]);
+  const [exMin,setExMin]=useState("30");
+  const [goalForm,setGoalForm]=useState({sleepH:String(S.sleepGoalMin/60),waterL:String(S.waterGoalL)});
+  const [testModal,setTestModal]=useState(null);   // null | "new" | test object
+  useEffect(()=>{ if(!dirty) setForm(toForm(cur)); },[cur,date]);
+  const go=(n)=>{ if(dirty&&!window.confirm("ยังไม่ได้บันทึก — ทิ้งการแก้ไข?")) return; setDirty(false); const d=shiftISO(date,{d:n}); if(d<=today){ setDate(d); setForm(toForm(hm[d]||null)); } };
+  const f=(k,v)=>{ setForm(x=>({...x,[k]:v})); setDirty(true); };
+  const writeDay=(patch)=>{
+    const list=data.healthDaily||[], ex=list.find(h=>h.date===date);
+    const item={...(ex||{id:uid(),date}),...patch};
+    Object.keys(item).forEach(k=>{ if(item[k]===undefined||item[k]===null||item[k]===""||(Array.isArray(item[k])&&!item[k].length)) delete item[k]; });
+    const empty=!["sleepMin","waterL","weight","steps","restingHR","exercise"].some(k=>item[k]!=null);
+    const next=empty?list.filter(h=>h!==ex):ex?list.map(h=>h===ex?item:h):[...list,item];
+    persist({...data,healthDaily:next});
+  };
+  const num=(s)=>{ const v=Number(s); return s!==""&&isFinite(v)?v:undefined; };
+  const save=()=>{
+    const sh=num(form.sleepH), sm=num(form.sleepM);
+    writeDay({sleepMin:(sh!=null||sm!=null)?Math.round((sh||0)*60+(sm||0)):undefined,waterL:num(form.waterL),weight:num(form.weight),steps:num(form.steps),restingHR:num(form.restingHR)});
+    setDirty(false);
+  };
+  const addWater=(d)=>{ const v=Math.max(0,Math.round(((num(form.waterL)||0)+d)*100)/100); setForm(x=>({...x,waterL:String(v)})); writeDay({waterL:v||undefined}); };
+  const addEx=()=>{ const m=num(exMin); if(!m) return; writeDay({exercise:[...((cur&&cur.exercise)||[]),{id:uid(),type:exType,min:m,src:"app"}]}); };
+  const delEx=(id)=>writeDay({exercise:((cur&&cur.exercise)||[]).filter(e=>e.id!==id)});
+  const saveGoals=()=>{ const sh=num(goalForm.sleepH), w=num(goalForm.waterL); persist({...data,healthSettings:{...S,sleepGoalMin:sh?Math.round(sh*60):S.sleepGoalMin,waterGoalL:w||S.waterGoalL}}); };
+  /* 7 วันล่าสุด */
+  const week=[]; for(let i=6;i>=0;i--){ const d=shiftISO(today,{d:-i}); week.push({d,h:hm[d]||null}); }
+  const maxSleep=Math.max(S.sleepGoalMin,...week.map(w=>(w.h&&w.h.sleepMin)||0));
+  const maxWater=Math.max(S.waterGoalL,...week.map(w=>(w.h&&w.h.waterL)||0));
+  const maxEx=Math.max(30,...week.map(w=>exMinutes(w.h)));
+  const sleepHit=week.filter(w=>w.h&&w.h.sleepMin>=S.sleepGoalMin).length, waterHit=week.filter(w=>w.h&&w.h.waterL>=S.waterGoalL).length, exDays=week.filter(w=>exMinutes(w.h)>0).length;
+  /* ทดสอบสมรรถนะ */
+  const tests=sortedTests(data), first=tests[0]||null, latest=tests[tests.length-1]||null;
+  const nextDue=latest?shiftISO(latest.date,{d:FITNESS_EVERY_DAYS}):null;
+  const dueIn=nextDue?daysUntil(nextDue):null;
+  const saveTest=(t)=>{ const list=data.fitnessTests||[]; const ex=list.find(x=>x.id===t.id); persist({...data,fitnessTests:ex?list.map(x=>x.id===t.id?t:x):[...list,t],activity:ex?data.activity:logActivity(data,{source:"health",text:`บันทึกผลทดสอบสมรรถนะ ${thaiDate(t.date)}`})}); setTestModal(null); };
+  const delTest=(id)=>{ persist({...data,fitnessTests:(data.fitnessTests||[]).filter(x=>x.id!==id)}); setTestModal(null); };
+  const prevOf=(t)=>{ const i=tests.findIndex(x=>x.id===t.id); return i>0?tests[i-1]:null; };
+  const dayLab=(d)=>DB_DAY_TH[new Date(d+"T00:00:00").getDay()];
+  const exList=(cur&&cur.exercise)||[];
+  return (
+    <div className="page-content hl-page">
+      {testModal&&<FitnessTestModal initial={testModal==="new"?null:testModal} prev={testModal==="new"?latest:prevOf(testModal)} onClose={()=>setTestModal(null)} onSave={saveTest} onDelete={delTest}/>}
+      <div className="db-bento">
+        <div className="db-card db-span2 hl-day">
+          <div className="db-head">
+            <div><div className="db-title">{date===today?"สุขภาพวันนี้":"สุขภาพ"}</div><div className="db-note">{thaiDate(date)}{cur&&cur.src==="garmin"?" · จาก Garmin":""}</div></div>
+            <div className="db-head-actions">
+              <button className="db-chip" onClick={()=>go(-1)} aria-label="วันก่อน"><ChevronLeft size={13}/></button>
+              <button className="db-chip" onClick={()=>go(1)} disabled={date>=today} aria-label="วันถัดไป"><ChevronRightIcon size={13}/></button>
             </div>
           </div>
-        )}
-        {!today&&showForm===false&&<div className="empty">ยังไม่บันทึกข้อมูลวันนี้</div>}
-        {showForm&&(
-          <div style={{background:"var(--surface-sunken)",padding:12,borderRadius:8,marginBottom:12}}>
-            <div style={{marginBottom:10}}>
-              <label className="field-label">น้ำหนัก (kg) *</label>
-              <input className="modal-input" type="number" step=".1" placeholder="70" value={form.weight} onChange={e=>setForm({...form,weight:e.target.value})}/>
+          <div className="hl-row">
+            <div className="hl-lab">😴 การนอน <span className="hl-goal">เป้า {fmtSleep(S.sleepGoalMin)} ชม.</span></div>
+            <div className="hl-inline"><input type="number" inputMode="numeric" className="modal-input hl-num" value={form.sleepH} onChange={e=>f("sleepH",e.target.value)} placeholder="7"/><span>ชม.</span>
+              <input type="number" inputMode="numeric" className="modal-input hl-num" value={form.sleepM} onChange={e=>f("sleepM",e.target.value)} placeholder="30"/><span>นาที</span>
+              {cur&&cur.sleepMin>=S.sleepGoalMin&&<span className="hl-ok">✓ ถึงเป้า</span>}</div>
+          </div>
+          <div className="hl-row">
+            <div className="hl-lab">💧 ดื่มน้ำ <span className="hl-goal">เป้า {S.waterGoalL} ลิตร</span></div>
+            <div className="hl-inline">
+              <button className="db-chip" onClick={()=>addWater(-0.25)} aria-label="ลดน้ำ 250 มล.">−</button>
+              <div className="hl-water db-mono">{num(form.waterL)||0} <small>ลิตร</small></div>
+              <button className="db-chip" onClick={()=>addWater(0.25)}>+250 มล.</button>
+              <button className="db-chip" onClick={()=>addWater(0.5)}>+500 มล.</button>
+              {cur&&cur.waterL>=S.waterGoalL&&<span className="hl-ok">✓ ถึงเป้า</span>}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:10}}>
-              <div>
-                <label className="field-label">พลังงาน</label>
-                <input className="modal-input" type="range" min="1" max="10" value={form.energy} onChange={e=>setForm({...form,energy:parseInt(e.target.value)})} style={{width:"100%"}}/>
-                <div style={{textAlign:"center",color:"#60a5fa"}}>{"⭐".repeat(form.energy)}</div>
-              </div>
-              <div>
-                <label className="field-label">นอน</label>
-                <input className="modal-input" type="range" min="1" max="10" value={form.sleep} onChange={e=>setForm({...form,sleep:parseInt(e.target.value)})} style={{width:"100%"}}/>
-                <div style={{textAlign:"center",color:"#34d399"}}>{"⭐".repeat(form.sleep)}</div>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <button className="modal-btn-cancel" onClick={()=>setShowForm(false)}>ยกเลิก</button>
-              <button className="modal-btn-save" onClick={addEntry} disabled={!form.weight}>บันทึก</button>
+            <div className="xp-bar" style={{"--xp-color":"#60a5fa",marginTop:6}}><div className="xp-fill" style={{width:`${Math.min(100,(num(form.waterL)||0)/S.waterGoalL*100)}%`}}/></div>
+          </div>
+          <div className="hl-row">
+            <div className="hl-lab">🏃 ออกกำลังกาย <span className="hl-goal">{exList.length?`${exMinutes(cur)} นาที`:""}</span></div>
+            {exList.map(e=>(
+              <div className="hl-ex" key={e.id}><span>{e.type}</span><span className="db-mono">{e.min} นาที</span>{e.src==="garmin"&&<span className="hl-src">Garmin</span>}<button className="hl-ex-x" onClick={()=>delEx(e.id)} aria-label="ลบ"><X size={11}/></button></div>
+            ))}
+            <div className="hl-inline">
+              <select className="modal-input hl-sel" value={exType} onChange={e=>setExType(e.target.value)}>{EXERCISE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+              <input type="number" inputMode="numeric" className="modal-input hl-num" value={exMin} onChange={e=>setExMin(e.target.value)}/><span>นาที</span>
+              <button className="db-chip" onClick={addEx}>+ เพิ่ม</button>
             </div>
           </div>
-        )}
-        {!showForm&&<button className="text-btn" onClick={()=>setShowForm(true)}><Plus size={13}/> เพิ่มวันนี้</button>}
-        <div style={{marginTop:14,maxHeight:300,overflowY:"auto"}}>
-          {health.slice().reverse().map(h=>(
-            <div key={h.id} style={{padding:8,borderBottom:"1px solid var(--chip-bg)",fontSize:12.5}}>
-              <div style={{color:"var(--ink-2)"}}>{h.date}</div>
-              <div style={{marginTop:4}}>น้ำหนัก {h.weight} kg · พลังงาน {"⭐".repeat(h.energy)} · นอน {"⭐".repeat(h.sleep)}</div>
+          <div className="hl-row hl-more">
+            <div><label className="field-label">น้ำหนัก (กก.)</label><input type="number" inputMode="decimal" className="modal-input" value={form.weight} onChange={e=>f("weight",e.target.value)}/></div>
+            <div><label className="field-label">ก้าวเดิน</label><input type="number" inputMode="numeric" className="modal-input" value={form.steps} onChange={e=>f("steps",e.target.value)}/></div>
+            <div><label className="field-label">ชีพจรขณะพัก</label><input type="number" inputMode="numeric" className="modal-input" value={form.restingHR} onChange={e=>f("restingHR",e.target.value)}/></div>
+          </div>
+          <div className="jr-actions"><div className="jr-hint">ขั้นถัดไป Garmin จะส่งการนอน/ก้าว/ชีพจร/ออกกำลังกายเข้ามาเอง · น้ำกดตอบ Jack ตอน 20:00 ได้</div><button className="modal-btn-save" onClick={save} disabled={!dirty}>บันทึก</button></div>
+        </div>
+        <div className="db-card db-span2 hl-week">
+          <div className="db-head"><div><div className="db-title">7 วันล่าสุด</div><div className="db-note">นอนถึงเป้า {sleepHit} · น้ำถึงเป้า {waterHit} · ออกกำลังกาย {exDays} วัน</div></div></div>
+          {[["😴 นอน",w=>(w.h&&w.h.sleepMin)||0,maxSleep,S.sleepGoalMin,v=>fmtSleep(v),"#a78bfa"],["💧 น้ำ",w=>(w.h&&w.h.waterL)||0,maxWater,S.waterGoalL,v=>v?`${v}L`:"",'#60a5fa'],["🏃 ออกกำลังกาย",w=>exMinutes(w.h),maxEx,null,v=>v?`${v}'`:"","var(--accent)"]].map(([lab,get,mx,goal,fmt,color])=>(
+            <div className="hl-wrow" key={lab}>
+              <div className="hl-wlab">{lab}</div>
+              <div className="hl-bars">
+                {week.map(w=>{ const v=get(w); const hit=goal!=null&&v>=goal; return (
+                  <div className="hl-bar" key={w.d} title={`${thaiDate(w.d)} ${fmt(v)||"–"}`}>
+                    <div className="hl-bar-track">{goal!=null&&<div className="hl-bar-goal" style={{bottom:`${goal/mx*100}%`}}/>}<div className="hl-bar-fill" style={{height:`${v/mx*100}%`,background:color,opacity:hit||goal==null?1:.55}}/></div>
+                    <div className="hl-bar-d">{dayLab(w.d)}</div>
+                  </div>); })}
+              </div>
             </div>
           ))}
+          <div className="hl-goals">
+            <span>เป้านอน</span><input type="number" className="modal-input hl-num" value={goalForm.sleepH} onChange={e=>setGoalForm(g=>({...g,sleepH:e.target.value}))}/><span>ชม.</span>
+            <span>เป้าน้ำ</span><input type="number" className="modal-input hl-num" value={goalForm.waterL} onChange={e=>setGoalForm(g=>({...g,waterL:e.target.value}))}/><span>ลิตร</span>
+            <button className="db-chip" onClick={saveGoals}>บันทึกเป้า</button>
+          </div>
+        </div>
+        <div className="db-card db-span4 hl-fit">
+          <div className="db-head">
+            <div><div className="db-title">ทดสอบสมรรถนะ (ทุก 3 เดือน)</div>
+              <div className="db-note">{latest?`ล่าสุด ${thaiDate(latest.date)} · ${dueIn!=null&&dueIn<=0?"ครบรอบแล้ว":"ครั้งถัดไป "+thaiDate(nextDue)+(dueIn!=null?` (อีก ${dueIn} วัน)`:"")}`:"ยังไม่เคยทดสอบ — ครั้งแรกเป็นจุดตั้งต้น"}</div></div>
+            <button className="db-chip pf-ok" onClick={()=>setTestModal("new")}>+ บันทึกผลทดสอบ</button>
+          </div>
+          {tests.length>0&&(
+            <div className="hl-fit-body">
+              <div className="hl-radar-wrap">
+                <FitnessRadar first={first} latest={latest}/>
+                <div className="hl-legend"><span className="hl-lg-latest">■ ล่าสุด</span>{tests.length>1&&<span className="hl-lg-first">■ ครั้งแรก</span>}</div>
+              </div>
+              <div className="hl-fit-table">
+                {FITNESS_FIELDS.map(f=>{
+                  const a=first&&first.values[f.k], b=latest&&latest.values[f.k];
+                  if(a==null&&b==null) return null;
+                  const d=(a!=null&&b!=null&&tests.length>1)?b-a:null;
+                  const good=d!=null&&f.dir!==0&&(f.dir>0?d>0:d<0), bad=d!=null&&f.dir!==0&&(f.dir>0?d<0:d>0);
+                  return (
+                    <div className="hl-fit-row" key={f.k}>
+                      <span className="hl-fit-l">{f.l}</span>
+                      <span className="db-mono">{tests.length>1&&a!=null?`${a} → `:""}<b>{b!=null?b:"–"}</b>{f.u?` ${f.u}`:""}</span>
+                      <span className={`db-mono hl-delta${good?" good":bad?" bad":""}`}>{d!=null&&d!==0?(d>0?"+":"")+Math.round(d*10)/10:""}</span>
+                    </div>);
+                })}
+              </div>
+            </div>
+          )}
+          {tests.length>0&&(
+            <div className="hl-tests">
+              {tests.slice().reverse().map(t=>{ const imp=fitnessImprovements(prevOf(t),t).length; return (
+                <button key={t.id} type="button" className="hl-test" onClick={()=>setTestModal(t)}>
+                  <span>{thaiDate(t.date)}</span><span className="hl-test-n">{Object.keys(t.values||{}).length} ค่า{imp?` · ดีขึ้น ${imp}`:""}</span>
+                </button>); })}
+            </div>
+          )}
+        </div>
+        <div className="db-card db-span4 hl-check">
+          <div className="db-head"><div><div className="db-title">ตรวจสุขภาพประจำปี</div><div className="db-note">import PDF ใบตรวจ + ตารางเทียบปี — ขั้นถัดไป (7B)</div></div></div>
         </div>
       </div>
     </div>
@@ -7973,6 +8174,16 @@ function computeXP(data,today=todayISO()){
     const jd=new Set();
     (data.journal||[]).forEach(j=>{ if(j&&j.date&&journalWritten(j)) jd.add(String(j.date).slice(0,10)); });   // ขั้นที่ 6: กรอกแค่หัวข้อก็นับ
     jd.forEach(d=>add(d,"growth",XP_PTS.journal,"เขียน Journal","journal"));
+    /* Health (ขั้นที่ 7A): ออกกำลังกาย 15/ครั้ง · นอนถึงเป้า 10/คืน · ดื่มน้ำถึงเป้า 5/วัน · ทดสอบสมรรถนะดีขึ้นจากครั้งก่อน 30/ค่า */
+    const HS=healthSettings(data);
+    (data.healthDaily||[]).forEach(hd=>{
+      if(!hd||!hd.date) return; const d=String(hd.date).slice(0,10);
+      (hd.exercise||[]).forEach(ex=>{ if(ex) add(d,"health",XP_PTS.exercise,`ออกกำลังกาย · ${ex.type||"อื่นๆ"}${ex.min?` ${ex.min} นาที`:""}`,"exercise"); });
+      if(Number(hd.sleepMin)>=HS.sleepGoalMin) add(d,"health",XP_PTS.sleep,`นอนถึงเป้า ${fmtSleep(hd.sleepMin)} ชม.`,"sleep");
+      if(Number(hd.waterL)>=HS.waterGoalL) add(d,"health",XP_PTS.water,`ดื่มน้ำถึงเป้า ${hd.waterL} ลิตร`,"water");
+    });
+    const fts=sortedTests(data);
+    fts.forEach((t,i)=>{ if(i>0) fitnessImprovements(fts[i-1],t).forEach(fl=>add(t.date,"health",XP_PTS.fitnessUp,`ทดสอบสมรรถนะดีขึ้น · ${fl.l}`,"fitness")); });
     /* Wealth รายเดือน (75/เรื่อง): เดือนที่ปิดแล้วเท่านั้น (ข้อมูล import เดือนละครั้ง) ยกเว้นทำรีวิวเดือน */
     const cur=today.slice(0,7), sm=start.slice(0,7), snaps=xp.snapshots||{};
     const target=Number(xp.savingRateTarget)||XP_DEFAULT_SAVING_TARGET;
@@ -8119,7 +8330,8 @@ function XpModal({data,persist,onClose}){
             <div>งานประจำตรงรอบ +5 · งานครั้งเดียว +10 · ถึงหมุด +50 · ปิดโปรเจกต์ +150 → ด้านตามหมวด target (การเงิน=Wealth · สุขภาพ=Health · อื่นๆ/ไม่มี target=Growth)</div>
             <div>งานประจำรายวันติดกันครบ 7 วัน +20 (ครั้งเดียวต่อช่วง) · หนังสือจบ +30 + สรุป +120 (ดาว + รีวิว ≥3 บรรทัด หรือมีคำคม) · รีวิววิดีโอ/พอดแคสต์ +10 (≤2/วัน) · Journal +5/วัน → Growth</div>
             <div>รายเดือน (เดือนที่ปิดแล้ว) อัตราออมถึงเป้า / Net worth เพิ่ม / หนี้ลด +75 ต่อเรื่อง · ทำรีวิวเดือน +75 → Wealth</div>
-            <div>สุขภาพ (ออกกำลังกาย นอน น้ำ ทดสอบสมรรถนะ ตรวจประจำปี) เริ่มนับเมื่อทำหน้า Health ใหม่ · ลบ/ยกเลิกรายการ = XP หายตาม · XP ไม่ลดตามเวลา · เลเวลถัดไปใช้ 100 × เลเวลปัจจุบัน</div>
+            <div>ออกกำลังกาย +15/ครั้ง · นอนถึงเป้า +10/คืน · ดื่มน้ำถึงเป้า +5/วัน · ทดสอบสมรรถนะดีขึ้นจากครั้งก่อน +30/ค่า (น้ำหนักไม่นับ) → Health · ตรวจประจำปี +100 (เร็วๆ นี้)</div>
+            <div>ลบ/ยกเลิกรายการ = XP หายตาม · XP ไม่ลดตามเวลา · เลเวลถัดไปใช้ 100 × เลเวลปัจจุบัน</div>
           </details>
         </div>
       </div>

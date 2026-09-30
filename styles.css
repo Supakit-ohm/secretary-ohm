@@ -1390,3 +1390,51 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .jr-emo{font-size:18px;}
   .jr-mood small{display:none;}
 }
+
+/* ═══ ข้อ 56 ขั้นที่ 7A: Health ═══ */
+.hl-page{padding:0;}
+.hl-row{padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+.hl-lab{font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:baseline;gap:8px;}
+.hl-goal{font-size:11px;font-weight:400;color:var(--ink-5);}
+.hl-inline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);}
+.hl-num{width:72px;padding:8px 10px;}
+.hl-sel{width:auto;flex:1;min-width:120px;padding:8px 10px;}
+.hl-ok{font-size:11.5px;color:var(--accent-soft);font-weight:600;}
+.hl-water{font-size:20px;font-weight:700;color:#93c5fd;min-width:74px;text-align:center;}
+.hl-water small{font-size:11px;color:var(--ink-5);font-weight:400;}
+.hl-ex{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 10px;margin-bottom:6px;border-radius:10px;background:rgba(255,255,255,.035);}
+.hl-ex .db-mono{margin-left:auto;color:var(--ink-2);}
+.hl-src{font-size:10px;color:var(--ink-5);border:1px solid var(--line);border-radius:6px;padding:0 5px;}
+.hl-ex-x{background:none;border:none;color:var(--ink-5);cursor:pointer;display:flex;padding:2px;}
+.hl-more{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-bottom:none;}
+.hl-wrow{margin-bottom:12px;}
+.hl-wlab{font-size:12px;color:var(--ink-2);margin-bottom:4px;}
+.hl-bars{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.hl-bar{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.hl-bar-track{position:relative;width:100%;height:46px;border-radius:7px;background:rgba(255,255,255,.05);overflow:hidden;display:flex;align-items:flex-end;}
+.hl-bar-fill{width:100%;border-radius:7px 7px 0 0;}
+.hl-bar-goal{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.45);z-index:1;}
+.hl-bar-d{font-size:10px;color:var(--ink-5);}
+.hl-goals{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin-top:4px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);}
+.hl-fit-body{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:18px;align-items:start;}
+.hl-radar{width:100%;max-width:300px;display:block;margin:0 auto;}
+.hl-radar-grid{fill:none;stroke:rgba(255,255,255,.1);stroke-width:.6;}
+.hl-radar-lab{font-size:7.5px;fill:var(--ink-2);font-family:'Noto Sans Thai',sans-serif;}
+.hl-radar-first{fill:rgba(217,178,106,.15);stroke:var(--gold);stroke-width:1.2;stroke-dasharray:3 2;}
+.hl-radar-latest{fill:rgba(16,185,129,.22);stroke:var(--accent);stroke-width:1.6;}
+.hl-legend{display:flex;justify-content:center;gap:14px;font-size:11px;margin-top:4px;}
+.hl-lg-latest{color:var(--accent);} .hl-lg-first{color:var(--gold);}
+.hl-fit-table{display:flex;flex-direction:column;gap:2px;}
+.hl-fit-row{display:grid;grid-template-columns:1fr auto 52px;gap:10px;font-size:12.5px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.hl-fit-l{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hl-delta{text-align:right;color:var(--ink-5);}
+.hl-delta.good{color:var(--accent-soft);} .hl-delta.bad{color:var(--orange-soft);}
+.hl-tests{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.hl-test{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:8px 12px;color:var(--ink);font-family:inherit;font-size:12.5px;cursor:pointer;}
+.hl-test-n{font-size:10.5px;color:var(--ink-5);}
+.hl-test-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;}
+@media(max-width:760px){
+  .hl-fit-body{grid-template-columns:1fr;}
+  .hl-more{grid-template-columns:1fr 1fr;}
+  .hl-test-grid{grid-template-columns:1fr;}
+}
