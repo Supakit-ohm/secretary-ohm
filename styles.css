@@ -1438,3 +1438,39 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .hl-more{grid-template-columns:1fr 1fr;}
   .hl-test-grid{grid-template-columns:1fr;}
 }
+
+/* ═══ ข้อ 56 ขั้นที่ 7B: ผลตรวจสุขภาพประจำปี ═══ */
+.ck-pick{display:inline-flex;cursor:pointer;margin:10px 0;}
+.ck-top{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
+.ck-same{font-size:12px;color:var(--orange-soft);padding-bottom:10px;}
+.ck-vit{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.ck-tbl{display:flex;flex-direction:column;gap:4px;}
+.ck-rrow{display:grid;grid-template-columns:1.5fr 1fr 96px 1.2fr;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.ck-rl{font-size:12.5px;display:flex;flex-direction:column;min-width:0;}
+.ck-rl small{font-size:10px;color:var(--ink-5);}
+.ck-rv,.ck-rf{padding:6px 8px;font-size:12.5px;}
+.ck-rr{font-size:11px;color:var(--ink-5);}
+.ck-rrow.ck-h .ck-rv,.ck-rrow.ck-l .ck-rv{border-color:var(--orange);color:var(--orange-soft);}
+.ck-sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.ck-attach{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink-2);}
+.ck-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.ck-chip{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--ink-2);}
+.ck-chip.ck-flag{border-color:rgba(251,146,60,.45);color:var(--orange-soft);background:rgba(251,146,60,.08);}
+.ck-sec{margin-top:10px;}
+.ck-sec-head{background:none;border:none;color:var(--ink);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:4px 0;}
+.ck-cmp{display:flex;flex-direction:column;overflow-x:auto;}
+.ck-cmp-row{display:grid;grid-template-columns:minmax(120px,1.6fr) repeat(var(--ck-cols),minmax(64px,.8fr)) minmax(90px,1fr);gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);align-items:baseline;}
+.ck-cmp-h{font-size:11px;color:var(--ink-5);}
+.ck-cmp-l{color:var(--ink-2);}
+.ck-cmp-r{font-size:11px;color:var(--ink-5);}
+.ck-flag{color:var(--orange-soft);font-weight:700;}
+.ck-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+.ck-item{border-top:1px solid rgba(255,255,255,.06);padding-top:8px;}
+.ck-item-head{display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:4px;}
+.ck-item-head .del-txt-btn{margin-left:auto;}
+@media(max-width:760px){
+  .ck-vit{grid-template-columns:1fr 1fr;}
+  .ck-rrow{grid-template-columns:1fr 1fr;}
+  .ck-rr{grid-column:1/-1;}
+  .ck-sum{grid-template-columns:1fr;}
+}

@@ -1852,4 +1852,27 @@ test("ขั้นที่ 7A: สรุปเช้าวันเสาร์
   assert.ok(/ยังไม่เคยทดสอบ/.test(ctx.morningFacts_(sat).fitnessDue));
 });
 
+
+// =================== ข้อ 56 ขั้นที่ 7B: ผลตรวจสุขภาพ (ค่าสมมติทั้งหมด) ===================
+test("ขั้นที่ 7B: get_checkup — ล่าสุด/ตามปี · เทียบครั้งก่อน · เฉพาะที่มีธง · ไม่มีข้อมูล = บอกให้นำเข้า · RULES ห้ามแปลผล/ใช้เมื่อถาม", () => {
+  delete store["k.checkups"];
+  assert.strictEqual(ctx.toolGetCheckup_({}, ctx.newCtx_()).ok, false);
+  setDoc("k.checkups", [
+    { id: "c1", date: "2025-03-15", blood: [{ code: "Total Cholesterol", label: "คอเลสเตอรอลรวม", value: "190", num: 190, flag: "", range: "155-200", unit: "mg/dl" }], urine: [], vitals: { bpSys: 120 } },
+    { id: "c2", date: "2026-03-20", blood: [{ code: "Total Cholesterol", label: "คอเลสเตอรอลรวม", value: "212", num: 212, flag: "h", range: "155-200", unit: "mg/dl" }, { code: "HDL-Cholesterol", label: "ไขมันดี HDL", value: "48", num: 48, flag: "", range: "35-80", unit: "mg/dl" }],
+      urine: [{ code: "Ketone", label: "คีโตน", value: "Trace", flag: "", range: "Negative", unit: "" }], vitals: { bpSys: 126, bpDia: 79 }, xray: { impression: "Normal study." }, ekg: "Normal", advice: "ออกกำลังกายสม่ำเสมอ" }]);
+  const r = ctx.toolGetCheckup_({}, ctx.newCtx_());
+  assert.deepStrictEqual([r.date, r.previousDate, r.blood.length, r.blood[0].flag, r.blood[0].previous, r.blood[0].normalRange, r.xray, r.doctorAdvice], ["2026-03-20", "2025-03-15", 2, "สูงกว่าเกณฑ์", "190", "155-200 mg/dl", "Normal study.", "ออกกำลังกายสม่ำเสมอ"]);
+  const f = ctx.toolGetCheckup_({ onlyFlagged: true }, ctx.newCtx_());
+  assert.deepStrictEqual([f.blood.length, f.urine.length], [1, 0]);
+  const y = ctx.toolGetCheckup_({ date: "2025" }, ctx.newCtx_());
+  assert.deepStrictEqual([y.date, y.previousDate], ["2025-03-15", null]);
+  assert.strictEqual(ctx.toolGetCheckup_({ date: "2019" }, ctx.newCtx_()).ok, false);
+  aiScript = () => ({ text: "ครับ" });
+  post([msg("ผลตรวจปีนี้เป็นยังไง")]);
+  const b = aiLog[aiLog.length - 1];
+  assert.ok(b.tools.some((t) => t.name === "get_checkup") && b.instructions.includes("เฉพาะเมื่อโอมถามเรื่องผลตรวจเท่านั้น") && b.instructions.includes("ห้ามแปลผล/วินิจฉัย"));
+  canonical();
+});
+
 console.log("\n" + passed + " passed" + (process.exitCode ? " (มีบางข้อพัง)" : ""));

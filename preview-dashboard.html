@@ -821,7 +821,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
   // users/{uid}/files/{fileId} : json = {id,name,mime,size,driveId,url,thumb,link:{kind,id}|null,from:"app"|"line",createdAt,trash,trashedAt}
   //   แยกจากข้อมูลก้อนหลัก (ไม่อยู่ใน localStorage/parts) → รูปย่อไม่กินที่ localStorage · React อ่านผ่าน window.FireFiles + event "secretary-files"
   //   ผูกกับรายการด้วย link อย่างเดียว (ไม่แตะตัวรายการ) → Jack ผูก/ย้ายได้โดยไม่ต้องเขียนเอกสารรายจ่ายชนกับแอป
-  //   kind = expense | income | document · link ที่ชี้ไปรายการที่ไม่มีแล้ว = ไฟล์รอจัด (โชว์ในหน้า Documents)
+  //   kind = expense | income | document | checkup (ขั้นที่ 7B) · link ที่ชี้ไปรายการที่ไม่มีแล้ว = ไฟล์รอจัด (โชว์ในหน้า Documents)
   //   ลบ = ตั้ง trash:true → Jack (Apps Script) ย้ายไฟล์ลงถังขยะ Drive รอบ 07:00 แล้วลบเอกสารนี้
   //   (แอปมีสิทธิ์ drive.file ลบไฟล์ที่ Jack สร้างไม่ได้ เลยให้ Jack ลบทั้งหมดที่เดียว)
   var files = {}, filesLoaded = false, filesError = "", unsubFiles = null;
@@ -2304,7 +2304,7 @@ function FileInbox({data,persist}){
   const [pick,setPick]=useState({});
   if(!api||!api.signedIn()) return null;
   const fin=data.finance||{};
-  const ids={expense:new Set((fin.expenses||[]).map(e=>e.id)),income:new Set((fin.income||[]).map(i=>i.id)),document:new Set((data.documents||[]).map(d=>d.id))};
+  const ids={expense:new Set((fin.expenses||[]).map(e=>e.id)),income:new Set((fin.income||[]).map(i=>i.id)),document:new Set((data.documents||[]).map(d=>d.id)),checkup:new Set((data.checkups||[]).map(c=>c.id))};
   const orphans=api.list().filter(f=>!f.link||!ids[f.link.kind]||!ids[f.link.kind].has(f.link.id));
   if(!orphans.length) return null;
   const recent=[...(fin.expenses||[]).map(r=>({k:"expense",r})),...(fin.income||[]).map(r=>({k:"income",r}))]
@@ -6648,6 +6648,258 @@ function FitnessTestModal({initial,prev,onClose,onSave,onDelete}){
     </div>
   );
 }
+/* ═══ ข้อ 56 ขั้นที่ 7B: import ใบตรวจสุขภาพ (PDF ข้อความ ฟอร์มโรงพยาบาล QF-ART-39) ═══
+   pdf.js → รายการข้อความพร้อมพิกัด (x,y) → อ่านตามตำแหน่งคอลัมน์ (ไม่ใช่ข้อความเรียงบรรทัด เพราะหน้าเป็น 2 คอลัมน์ ซ้าย=เลือด/ปัสสาวะ ขวา=เอกซเรย์/ชีพ ฯลฯ)
+   **ไม่อ่าน/ไม่เก็บข้อมูลระบุตัวตน** (ชื่อ HN VN วันเกิด อายุ อาชีพ สังกัด สิทธิ์) — parser ไม่แตะบริเวณนั้นเลย เก็บแค่วันที่ตรวจ + ผล
+   ฟอร์มเปลี่ยน → warnings + หน้ายืนยันแก้ค่าได้ (อนาคตค่อยใช้ AI สำรองตามแผนข้อ 56) */
+const CHECKUP_FORM="QF-ART-39";
+/* ฟอนต์ไทยใน PDF บางตัวใช้ตัวอักษรช่วง Private Use (U+F700–F71A) แทนวรรณยุกต์/สระที่ขยับตำแหน่ง → แปลงกลับเป็นตัวปกติ */
+const THAI_PUA={"":"ฐ","":"ญ","":"ิ","":"ี","":"ึ","":"ื",
+  "":"่","":"้","":"๊","":"๋","":"์","":"่","":"้","":"๊","":"๋","":"์",
+  "":"ั","":"ํ","":"็","":"่","":"้","":"๊","":"๋","":"์","":"ุ","":"ู","":"ฺ"};
+function fixThaiPua(s){ return String(s||"").replace(/[-]/g,c=>THAI_PUA[c]||"").replace(/ํา/g,"ำ"); }
+const CHECKUP_BLOOD={"WBC":"เม็ดเลือดขาว","RBC":"เม็ดเลือดแดง","Platelet":"เกล็ดเลือด","Hemoglobin":"ฮีโมโกลบิน","Hematocrit":"ความเข้มข้นเม็ดเลือดแดง",
+  "HbA1c":"น้ำตาลสะสม","Glucose":"น้ำตาลในเลือด","BUN":"ยูเรียในเลือด","Creatinine":"การทำงานของไต (ครีเอตินิน)","Uric":"กรดยูริก",
+  "Total Cholesterol":"คอเลสเตอรอลรวม","Triglyceride":"ไตรกลีเซอไรด์","HDL-Cholesterol":"ไขมันดี HDL","LDL-(Calculate)":"ไขมันเลว LDL (คำนวณ)","LDL-direct":"ไขมันเลว LDL (วัดตรง)",
+  "SGOT-AST":"เอนไซม์ตับ AST","SGPT-ALT":"เอนไซม์ตับ ALT","Albumin":"อัลบูมิน","ALP":"เอนไซม์ ALP","Total Bilirubin":"บิลิรูบินรวม","Total protein":"โปรตีนรวม","Syphilis IgG":"ซิฟิลิส"};
+const CHECKUP_URINE={"Color":"สี","Clearity":"ความใส","Sp.gravity":"ความถ่วงจำเพาะ","PH":"ความเป็นกรด-ด่าง","Protein":"โปรตีน","Sugar":"น้ำตาล","Ketone":"คีโตน",
+  "Nitrite":"ไนไตรท์","Bilirubin":"บิลิรูบิน","Urobilinogen":"ยูโรบิลิโนเจน","Leukocyte":"เม็ดเลือดขาว","Blood":"เม็ดเลือดแดง"};
+const CHECKUP_VITALS=[{k:"bpSys",l:"ความดันตัวบน",u:"mmHg"},{k:"bpDia",l:"ความดันตัวล่าง",u:"mmHg"},{k:"pulse",l:"ชีพจร",u:"/min"},{k:"weight",l:"น้ำหนัก",u:"กก."},{k:"height",l:"ส่วนสูง",u:"ซม."},{k:"waist",l:"รอบเอว",u:"ซม."},{k:"bmi",l:"BMI",u:""}];
+function checkupNum(v){ const s=String(v==null?"":v).trim(); return /^-?\d+(\.\d+)?$/.test(s)?Number(s):null; }
+function parseCheckupItems(raw){
+  const items=(raw||[]).map(t=>({p:t.p,x:t.x,y:t.y,s:fixThaiPua(t.s).replace(/\s+/g," ").trim()})).filter(t=>t.s);
+  const warnings=[];
+  const p1=items.filter(t=>t.p===1);
+  const row=(y,x0,x1,pg)=>(pg||p1).filter(t=>Math.abs(t.y-y)<=3&&t.x>=x0&&t.x<x1).sort((a,b)=>a.x-b.x);
+  const find=(re,pg)=>(pg||p1).find(t=>re.test(t.s));
+  const isNum=s=>/^\d+(\.\d+)?$/.test(s);
+  const form=items.some(t=>t.s.includes(CHECKUP_FORM));
+  if(!form) warnings.push(`ไม่พบรหัสฟอร์ม ${CHECKUP_FORM} — ฟอร์มอาจเปลี่ยน โปรดตรวจทุกค่า`);
+  /* วันที่ตรวจ (พ.ศ. → ค.ศ.) */
+  let date=null;
+  const dl=find(/วันที่ตรวจ/);
+  if(dl){ const v=row(dl.y,dl.x+1,dl.x+200).map(t=>t.s).find(s=>/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)); if(v){ let [d,m,y]=v.split("/").map(Number); if(y>2400) y-=543; date=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; } }
+  if(!date) warnings.push("อ่านวันที่ตรวจไม่ได้ — ใส่เองในหน้ายืนยัน");
+  /* ตาราง: รหัส (คอลัมน์ x≈116) · ผล (x 180–236 ธง h/l แยกตัว) · ค่าปกติ (x 236–275) · หน่วย (x 275–300) */
+  const table=(yTop,yBot,labels)=>{
+    const out=[];
+    p1.filter(t=>t.x>=108&&t.x<130&&t.y<yTop&&t.y>yBot).sort((a,b)=>b.y-a.y).forEach(c=>{
+      const code=c.s; if(/^การตรวจ|^ผลการตรวจ/.test(code)) return;
+      const vals=row(c.y,180,236);
+      const flagIt=vals.find(t=>/^[hlHL]$/.test(t.s));
+      const value=vals.filter(t=>t!==flagIt).map(t=>t.s).join(" ");
+      let range=row(c.y,236,275).map(t=>t.s).join(" "), unit=row(c.y,275,300).map(t=>t.s).join(" ");
+      const m=range.match(/^([<>≤≥]?\s*\d[\d.]*(?:\s*-\s*\d[\d.]*)?)\s*(.*)$/);
+      if(m){ range=m[1].replace(/\s+/g,""); if(m[2]&&!unit) unit=m[2]; }
+      unit=unit.replace(/\s*\/\s*/g,"/").replace(/^10\/ul$/i,"10³/ul").replace(/\s+/g," ").trim();
+      out.push({code,label:labels[code]||fixThaiPua(code),value,num:checkupNum(value),flag:flagIt?flagIt.s.toLowerCase():"",range,unit});
+    });
+    return out;
+  };
+  const hb=find(/^การตรวจเลือด/), hu=find(/^การตรวจปัสสาวะ/);
+  const blood=hb?table(hb.y-5,hu?hu.y+5:0,CHECKUP_BLOOD):[];
+  const urine=hu?table(hu.y-5,20,CHECKUP_URINE):[];
+  if(!blood.length) warnings.push("ไม่พบตารางผลเลือด");
+  if(!urine.length) warnings.push("ไม่พบตารางผลปัสสาวะ");
+  const unknown=blood.filter(r=>!CHECKUP_BLOOD[r.code]).concat(urine.filter(r=>!CHECKUP_URINE[r.code])).map(r=>r.code);
+  if(unknown.length) warnings.push("มีรายการที่ไม่รู้จัก: "+unknown.join(", "));
+  /* สัญญาณชีพ + น้ำหนัก/ส่วนสูง/รอบเอว/BMI (ตัวเลขอยู่บรรทัดเดียวกับป้าย แยกซ้าย/ขวาด้วยตำแหน่งป้ายถัดไป) */
+  const nums=(lab,x1)=>lab?row(lab.y,lab.x+1,x1||700).filter(t=>isNum(t.s)).map(t=>Number(t.s)):[];
+  const bp=nums(find(/Blood pressure/i));
+  const tempL=find(/\(Temp\)/i), hL=find(/\(Height\)/i), bmiL=find(/^BMI/i);
+  const vitals={bpSys:bp[0]??null,bpDia:bp[1]??null,pulse:nums(find(/\(pulse\)/i),tempL?tempL.x:700)[0]??null,
+    weight:nums(find(/\(Weight\)/i),hL?hL.x:700)[0]??null,height:hL?(nums(hL)[0]??null):null,
+    waist:nums(find(/\((Wist|Waist)/i),bmiL?bmiL.x:700)[0]??null,bmi:bmiL?(nums(bmiL)[0]??null):null};
+  /* ข้อความสรุป: เอกซเรย์ / คลื่นไฟฟ้าหัวใจ / การได้ยิน / ฟัน (ค่าที่อยู่บรรทัดเดียวกับป้าย ไม่เอาเส้น ____) */
+  const textRight=(lab)=>lab?row(lab.y,lab.x+1,700).map(t=>t.s).filter(s=>!/^_+$/.test(s)).join(" ").trim():"";
+  const cl=find(/^Chest\s*:/i);
+  let xray={impression:"",detail:""};
+  if(cl){
+    const lines=p1.filter(t=>t.x>=cl.x-5&&t.y<cl.y&&t.y>cl.y-110).sort((a,b)=>b.y-a.y).map(t=>t.s).filter(s=>!/^=+/.test(s)&&!/\bMD\.?$/i.test(s));
+    const imp=lines.find(s=>/^IMPRESSION/i.test(s));
+    xray={impression:imp?imp.replace(/^IMPRESSION\s*:?\s*/i,"").trim():"",detail:lines.filter(s=>s!==imp).join(" ")};
+  }
+  const ekgL=p1.find(t=>t.x>=290&&/^ผลการตรวจ_/.test(t.s));
+  const ekg=textRight(ekgL);
+  const hearing={right:textRight(p1.find(t=>t.x>=290&&/^หูขวา/.test(t.s))),left:textRight(p1.find(t=>t.x>=290&&/^หูซ้าย/.test(t.s)))};
+  const gumL=p1.find(t=>/^สภาพเหงือก/.test(t.s));
+  const dental={mouth:textRight(p1.find(t=>/^สภาพช่องปาก/.test(t.s))),gums:gumL?row(gumL.y,gumL.x+1,gumL.x+120).map(t=>t.s).filter(s=>!/^_+$/.test(s)&&!/^สภาพฟัน/.test(s)).join(" "):""};
+  /* คำแนะนำแพทย์ (หน้า 2 คอลัมน์ขวา ใต้หัวข้อ "คำแนะนำ") */
+  const al=items.find(t=>t.p===2&&/^คำแนะนำ$/.test(t.s));
+  const advice=al?items.filter(t=>t.p===2&&t.x>=280&&t.y<al.y&&t.y>al.y-160).sort((a,b)=>b.y-a.y).map(t=>t.s).join("\n"):"";
+  const ok=blood.length+urine.length>0;
+  return {ok,form,date,blood,urine,vitals,xray,ekg,hearing,dental,advice,warnings};
+}
+async function extractPdfItems(file){
+  await loadExternalScript(PDFJS_URL);
+  const lib=window.pdfjsLib;
+  if(!lib) throw new Error("โหลด pdf.js ไม่สำเร็จ");
+  lib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER;
+  const pdf=await lib.getDocument({data:await file.arrayBuffer()}).promise;
+  const out=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const tc=await (await pdf.getPage(p)).getTextContent();
+    tc.items.forEach(it=>{ if(String(it.str).trim()) out.push({p,x:Math.round(it.transform[4]),y:Math.round(it.transform[5]),s:it.str}); });
+  }
+  return out;
+}
+
+function checkupMonthLabel(d){ return new Date(d+"T00:00:00").toLocaleDateString("th-TH",{month:"short",year:"numeric",calendar:"buddhist"}); }
+function CheckupImportModal({data,persist,onClose}){
+  const api=useFireFiles();
+  const [step,setStep]=useState("pick");
+  const [err,setErr]=useState("");
+  const [file,setFile]=useState(null);
+  const [r,setR]=useState(null);
+  const [attach,setAttach]=useState(true);
+  const [msg,setMsg]=useState("");
+  const pick=async(f)=>{
+    if(!f) return;
+    setErr(""); setFile(f); setStep("busy");
+    try{
+      const items=await extractPdfItems(f);
+      const res=parseCheckupItems(items);
+      if(!res.ok){ setErr("อ่านผลตรวจจากไฟล์นี้ไม่ได้ (อาจเป็นไฟล์สแกน/รูป หรือฟอร์มต่างจากเดิม) — ต้องเป็น PDF ที่มีข้อความ"); setStep("pick"); return; }
+      setR({...res,date:res.date||todayISO()}); setStep("review");
+    }catch(e){ setErr(String(e&&e.message||e)); setStep("pick"); }
+  };
+  const setRow=(tab,i,patch)=>setR(x=>({...x,[tab]:x[tab].map((row,j)=>j===i?{...row,...patch,...(patch.value!=null?{num:checkupNum(patch.value)}:{})}:row)}));
+  const same=r&&(data.checkups||[]).find(c=>c.date===r.date);
+  const save=async()=>{
+    if(same&&!window.confirm(`มีผลตรวจวันที่ ${thaiDate(r.date)} อยู่แล้ว — แทนที่ด้วยไฟล์นี้?`)) return;
+    const id=same?same.id:uid();
+    const vit={}; CHECKUP_VITALS.forEach(v=>{ const n=checkupNum(r.vitals[v.k]); if(n!=null) vit[v.k]=n; });
+    const item={id,date:r.date,form:r.form?CHECKUP_FORM:"",blood:r.blood,urine:r.urine,vitals:vit,xray:r.xray,ekg:r.ekg,hearing:r.hearing,dental:r.dental,advice:r.advice,importedAt:new Date().toISOString()};
+    const list=data.checkups||[];
+    persist({...data,checkups:same?list.map(c=>c.id===id?item:c):[...list,item],activity:logActivity(data,{source:"health",text:`นำเข้าผลตรวจสุขภาพ ${thaiDate(r.date)}`})});
+    if(attach&&file&&api){
+      if(api.needsToken&&api.needsToken()){ setMsg("บันทึกผลแล้ว — ยังไม่ได้อนุญาต Google Drive เลยยังไม่แนบ PDF (แนบทีหลังได้ที่รายการผลตรวจ)"); setStep("done"); return; }
+      try{ setStep("busy"); await api.upload(file,{kind:"checkup",id}); }
+      catch(e){ setMsg("บันทึกผลแล้ว แต่แนบ PDF ไม่สำเร็จ: "+(e&&e.message||e)+" — แนบทีหลังได้"); setStep("done"); return; }
+    }
+    onClose();
+  };
+  const flagCls=(f)=>f==="h"?" ck-h":f==="l"?" ck-l":"";
+  const Table=({tab,title})=>(   /* เรียกเป็นฟังก์ชัน ไม่ใช่ <Table/> — กัน input หลุดโฟกัสทุกครั้งที่พิมพ์ */
+    <div className="ck-tbl">
+      <div className="field-label">{title}</div>
+      {r[tab].map((row,i)=>(
+        <div className={`ck-rrow${flagCls(row.flag)}`} key={row.code+i}>
+          <span className="ck-rl">{row.label}<small>{row.code}</small></span>
+          <input className="modal-input ck-rv" value={row.value} onChange={e=>setRow(tab,i,{value:e.target.value})}/>
+          <select className="modal-input ck-rf" value={row.flag} onChange={e=>setRow(tab,i,{flag:e.target.value})}><option value="">ปกติ</option><option value="h">สูง (h)</option><option value="l">ต่ำ (l)</option></select>
+          <span className="ck-rr">{row.range}{row.unit?` ${row.unit}`:""}</span>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div className="modal-backdrop" onClick={step==="busy"?undefined:onClose}>
+      <div className="modal ck-modal" style={{maxWidth:720}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>นำเข้าผลตรวจสุขภาพ (PDF)</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          {step==="pick"&&(<>
+            <div className="pf-note">รองรับใบรายงานผลตรวจสุขภาพแบบ PDF ที่มีข้อความ (ฟอร์ม {CHECKUP_FORM}) · อ่านในเครื่องนี้เท่านั้น · <b>ไม่เก็บชื่อ HN วันเกิด หรือข้อมูลระบุตัวตน</b> เก็บแค่วันที่ตรวจและผล · ตรวจ/แก้ค่าก่อนบันทึกได้</div>
+            <label className="db-chip pf-ok ck-pick">เลือกไฟล์ PDF<input type="file" accept="application/pdf,.pdf" style={{display:"none"}} onChange={e=>pick(e.target.files&&e.target.files[0])}/></label>
+            {err&&<div className="slip-warn">{err}</div>}
+          </>)}
+          {step==="busy"&&<div className="db-empty">กำลังทำงาน…</div>}
+          {step==="done"&&<div className="slip-warn">{msg}</div>}
+          {step==="review"&&r&&(<>
+            {r.warnings.length>0&&<div className="slip-warn">{r.warnings.map((w,i)=><div key={i}>⚠️ {w}</div>)}</div>}
+            <div className="ck-top">
+              <div><label className="field-label">วันที่ตรวจ</label><input type="date" className="modal-input" value={r.date} onChange={e=>setR(x=>({...x,date:e.target.value}))}/></div>
+              {same&&<div className="ck-same">มีผลวันที่นี้อยู่แล้ว — บันทึกจะแทนที่</div>}
+            </div>
+            <div className="ck-vit">
+              {CHECKUP_VITALS.map(v=>(
+                <div key={v.k}><label className="field-label">{v.l}{v.u?` (${v.u})`:""}</label><input className="modal-input" inputMode="decimal" value={r.vitals[v.k]==null?"":r.vitals[v.k]} onChange={e=>setR(x=>({...x,vitals:{...x.vitals,[v.k]:e.target.value}}))}/></div>
+              ))}
+            </div>
+            {Table({tab:"blood",title:`ผลเลือด (${r.blood.length} รายการ)`})}
+            {Table({tab:"urine",title:`ผลปัสสาวะ (${r.urine.length} รายการ)`})}
+            <div className="ck-sum">
+              <div><label className="field-label">เอกซเรย์ทรวงอก (สรุป)</label><input className="modal-input" value={r.xray.impression} onChange={e=>setR(x=>({...x,xray:{...x.xray,impression:e.target.value}}))}/></div>
+              <div><label className="field-label">คลื่นไฟฟ้าหัวใจ</label><input className="modal-input" value={r.ekg} onChange={e=>setR(x=>({...x,ekg:e.target.value}))}/></div>
+              <div><label className="field-label">การได้ยิน หูขวา</label><input className="modal-input" value={r.hearing.right} onChange={e=>setR(x=>({...x,hearing:{...x.hearing,right:e.target.value}}))}/></div>
+              <div><label className="field-label">การได้ยิน หูซ้าย</label><input className="modal-input" value={r.hearing.left} onChange={e=>setR(x=>({...x,hearing:{...x.hearing,left:e.target.value}}))}/></div>
+            </div>
+            <div><label className="field-label">คำแนะนำจากแพทย์</label><textarea className="modal-input" rows={3} value={r.advice} onChange={e=>setR(x=>({...x,advice:e.target.value}))}/></div>
+            {api&&<label className="ck-attach"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/> แนบไฟล์ PDF เข้า Google Drive (โฟลเดอร์ของแอป)</label>}
+          </>)}
+        </div>
+        <div className="modal-foot">
+          <button className="modal-btn-cancel" onClick={onClose}>{step==="done"?"ปิด":"ยกเลิก"}</button>
+          {step==="review"&&<button className="modal-btn-save" onClick={save} disabled={!r||!r.date}>บันทึกผลตรวจ</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+/* ตารางเทียบปี: แถว = รายการ (เลือด → ปัสสาวะ → สัญญาณชีพ) · คอลัมน์ = ผลตรวจแต่ละครั้ง (ล่าสุดก่อน สูงสุด 4) · ธง h/l = สีส้ม */
+function CheckupCard({data,persist}){
+  const [imp,setImp]=useState(false);
+  const [show,setShow]=useState({blood:true,urine:false,vitals:true});
+  const list=(data.checkups||[]).filter(c=>c&&c.date).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const cols=list.slice(0,4), latest=list[0]||null;
+  const rowsOf=(tab)=>{ const seen=[]; cols.forEach(c=>(c[tab]||[]).forEach(x=>{ if(!seen.find(s=>s.code===x.code)) seen.push({code:x.code,label:x.label,range:x.range,unit:x.unit}); })); return seen; };
+  const cell=(c,tab,code)=>(c[tab]||[]).find(x=>x.code===code);
+  const del=(c)=>{ if(!window.confirm(`ลบผลตรวจวันที่ ${thaiDate(c.date)}? (ไฟล์ PDF ที่แนบจะย้ายลงถังขยะ Drive)`)) return; persist({...data,checkups:(data.checkups||[]).filter(x=>x.id!==c.id)}); trashAttachments("checkup",[c.id]); };
+  const flagged=latest?[...(latest.blood||[]),...(latest.urine||[])].filter(x=>x.flag):[];
+  const Section=({tab,title})=>{
+    const rows=tab==="vitals"?CHECKUP_VITALS.map(v=>({code:v.k,label:v.l,unit:v.u,range:""})):rowsOf(tab);
+    if(!rows.length) return null;
+    return (
+      <div className="ck-sec">
+        <button type="button" className="ck-sec-head" onClick={()=>setShow(s=>({...s,[tab]:!s[tab]}))}>{show[tab]?"▾":"▸"} {title}</button>
+        {show[tab]&&(
+          <div className="ck-cmp" style={{"--ck-cols":cols.length}}>
+            <div className="ck-cmp-row ck-cmp-h"><span>รายการ</span>{cols.map(c=><span key={c.id} className="db-mono">{checkupMonthLabel(c.date)}</span>)}<span>ค่าปกติ</span></div>
+            {rows.map(rw=>(
+              <div className="ck-cmp-row" key={rw.code}>
+                <span className="ck-cmp-l">{rw.label}</span>
+                {cols.map(c=>{ if(tab==="vitals"){ const v=(c.vitals||{})[rw.code]; return <span key={c.id} className="db-mono">{v!=null?v:"–"}</span>; }
+                  const x=cell(c,tab,rw.code); return <span key={c.id} className={`db-mono${x&&x.flag?" ck-flag":""}`}>{x&&x.value?x.value:"–"}{x&&x.flag?` ${x.flag}`:""}</span>; })}
+                <span className="ck-cmp-r">{rw.range}{rw.unit?` ${rw.unit}`:""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="db-card db-span4 hl-check">
+      {imp&&<CheckupImportModal data={data} persist={persist} onClose={()=>setImp(false)}/>}
+      <div className="db-head">
+        <div><div className="db-title">ตรวจสุขภาพประจำปี</div><div className="db-note">{latest?`${list.length} ครั้ง · ล่าสุด ${thaiDate(latest.date)}${flagged.length?` · นอกเกณฑ์ ${flagged.length} รายการ`:""}`:"ยังไม่มีผลตรวจ — นำเข้าจาก PDF ใบรายงานผล"}</div></div>
+        <button className="db-chip pf-ok" onClick={()=>setImp(true)}>+ นำเข้า PDF</button>
+      </div>
+      {latest&&(<>
+        <div className="ck-chips">
+          {flagged.map(x=><span key={x.code} className="ck-chip ck-flag">{x.label} {x.value} {x.flag==="h"?"↑":"↓"}</span>)}
+          {latest.xray&&latest.xray.impression&&<span className="ck-chip">เอกซเรย์: {latest.xray.impression}</span>}
+          {latest.ekg&&<span className="ck-chip">EKG: {latest.ekg}</span>}
+          {latest.hearing&&(latest.hearing.right||latest.hearing.left)&&<span className="ck-chip">การได้ยิน: {/ปกติ|normal/i.test(latest.hearing.right+latest.hearing.left)?"ปกติ":`${latest.hearing.right} / ${latest.hearing.left}`}</span>}
+        </div>
+        <div className="pf-note">แสดงตามใบรายงานของโรงพยาบาล (ธง h/l จากโรงพยาบาล) — ไม่ใช่การแปลผลทางการแพทย์ ปรึกษาแพทย์เมื่อมีข้อสงสัย</div>
+        {Section({tab:"vitals",title:"สัญญาณชีพ / สัดส่วนร่างกาย"})}
+        {Section({tab:"blood",title:"ผลเลือด"})}
+        {Section({tab:"urine",title:"ผลปัสสาวะ"})}
+        {latest.advice&&<details className="xp-rules"><summary>คำแนะนำจากแพทย์ ({thaiDate(latest.date)})</summary><div style={{whiteSpace:"pre-wrap"}}>{latest.advice}</div></details>}
+        <div className="ck-list">
+          {list.map(c=>(
+            <div className="ck-item" key={c.id}>
+              <div className="ck-item-head"><b>{thaiDate(c.date)}</b><span className="db-note">{(c.blood||[]).length+(c.urine||[]).length} รายการ</span><button className="del-txt-btn" onClick={()=>del(c)}>ลบ</button></div>
+              <AttachStrip kind="checkup" id={c.id}/>
+            </div>
+          ))}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 function HealthPage({data,persist}) {
   const today=todayISO();
   const [date,setDate]=useState(today);
@@ -6801,9 +7053,7 @@ function HealthPage({data,persist}) {
             </div>
           )}
         </div>
-        <div className="db-card db-span4 hl-check">
-          <div className="db-head"><div><div className="db-title">ตรวจสุขภาพประจำปี</div><div className="db-note">import PDF ใบตรวจ + ตารางเทียบปี — ขั้นถัดไป (7B)</div></div></div>
-        </div>
+        <CheckupCard data={data} persist={persist}/>
       </div>
     </div>
   );
@@ -8182,6 +8432,7 @@ function computeXP(data,today=todayISO()){
       if(Number(hd.sleepMin)>=HS.sleepGoalMin) add(d,"health",XP_PTS.sleep,`นอนถึงเป้า ${fmtSleep(hd.sleepMin)} ชม.`,"sleep");
       if(Number(hd.waterL)>=HS.waterGoalL) add(d,"health",XP_PTS.water,`ดื่มน้ำถึงเป้า ${hd.waterL} ลิตร`,"water");
     });
+    (data.checkups||[]).forEach(c=>{ if(c&&c.date) add(String(c.date).slice(0,10),"health",XP_PTS.checkup,"ตรวจสุขภาพประจำปี + นำเข้าผลแล้ว","checkup"); });   // ขั้นที่ 7B
     const fts=sortedTests(data);
     fts.forEach((t,i)=>{ if(i>0) fitnessImprovements(fts[i-1],t).forEach(fl=>add(t.date,"health",XP_PTS.fitnessUp,`ทดสอบสมรรถนะดีขึ้น · ${fl.l}`,"fitness")); });
     /* Wealth รายเดือน (75/เรื่อง): เดือนที่ปิดแล้วเท่านั้น (ข้อมูล import เดือนละครั้ง) ยกเว้นทำรีวิวเดือน */
@@ -8330,7 +8581,7 @@ function XpModal({data,persist,onClose}){
             <div>งานประจำตรงรอบ +5 · งานครั้งเดียว +10 · ถึงหมุด +50 · ปิดโปรเจกต์ +150 → ด้านตามหมวด target (การเงิน=Wealth · สุขภาพ=Health · อื่นๆ/ไม่มี target=Growth)</div>
             <div>งานประจำรายวันติดกันครบ 7 วัน +20 (ครั้งเดียวต่อช่วง) · หนังสือจบ +30 + สรุป +120 (ดาว + รีวิว ≥3 บรรทัด หรือมีคำคม) · รีวิววิดีโอ/พอดแคสต์ +10 (≤2/วัน) · Journal +5/วัน → Growth</div>
             <div>รายเดือน (เดือนที่ปิดแล้ว) อัตราออมถึงเป้า / Net worth เพิ่ม / หนี้ลด +75 ต่อเรื่อง · ทำรีวิวเดือน +75 → Wealth</div>
-            <div>ออกกำลังกาย +15/ครั้ง · นอนถึงเป้า +10/คืน · ดื่มน้ำถึงเป้า +5/วัน · ทดสอบสมรรถนะดีขึ้นจากครั้งก่อน +30/ค่า (น้ำหนักไม่นับ) → Health · ตรวจประจำปี +100 (เร็วๆ นี้)</div>
+            <div>ออกกำลังกาย +15/ครั้ง · นอนถึงเป้า +10/คืน · ดื่มน้ำถึงเป้า +5/วัน · ทดสอบสมรรถนะดีขึ้นจากครั้งก่อน +30/ค่า (น้ำหนักไม่นับ) → Health · ตรวจสุขภาพประจำปี (นำเข้าผลแล้ว) +100 ตามวันที่ตรวจ</div>
             <div>ลบ/ยกเลิกรายการ = XP หายตาม · XP ไม่ลดตามเวลา · เลเวลถัดไปใช้ 100 × เลเวลปัจจุบัน</div>
           </details>
         </div>
