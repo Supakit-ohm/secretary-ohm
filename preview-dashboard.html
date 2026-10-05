@@ -6463,6 +6463,53 @@ function TrackerReviewCard({data,persist}){
   );
 }
 
+/* ═══ ข้อ 70: Timeline โปรเจกต์บนแกนเวลา ═══ แท่งต่อโปรเจกต์ = startDate→targetDate · เติมสี = ความคืบหน้า · เส้นเหลือง = วันนี้ · ขีดขาว = ที่ควรอยู่ตามแผน */
+function TrackerTimelineCard({data,onOpen}){
+  const today=todayISO();
+  const list=(data.projects||[]).filter(p=>p.status!=="archived").map(p=>({p,prog:projectProgress(p,data),h:projectHealth(p,data)}));
+  const dated=list.filter(x=>x.p.startDate&&x.p.targetDate&&x.p.targetDate>x.p.startDate).sort((a,b)=>a.p.startDate.localeCompare(b.p.startDate));
+  const undated=list.filter(x=>!(x.p.startDate&&x.p.targetDate&&x.p.targetDate>x.p.startDate));
+  const T=(d)=>new Date(d+"T00:00:00").getTime();
+  let lo=dated.length?dated.reduce((m,x)=>x.p.startDate<m?x.p.startDate:m,today):today;
+  let hi=dated.length?dated.reduce((m,x)=>x.p.targetDate>m?x.p.targetDate:m,today):today;
+  lo=lo.slice(0,7)+"-01"; hi=shiftISO(shiftISO(hi.slice(0,7)+"-01",{m:1}),{d:-1});
+  const span=Math.max(1,T(hi)-T(lo));
+  const pct=(d)=>Math.max(0,Math.min(100,((T(d)-T(lo))/span)*100));
+  const months=[]; { let m=lo; while(m<=hi){ months.push(m); m=shiftISO(m,{m:1}); } }
+  const mTh=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  const dense=months.length>24;
+  const minW=Math.max(520,months.length*(dense?30:60));
+  return (
+    <DashCollapse span="db-span4" title="Timeline" note={`${dated.length} โปรเจกต์บนแกนเวลา`} defaultOpen={false}>
+      <div id="trk-timeline">
+        {dated.length===0?<div className="db-empty">ยังไม่มีโปรเจกต์ที่ตั้งทั้งวันเริ่มและวันครบกำหนด — ใส่วันที่ในโปรเจกต์เพื่อดูบนแกนเวลา</div>:(
+          <div className="tl-scroll"><div className="tl" style={{minWidth:minW}}>
+            <div className="tl-axis">{months.map((m,i)=>(dense&&i%3!==0)?null:<span key={m} className="tl-mo" style={{left:`${pct(m)}%`}}>{mTh[Number(m.slice(5,7))-1]}{m.slice(5,7)==="01"?` ${Number(m.slice(0,4))+543}`:""}</span>)}</div>
+            <div className="tl-rows">
+              <i className="tl-today" style={{left:`${pct(today)}%`}} title="วันนี้"/>
+              {dated.map(({p,prog,h})=>{
+                const l=pct(p.startDate), w=Math.max(1.5,pct(p.targetDate)-l);
+                const ex=expectedProgress(p);
+                return (
+                  <div className="tl-row" key={p.id}>
+                    <button type="button" className="tl-bar" style={{left:`${l}%`,width:`${w}%`,"--tl-c":h.color}} onClick={()=>onOpen(p.id)} title={`${p.title} · ${Math.round(prog)}% · ${h.label}`}>
+                      <i className="tl-fill" style={{width:`${Math.min(100,prog)}%`}}/>
+                      {ex!=null&&<i className="tl-exp" style={{left:`${ex}%`}}/>}
+                      <span className="tl-name">{p.title} · {Math.round(prog)}%</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div></div>
+        )}
+        {dated.length>0&&<div className="db-note" style={{marginTop:8}}>เติมสี = ความคืบหน้า · ขีดขาว = จุดที่ควรอยู่ตามแผน · เส้นเหลือง = วันนี้ · แตะแท่งเพื่อเปิดโปรเจกต์</div>}
+        {undated.length>0&&<div className="db-note" style={{marginTop:6}}>ยังไม่ตั้งวันที่ครบ: {undated.map(x=>x.p.title).join(" · ")}</div>}
+      </div>
+    </DashCollapse>
+  );
+}
+
 function TrackerPage({data,persist}) {
   const [openId,setOpenId]=useState(null);
   const [showProjModal,setShowProjModal]=useState(false);
@@ -6599,6 +6646,7 @@ function TrackerPage({data,persist}) {
           </div>
           <ShowMoreRow rl={rl} total={shown.length}/>
         </DashCollapse>
+        <TrackerTimelineCard data={data} onOpen={setOpenId}/>
         <TrackerReviewCard data={data} persist={persist}/>
       </div>
 

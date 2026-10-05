@@ -1,6 +1,6 @@
 // Service Worker — Jack
 // Cache-first สำหรับไฟล์แอปหลัก + CDN, network-first สำหรับทุกอย่างอื่น (เช่น Google Drive API)
-const CACHE_NAME = "secretary-ohm-v16";   // bump ทุกครั้งที่ deploy ของใหม่ ไม่งั้นเครื่องเก่าจะติด cache เดิม
+const CACHE_NAME = "secretary-ohm-v17";   // bump ทุกครั้งที่ deploy ของใหม่ ไม่งั้นเครื่องเก่าจะติด cache เดิม
 
 const PRECACHE_URLS = [
   "./preview-dashboard.html",
