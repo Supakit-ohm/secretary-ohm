@@ -1350,6 +1350,7 @@ function expectedProgress(p){
   if(total<=0) return null;
   return Math.max(0,Math.min(100,((now-start)/86400000/total)*100));
 }
+const PROJECT_GRACE_DAYS=14;
 function projectHealth(p,data){
   const prog=projectProgress(p,data);
   if(prog>=100) return {key:"done",label:"สำเร็จแล้ว",color:"#34d399",prog};
@@ -1360,6 +1361,9 @@ function projectHealth(p,data){
   /* ข้อ 24/6: "กำลังทำ"/"ตามแผน" เคยเป็นฟ้า #60a5fa ของธีมม่วง → เขียว accent ของ Dark Emerald */
   if(exp==null) return {key:"active",label:"กำลังทำ",color:"#10b981",prog};
   const diff=prog-exp;
+  /* ข้อ 68: ผ่อนผัน 14 วันแรกหลังเริ่มโปรเจกต์ — ยังไม่ตัดสินว่า "ช้ากว่าแผน" (ถ้านำหน้าก็ยังขึ้นเร็วกว่าแผนได้) */
+  const sinceStart=p.startDate?Math.floor((new Date(todayISO()+"T00:00:00")-new Date(p.startDate+"T00:00:00"))/86400000):null;
+  if(sinceStart!=null&&sinceStart<PROJECT_GRACE_DAYS&&diff<5) return {key:"ontrack",label:"เพิ่งเริ่ม",color:"#10b981",prog,exp};
   if(diff>=5) return {key:"ahead",label:"เร็วกว่าแผน",color:"#6ee7b7",prog,exp};
   if(diff>=-8) return {key:"ontrack",label:"ตามแผน",color:"#10b981",prog,exp};
   return {key:"behind",label:"ช้ากว่าแผน",color:"#fb923c",prog,exp};
