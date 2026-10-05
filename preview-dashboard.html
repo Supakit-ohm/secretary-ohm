@@ -6385,6 +6385,84 @@ function TodayPanel({data,persist,onOpenProject,onAddTask,onEditTask}) {
     </div>
   );
 }
+/* ═══ ข้อ 69: Tracker Review รายเดือน ═══
+   data.trackerReviews = { "YYYY-MM": {rating(1-5), notes, updatedAt} } (root — คู่กับ reviews ของ Finance)
+   ตัวเลขสรุปคำนวณสดจากข้อมูลเดิม (projectProgressAt · movementDates · milestones[].reachedAt) ไม่เก็บซ้ำ */
+function trackerMonthStats(data,month){
+  const first=month+"-01";
+  const lastDay=shiftISO(shiftISO(first,{m:1}),{d:-1});
+  const today=todayISO();
+  const end=lastDay>today?today:lastDay;
+  const before=shiftISO(first,{d:-1});
+  const days=Math.max(1,Math.round((new Date(end+"T00:00:00")-new Date(first+"T00:00:00"))/86400000)+1);
+  const mv=movementDates(data);
+  let active=0,run=0,bestRun=0,idle=0,longestIdle=0,brokeAt=null;
+  for(let i=0;i<days;i++){
+    const d=shiftISO(first,{d:i});
+    if(mv.has(d)){ active++; run++; idle=0; if(run>bestRun) bestRun=run; }
+    else { if(run>=3) brokeAt=d; run=0; idle++; if(idle>longestIdle) longestIdle=idle; }
+  }
+  const rows=(data.projects||[]).filter(p=>p.status!=="archived"&&(p.startDate||"")<=end).map(p=>{
+    const a=projectProgressAt(p,data,end), b=(p.startDate||"")>before?0:projectProgressAt(p,data,before);
+    return {p,delta:a-b,now:a};
+  });
+  const movers=rows.filter(r=>r.delta>0.05).sort((a,b)=>b.delta-a.delta);
+  const still=rows.filter(r=>r.delta<=0.05&&r.now<100&&r.p.status!=="paused");
+  const ms=[]; (data.projects||[]).forEach(p=>(p.milestones||[]).forEach(m=>{ if(m.reachedAt&&String(m.reachedAt).slice(0,7)===month) ms.push({p,m}); }));
+  const doneTasks=(data.tasks||[]).filter(t=>!isRecurring(t)&&t.status==="done"&&t.completedAt&&t.completedAt.slice(0,7)===month).length;
+  return {days,active,bestRun,longestIdle,brokeAt,movers,still,ms,doneTasks,startOv:progressOn(data,before),endOv:progressOn(data,end)};
+}
+function TrackerReviewCard({data,persist}){
+  const cur=todayISO().slice(0,7);
+  const early=earliestTrackerDate(data);
+  const months=[]; { let m=cur; const lim=(early||cur).slice(0,7); for(let i=0;i<60;i++){ months.push(m); if(m<=lim) break; m=shiftISO(m+"-01",{m:-1}).slice(0,7); } }
+  const [month,setMonth]=useState(cur);
+  const saved=(data.trackerReviews||{})[month]||{rating:0,notes:""};
+  const [rating,setRating]=useState(saved.rating||0);
+  const [notes,setNotes]=useState(saved.notes||"");
+  const [dirty,setDirty]=useState(false);
+  useEffect(()=>{ const s=(data.trackerReviews||{})[month]||{rating:0,notes:""}; setRating(s.rating||0); setNotes(s.notes||""); setDirty(false); },[month]);
+  const S=useMemo(()=>trackerMonthStats(data,month),[data,month]);
+  const save=()=>{ persist({...data,trackerReviews:{...(data.trackerReviews||{}),[month]:{rating,notes:notes.trim(),updatedAt:new Date().toISOString()}}}); setDirty(false); };
+  const label=new Date(month+"-01").toLocaleDateString("th-TH",{month:"long",year:"numeric"});
+  const ovDelta=(S.startOv&&S.endOv)?S.endOv.value-S.startOv.value:null;
+  return (
+    <DashCollapse span="db-span4" title="Review รายเดือน" note={`${label} · ขยับ ${S.active}/${S.days} วัน`} defaultOpen={false}>
+      <div className="trv" id="trk-review">
+        <select className="fin-range-select" value={month} onChange={e=>setMonth(e.target.value)}>
+          {months.map(m=><option key={m} value={m}>{new Date(m+"-01").toLocaleDateString("th-TH",{month:"long",year:"numeric"})}</option>)}
+        </select>
+        <div className="trv-grid">
+          <div className="trv-stat"><b className="db-mono">{ovDelta==null?"–":`${ovDelta>=0?"+":""}${ovDelta.toFixed(1)}%`}</b><span>ความคืบหน้ารวมเดือนนี้</span></div>
+          <div className="trv-stat"><b className="db-mono">{S.active}/{S.days}</b><span>วันที่ขยับ</span></div>
+          <div className="trv-stat"><b className="db-mono">{S.bestRun}</b><span>วันติดกันยาวสุด</span></div>
+          <div className="trv-stat"><b className="db-mono">{S.longestIdle}</b><span>วันนิ่งยาวสุด</span></div>
+        </div>
+        <div className="trv-sec">
+          <div className="trv-h">🚀 ขยับมากสุด</div>
+          {S.movers.length===0?<div className="db-empty">เดือนนี้ยังไม่มีโปรเจกต์ที่ขยับ</div>
+            :S.movers.slice(0,3).map(r=><div className="doc-exp-row" key={r.p.id}><span className="doc-exp-title">{r.p.title}</span><span className="db-mono">+{r.delta.toFixed(1)}%</span></div>)}
+        </div>
+        {S.still.length>0&&<div className="trv-sec">
+          <div className="trv-h">😴 นิ่งสนิททั้งเดือน</div>
+          {S.still.slice(0,4).map(r=><div className="doc-exp-row" key={r.p.id}><span className="doc-exp-title">{r.p.title}</span><span className="db-mono">{Math.round(r.now)}%</span></div>)}
+        </div>}
+        {S.ms.length>0&&<div className="trv-sec">
+          <div className="trv-h">📍 ถึงหมุดเดือนนี้</div>
+          {S.ms.map((x,i)=><div className="doc-exp-row" key={i}><span className="doc-exp-title">{x.p.title}</span><span className="db-mono">{milestoneLabel(x.m)} {x.m.pct}%</span></div>)}
+        </div>}
+        {S.brokeAt&&<div className="db-note">⚠️ สายติดกันขาดเมื่อ {thaiDate(S.brokeAt)}</div>}
+        <div className="trv-sec">
+          <div className="trv-h">คะแนนเดือนนี้ <span className="db-note">· งานเสร็จ {S.doneTasks} งาน</span></div>
+          <div className="trv-stars">{[1,2,3,4,5].map(n=><button type="button" key={n} className={`trv-star${n<=rating?" on":""}`} onClick={()=>{setRating(n===rating?0:n);setDirty(true);}} aria-label={`${n} ดาว`}>★</button>)}</div>
+          <textarea className="modal-input" rows={3} placeholder="เดือนนี้เป็นยังไง · เรียนรู้อะไร · เดือนหน้าจะโฟกัสอะไร" value={notes} onChange={e=>{setNotes(e.target.value);setDirty(true);}}/>
+          <button type="button" className="db-btn primary" style={{marginTop:8}} onClick={save} disabled={!dirty}>{!dirty&&saved.updatedAt?"บันทึกแล้ว ✓":"บันทึก"}</button>
+        </div>
+      </div>
+    </DashCollapse>
+  );
+}
+
 function TrackerPage({data,persist}) {
   const [openId,setOpenId]=useState(null);
   const [showProjModal,setShowProjModal]=useState(false);
@@ -6521,6 +6599,7 @@ function TrackerPage({data,persist}) {
           </div>
           <ShowMoreRow rl={rl} total={shown.length}/>
         </DashCollapse>
+        <TrackerReviewCard data={data} persist={persist}/>
       </div>
 
       {showAddPicker&&(

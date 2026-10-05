@@ -512,6 +512,16 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('Tracker · ปุ่มเดียวเปิดโมดัลเลือกชนิด (โปรเจกต์/งาน)',pick.length===2,pick.join(' | '));
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('Tracker · ปุ่มเดียวเปิดโมดัลเลือกชนิด (โปรเจกต์/งาน)',false,'ไม่เจอปุ่ม');
+  console.log('\n[ข้อ 69] Tracker Review รายเดือน');
+  await p.evaluate(()=>{ const h=[...document.querySelectorAll('.trk-page .db-head[role="button"]')].find(x=>x.innerText.includes('Review รายเดือน')); if(h) h.click(); });
+  await p.waitForTimeout(500);
+  const trv=await p.evaluate(()=>({card:!!document.querySelector('#trk-review'),stats:document.querySelectorAll('#trk-review .trv-stat').length,stars:document.querySelectorAll('#trk-review .trv-star').length,months:document.querySelectorAll('#trk-review select option').length}));
+  check('Review รายเดือน: การ์ด + 4 ตัวเลขสรุป + ดาว 5 ดวง + เลือกเดือนได้',trv.card&&trv.stats===4&&trv.stars===5&&trv.months>=1,JSON.stringify(trv));
+  await p.locator('#trk-review .trv-star').nth(3).click();
+  await p.locator('#trk-review textarea').fill('ทดสอบรีวิวเดือน');
+  await p.locator('#trk-review .db-btn.primary').click(); await p.waitForTimeout(500);
+  const trvSaved=await p.evaluate(()=>{ const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1')); const r=(d.trackerReviews||{})[new Date().toISOString().slice(0,7)]||(d.trackerReviews&&Object.values(d.trackerReviews)[0]); return r&&{rating:r.rating,notes:r.notes}; });
+  check('Review รายเดือน: บันทึกคะแนน+โน้ตลง trackerReviews',!!trvSaved&&trvSaved.rating===4&&trvSaved.notes==='ทดสอบรีวิวเดือน',JSON.stringify(trvSaved));
   // หน้ารายละเอียดโปรเจกต์ (ใช้โปรเจกต์แบบตัวเลข = การ์ดครบที่สุด)
   await p.locator('.prj-card:has-text("เก็บเงินล้าน")').first().click(); await p.waitForTimeout(1800);
   const det6=await p.evaluate(()=>{

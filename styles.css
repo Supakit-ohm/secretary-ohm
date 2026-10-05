@@ -1531,3 +1531,15 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .xp-tabs{display:flex;gap:6px;padding:0 20px 10px;}
 .xp-tab{padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-3);font-family:inherit;font-size:13px;cursor:pointer;}
 .xp-tab.on{background:var(--accent);border-color:var(--accent);color:var(--bg-nav);font-weight:600;}
+
+/* ═══ ข้อ 69: Tracker Review รายเดือน ═══ */
+.trv{display:flex;flex-direction:column;gap:14px;}
+.trv-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.trv-stat{background:var(--chip-bg);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:4px;}
+.trv-stat b{font-size:18px;font-weight:600;}
+.trv-stat span{font-size:11px;color:var(--ink-5);}
+.trv-h{font-size:12.5px;font-weight:600;margin-bottom:6px;}
+.trv-stars{display:flex;gap:4px;margin-bottom:8px;}
+.trv-star{background:transparent;border:0;font-size:22px;line-height:1;color:var(--ink-6);cursor:pointer;padding:2px;}
+.trv-star.on{color:var(--gold);}
+@media(max-width:760px){.trv-grid{grid-template-columns:repeat(2,1fr);}}
