@@ -1556,3 +1556,24 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .tl-fill{position:absolute;left:0;top:0;bottom:0;background:var(--tl-c);opacity:.38;}
 .tl-exp{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.8;}
 .tl-name{position:relative;z-index:1;display:block;padding:0 9px;line-height:26px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* ═══ ข้อ 71: แยก Target / Project / เตือนความจำ ═══ */
+.kind-picker{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.kind-option{text-align:left;padding:12px 14px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface-sunken);color:var(--ink-3);cursor:pointer;font-family:'Noto Sans Thai',sans-serif;transition:all .15s;}
+.kind-option:hover{border-color:var(--line-hover);}
+.kind-option.active{border-color:var(--accent);background:rgba(16,185,129,.12);}
+.kind-option-head{font-size:13px;font-weight:600;color:var(--ink);}
+.kind-option-hint{font-size:11px;color:var(--ink-4);margin-top:4px;line-height:1.45;}
+.kind-xp-hint{font-size:11px;color:var(--ink-5);margin-top:6px;}
+.trk-kind-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,max-content));gap:6px;margin:10px 0 6px;}
+.trk-kind-tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;white-space:nowrap;border-radius:12px;border:1px solid var(--line);background:var(--surface-sunken);color:var(--ink-3);font-family:'Noto Sans Thai',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;}
+.trk-kind-tab b{font-size:11px;font-weight:600;color:var(--ink-5);background:var(--bg-3);padding:1px 7px;border-radius:999px;}
+.trk-kind-tab:hover{border-color:var(--line-hover);color:var(--ink);}
+.trk-kind-tab.on{border-color:var(--accent);background:rgba(16,185,129,.14);color:var(--ink);}
+.trk-kind-tab.on b{color:var(--accent-soft);}
+.trk-pick4{display:grid !important;grid-template-columns:1fr 1fr;gap:8px;}
+.td-kind{font-size:10px;font-weight:600;color:var(--ink-5);border:1px solid var(--line);border-radius:6px;padding:0 6px;flex-shrink:0;}
+.prj-kind-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.prj-kind-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:8px;background:var(--surface-sunken);color:var(--ink-4);border:1px solid var(--line);}
+.prj-kind-badge.t{color:var(--accent-soft);border-color:rgba(16,185,129,.35);background:rgba(16,185,129,.1);}
+.trk-rem-card .trk-task-row{margin-bottom:6px;}

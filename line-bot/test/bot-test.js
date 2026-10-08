@@ -743,8 +743,8 @@ test("สรุปเช้า (AI): ส่ง push หาโอม + ข้อ�
   assert.strictEqual(b.model, "gpt-6-luna"); assert.ok(!b.tools);
   assert.ok(b.instructions.includes("โอมไม่กินเผ็ด"));
   const f = JSON.parse(b.input[0].content);
-  assert.ok(f.tasksOverdue.some((x) => x.startsWith("งานเลยกำหนด")));
-  assert.ok(f.recurringToday.includes("อ่านหนังสือ") || f.recurringToday.length === 0);
+  const allG = [].concat(f.groups.target, f.groups.project, f.groups.reminder);   // ข้อ 71: แยก Target/Project/เตือนความจำ
+  assert.ok(allG.some((x) => x.includes("เลยกำหนด: งานเลยกำหนด")), JSON.stringify(f.groups));
   assert.deepStrictEqual(f.eventsToday, ["14:00 นัดลูกค้า"]);
   assert.ok(!("month" in f) && !("yesterdaySpent" in f), "ขั้นที่ 1: ข้อมูลที่ส่งให้ AI ตอนเช้าไม่มีเรื่องเงิน");
   assert.ok(b.instructions.includes("ห้ามพูดถึงเรื่องเงิน"));
@@ -752,7 +752,7 @@ test("สรุปเช้า (AI): ส่ง push หาโอม + ข้อ�
   assert.strictEqual(pushCount() - p0, 1);
   assert.strictEqual(p.to, "U_OHM");
   const mt = p.messages[0].text;
-  assert.ok(mt.startsWith("☀️ อรุณสวัสดิ์ครับโอม ·") && mt.includes("\n\n📋 งานวันนี้") && !mt.includes("💰") && !mt.includes("งบ"), mt);
+  assert.ok(mt.startsWith("☀️ อรุณสวัสดิ์ครับโอม ·") && /\n\n(🎯 เป้าหมาย|🧰 Project|🔔 เตือนความจำ)/.test(mt) && !mt.includes("💰") && !mt.includes("งบ"), mt);
   assert.ok(mt.endsWith("\n\n💬 งานเลยกำหนดทำก่อนเลยนะครับ (AI)"), mt);
   assert.deepStrictEqual(p.messages[0].quickReply.items.map((i) => i.action.data), ["a=menu&m=tasks"]);
   assert.strictEqual(ctx.morningPush(), "already");
@@ -773,7 +773,7 @@ test("สรุปเช้า: เพดานเต็ม → แม่แบ�
     if (process.env.SHOW) console.log(t + "\n---");
     assert.ok(t.includes("อรุณสวัสดิ์") && t.includes("งานเลยกำหนด") && t.includes("14:00 นัดลูกค้า"), t);
     assert.ok(!/NaN|undefined|null/.test(t), t);
-    const noTargets = t.replace(/💤 โปรเจกต์ไม่ขยับ[\s\S]*?(\n\n|$)/, "");   // ชื่อโปรเจกต์อาจมีคำว่า "บาท" (เช่น เก็บเงิน 1,000,000 บาท) ไม่ใช่รายงานเงิน
+    const noTargets = t.replace(/💤 Target ไม่ขยับ[\s\S]*?(\n\n|$)/, "");   // ชื่อโปรเจกต์อาจมีคำว่า "บาท" (เช่น เก็บเงิน 1,000,000 บาท) ไม่ใช่รายงานเงิน
     assert.ok(!/💰|บาท|งบ|รายจ่าย|รายรับ|ใช้ไป/.test(noTargets), "ขั้นที่ 1: สรุปเช้าไม่มีเรื่องเงิน\n" + t);
   } finally { u.usd = was; propsMap[key] = JSON.stringify(u); }
 });
@@ -800,7 +800,7 @@ test("สรุปเช้า: แม้เมื่อวานมีราย
   const f = ctx.morningFacts_(c);
   assert.ok(!("yesterdaySpent" in f) && !("month" in f));
   const t = ctx.morningTemplate_(f);
-  assert.ok(!/123|💰|บาท|งบ/.test(t.replace(/💤 โปรเจกต์ไม่ขยับ[\s\S]*?(\n\n|$)/, "")), t);
+  assert.ok(!/123|💰|บาท|งบ/.test(t.replace(/💤 Target ไม่ขยับ[\s\S]*?(\n\n|$)/, "")), t);
 });
 
 function clearTodayJournal() {
@@ -911,9 +911,9 @@ test("โหมดวางแผนพรุ่งนี้: หลัง 20:00
   const c = { today: tomorrow, time: "07:00", hour: 7, weekday: (ctx.newCtx_().weekday + 1) % 7, records: [] };
   const f = ctx.morningFacts_(c);
   assert.strictEqual(JSON.stringify(f.plannedLastNight), JSON.stringify({ must: ["ส่งของลูกค้า"], want: ["ไปยิม"] }));
-  assert.ok(!f.tasksToday.some((x) => x.startsWith("ส่งของลูกค้า") || x.startsWith("ไปยิม")));
+  assert.ok(![].concat(f.groups.target, f.groups.project, f.groups.reminder).some((x) => x.startsWith("ส่งของลูกค้า") || x.startsWith("ไปยิม")));
   const t = ctx.morningTemplate_(f);
-  assert.ok(t.includes("🎯 แผนที่โอมวางไว้เมื่อคืน\n• ต้องทำ: ส่งของลูกค้า\n• อยากทำ: ไปยิม\n\n📋 งานวันนี้"), t);
+  assert.ok(t.includes("🎯 แผนที่โอมวางไว้เมื่อคืน\n• ต้องทำ: ส่งของลูกค้า\n• อยากทำ: ไปยิม\n\n"), t);
   // ไม่มีโหมดวางแผน (cache หมด) → งานทั่วไปไม่ติด plannedOn/kind
   delete cacheMap.plan;
   aiScript = once([{ name: "add_task", args: { title: "งานทั่วไป", dueDate: tomorrow } }]);
@@ -1380,7 +1380,7 @@ test("ขั้นที่ 3: taskRhythm_ — นับรอบที่พล
   assert.strictEqual(ctx.prevPeriodDate_("weekly", "2026-09-30"), "2026-09-21");
 });
 
-test("ขั้นที่ 3: offRhythm_ — จัดกลุ่มตาม target · เรียงหลุดนานสุด · ข้าม archived/paused · งานไม่มีโปรเจกต์เป็น target เอง", () => {
+test("ขั้นที่ 3: offRhythm_ — จัดกลุ่มตาม target · เรียงหลุดนานสุด · ข้าม archived/paused · ข้อ 71: งานไม่มีโปรเจกต์ (เตือนความจำ) และ Project ไม่จี้", () => {
   const c = (...ds) => Object.fromEntries(ds.map((d) => [d, true]));
   const tasks = [
     { id: "a1", projectId: "pH", title: "วิ่ง", recurrence: "daily", completions: c(dAgo(4)) },          // พลาด 3 วัน
@@ -1388,11 +1388,12 @@ test("ขั้นที่ 3: offRhythm_ — จัดกลุ่มตาม 
     { id: "a3", projectId: "pE", title: "ฟังพอดแคสต์", recurrence: "weekly", completions: c(ctx.addDays_(ctx.mondayOf_(TODAY), -21)) }, // 2 สัปดาห์ = 14
     { id: "a4", projectId: "pP", title: "งานของโปรเจกต์ที่พัก", recurrence: "daily", completions: c(dAgo(30)) },
     { id: "a5", projectId: null, title: "นั่งสมาธิ", recurrence: "daily", createdAt: dAgo(3), completions: {} },  // 3
-    { id: "a6", projectId: "pH", title: "งานปกติ", recurrence: "none", status: "pending", dueDate: dAgo(5) }
+    { id: "a6", projectId: "pH", title: "งานปกติ", recurrence: "none", status: "pending", dueDate: dAgo(5) },
+    { id: "a7", projectId: "pW", title: "ส่งรายงาน", recurrence: "daily", createdAt: dAgo(20), completions: {} }   // ใน Project (kind work) → ไม่จี้
   ];
-  const projects = [{ id: "pH", title: "สุขภาพดี", status: "active" }, { id: "pE", title: "อังกฤษ", status: "active" }, { id: "pP", title: "พักไว้", status: "paused" }];
+  const projects = [{ id: "pH", title: "สุขภาพดี", status: "active" }, { id: "pE", title: "อังกฤษ", status: "active" }, { id: "pP", title: "พักไว้", status: "paused" }, { id: "pW", title: "งานออฟฟิศ", kind: "work", status: "active" }];
   const out = ctx.offRhythm_(tasks, projects, TODAY);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(out.map((x) => [x.target, x.routine, x.why]))), [["อังกฤษ", "ฟังพอดแคสต์", "ไม่ได้ทำมา 2 สัปดาห์"], ["สุขภาพดี", "ยืดเหยียด", "ไม่ได้ทำมา 9 วัน"], ["นั่งสมาธิ", null, "ไม่ได้ทำมา 3 วัน"]]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(out.map((x) => [x.target, x.routine, x.why]))), [["อังกฤษ", "ฟังพอดแคสต์", "ไม่ได้ทำมา 2 สัปดาห์"], ["สุขภาพดี", "ยืดเหยียด", "ไม่ได้ทำมา 9 วัน"]]);
   assert.strictEqual(out[1].ref, "k.tasks#a2");
 });
 
@@ -1543,12 +1544,12 @@ test("ขั้นที่ 5: target — % ความคืบหน้า/�
   aiScript = () => ({ text: "ครับ" });
   post([msg("โปรเจกต์ไปถึงไหนแล้ว")]);
   const ins = aiLog[aiLog.length - 1].instructions;
-  assert.ok(ins.includes("• เก็บเงินสำรอง (การเงิน) 30% / ควรถึง 50% · ช้ากว่าแผน · เหลือ 50 วัน · ไม่ขยับ 20 วัน"), ins.slice(-1200));
+  assert.ok(ins.includes("• 🎯 [Target] เก็บเงินสำรอง (การเงิน) 30% / ควรถึง 50% · ช้ากว่าแผน · เหลือ 50 วัน · ไม่ขยับ 20 วัน"), ins.slice(-1200));
   assert.ok(aiLog[aiLog.length - 1].tools.some((x) => x.name === "list_targets"));
   // morning: ไม่ขยับ 2 อัน เรียงนานสุด
   const f = ctx.morningFacts_(ctx.newCtx_());
   assert.deepStrictEqual(JSON.parse(JSON.stringify(f.stalled)), ["ภาษาอังกฤษ — ไม่ขยับ 100 วัน (40%)", "เก็บเงินสำรอง — ไม่ขยับ 20 วัน (30%)"]);
-  assert.ok(ctx.morningTemplate_(f).includes("💤 โปรเจกต์ไม่ขยับ\n• ภาษาอังกฤษ"));
+  assert.ok(ctx.morningTemplate_(f).includes("💤 Target ไม่ขยับ\n• ภาษาอังกฤษ"));
   // ติ๊กงานผ่าน Jack → cache สรุป target ถูกล้าง
   cacheMap.tgt = "[]";
   aiScript = once([{ name: "complete_task", args: { ref: "k.tasks#w2" } }]);
@@ -1556,6 +1557,37 @@ test("ขั้นที่ 5: target — % ความคืบหน้า/�
   assert.ok(!cacheMap.tgt || cacheMap.tgt !== "[]");
 });
 
+
+// =================== ข้อ 71: แยก Target / Project / เตือนความจำ ===================
+test("ข้อ 71: add_task = เตือนความจำ มี gen:2 (แอปไม่ลบทิ้ง) · สรุปเช้าแยก 🎯 Target / 🧰 Project / 🔔 เตือนความจำ + เตือนล่วงหน้า 3 วัน · Project ไม่ขึ้นใน 💤 · prompt บอกประเภท", () => {
+  const T = TODAY, d = (n) => ctx.addDays_(T, n);
+  setProjects([
+    { gen: 2, id: "pT", kind: "target", title: "วิ่ง 10K", category: "health", status: "active", measureType: "manual", manualValue: 20, startDate: d(-60), milestones: [] },
+    { gen: 2, id: "pW", kind: "work", title: "ย้ายตำแหน่ง", category: "career", status: "active", measureType: "manual", manualValue: 10, startDate: d(-60), milestones: [] }]);
+  setTasks([
+    { gen: 2, id: "x1", projectId: "pT", title: "วิ่ง 5 กม.", status: "pending", recurrence: "none", dueDate: T, weight: 1, completions: {} },
+    { gen: 2, id: "x2", projectId: "pW", title: "ส่งเอกสาร HR", status: "pending", recurrence: "none", dueDate: T, weight: 1, completions: {} },
+    { gen: 2, id: "x3", projectId: null, title: "โทรหาประกัน", status: "pending", recurrence: "none", dueDate: T, weight: 1, completions: {} },
+    { gen: 2, id: "x4", projectId: null, title: "ต่อภาษีรถ", status: "pending", recurrence: "none", dueDate: d(2), weight: 1, completions: {} },
+    { gen: 2, id: "x5", projectId: null, title: "ไกลเกิน", status: "pending", recurrence: "none", dueDate: d(6), weight: 1, completions: {} }]);
+  delete cacheMap.tgt;
+  const f = ctx.morningFacts_(ctx.newCtx_());
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f.groups)), { target: ["วิ่ง 5 กม. · วิ่ง 10K"], project: ["ส่งเอกสาร HR · ย้ายตำแหน่ง"], reminder: ["โทรหาประกัน"] });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(f.remindersSoon)), ["ต่อภาษีรถ (" + ctx.thDate_(d(2)) + ")"]);
+  assert.ok(!f.stalled.some((x) => x.startsWith("ย้ายตำแหน่ง")), "Project ไม่ขึ้นใน Target ไม่ขยับ");
+  assert.ok(f.stalled.some((x) => x.startsWith("วิ่ง 10K")));
+  const t = ctx.morningTemplate_(f);
+  assert.ok(t.includes("🎯 เป้าหมาย (Target)\n• วิ่ง 5 กม. · วิ่ง 10K\n\n🧰 Project\n• ส่งเอกสาร HR · ย้ายตำแหน่ง\n\n🔔 เตือนความจำ\n• โทรหาประกัน\n• เร็วๆ นี้: ต่อภาษีรถ"), t);
+  const lt = ctx.toolListTargets_({}, ctx.newCtx_());
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lt.targets.map((x) => [x.title, x.type]))), [["วิ่ง 10K", "target"], ["ย้ายตำแหน่ง", "project"]]);
+  aiScript = once([{ name: "add_task", args: { title: "เตือนจ่ายค่าเน็ต", dueDate: d(3) } }]);
+  post([msg("เตือนจ่ายค่าเน็ตวันที่ " + d(3))]);
+  const ins = aiLog[aiLog.length - 1].instructions;
+  assert.ok(ins.includes("🧰 [Project] ย้ายตำแหน่ง") && ins.includes("🎯 [Target] วิ่ง 10K"), ins.slice(-800));
+  const nt = app().tasks.find((x) => x.title === "เตือนจ่ายค่าเน็ต");
+  assert.deepStrictEqual([nt.gen, nt.projectId, nt.dueDate], [2, null, d(3)]);
+  assert.ok(aiLog[aiLog.length - 1].tools.find((x) => x.name === "add_task").description.includes("เตือนความจำ"));
+});
 
 // =================== ข้อ 56 ขั้นที่ 6: Journal หัวข้อนำ + สะท้อนสัปดาห์ ===================
 const jDay = (d) => (app().journal || []).find((j) => j.date === d);

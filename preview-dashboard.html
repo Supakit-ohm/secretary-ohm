@@ -1175,6 +1175,37 @@ const GOAL_MEASURE_TYPES = [
 ];
 function goalCategoryInfo(key){ return GOAL_CATEGORIES.find(c=>c.key===key)||GOAL_CATEGORIES[GOAL_CATEGORIES.length-1]; }
 function goalPriorityInfo(key){ return GOAL_PRIORITIES.find(p=>p.key===key)||GOAL_PRIORITIES[1]; }
+/* ═══ ข้อ 71: แยก 3 ชั้น (โอมสั่ง 2026-10-08) ═══
+   Target (kind:"target") = เป้าหมายชีวิต → ได้ XP · นับในความคืบหน้ารวม/โมเมนตัม/Level
+   งาน   (kind:"work")   = งานที่ต้องทำให้จบ → มี %/หมุด/สถานะ แต่ไม่ได้ XP ไม่นับคะแนน (ปิดครบ 100% ได้เหรียญ "ปิดจ๊อบ")
+   เตือน (task ที่ไม่มี projectId) → ติ๊กได้ ไม่ได้ XP · Jack บอกในสรุป 07:00
+   สูตรเดียวกับ isTarget_ ใน line-bot/Bot.gs — แก้ต้องแก้คู่กัน */
+const PROJECT_KINDS=[
+  {key:"target",label:"Target",emoji:"🎯",hint:"เป้าหมายที่อยากไปถึงในชีวิต — ได้ XP และนับในความคืบหน้ารวม"},
+  {key:"work",label:"Project",emoji:"🧰",hint:"งานที่ต้องทำให้จบ — ติดตาม %/กำหนดส่งได้ แต่ไม่นับคะแนน (ปิดครบได้เหรียญ 🏁)"},
+];
+function isTarget(p){ return !!p&&p.kind!=="work"; }
+function targetProjects(data){ return (data.projects||[]).filter(isTarget); }
+/* ล้าง Tracker เดิมทั้งหมด + รีเซ็ต XP — idempotent: เก็บเฉพาะโปรเจกต์/งานที่สร้างในระบบใหม่ (gen:2)
+   รันทุกครั้งที่โหลด/รับข้อมูลจากเครื่องอื่น จึงปลอดภัยแม้เครื่องเก่าที่ยังถือข้อมูลชุดเดิมจะส่งขึ้นมาอีก
+   (ข้อจำกัด: โปรเจกต์/งานที่สร้างจากแอปหรือ Jack เวอร์ชันเก่าจะถูกลบ — ต้อง push + deploy Bot.gs พร้อมกัน) */
+const TRACKER_GEN=2;
+function trackerV2Reset(d){
+  const P=d.projects||[], T=d.tasks||[], C=d.checkins||[];
+  const keepP=P.filter(p=>p&&p.gen===TRACKER_GEN);
+  const ids=new Set(keepP.map(p=>p.id));
+  const keepT=T.filter(t=>t&&t.gen===TRACKER_GEN&&(!t.projectId||ids.has(t.projectId)));
+  const keepC=C.filter(c=>c&&ids.has(c.projectId));
+  const xp=d.xp||{};
+  const resetAt=xp.resetAt||todayISO();
+  const nx=xp.resetAt?xp:{...xp,start:resetAt,resetAt};
+  const log=d.progressLog||{}, logKeys=Object.keys(log), keepLog=logKeys.filter(k=>k>=resetAt);
+  const tr=d.trackerReviews||{}, trKeys=Object.keys(tr), keepTr=trKeys.filter(k=>{ const u=tr[k]&&tr[k].updatedAt; return u&&isoDate(new Date(u))>=resetAt; });
+  const changed=keepP.length!==P.length||keepT.length!==T.length||keepC.length!==C.length||nx!==xp||keepLog.length!==logKeys.length||keepTr.length!==trKeys.length;
+  if(!changed) return null;
+  const pick=(o,ks)=>{ const r={}; ks.forEach(k=>r[k]=o[k]); return r; };
+  return {projects:keepP,tasks:keepT,checkins:keepC,xp:nx,progressLog:pick(log,keepLog),trackerReviews:pick(tr,keepTr)};
+}
 /* ═══ Project / Task / Check-in tracker ═══ */
 const RECURRENCE_OPTIONS=[
   {key:"none",label:"ครั้งเดียว"},
@@ -1274,8 +1305,9 @@ function offRhythmTargets(data,today=todayISO()){
   (data.tasks||[]).forEach(t=>{
     const r=taskRhythm(t,today); if(!r||!r.off) return;
     const p=t.projectId?projById[t.projectId]:null;
-    if(p&&(p.status==="archived"||p.status==="paused")) return;
-    const key=p?p.id:"t:"+t.id;
+    if(!p||!isTarget(p)) return;                       // ข้อ 71: หลุดจังหวะ = เฉพาะงานประจำใน target (งาน/เตือนไม่จี้)
+    if(p.status==="archived"||p.status==="paused") return;
+    const key=p.id;
     const g=groups[key]||(groups[key]={key,project:p||null,title:p?p.title:t.title,color:p?p.color:null,routines:[],score:0});
     g.routines.push({task:t,r}); g.score=Math.max(g.score,r.score);
   });
@@ -1298,8 +1330,10 @@ function todayGroups(data,today=todayISO()){
     (groups[key]||(groups[key]={key,project:p,items:[]})).items.push(t);
   });
   const rank=(t)=>taskDoneOn(t,today)?2:taskIsOverdue(t)?0:1;
-  return Object.values(groups).map(g=>({...g,items:g.items.slice().sort((a,b)=>rank(a)-rank(b)),left:g.items.filter(t=>!taskDoneOn(t,today)).length}))
-    .sort((a,b)=>a.key==="_none"?1:b.key==="_none"?-1:order.indexOf(a.key)-order.indexOf(b.key));
+  /* ข้อ 71: เรียง target → งาน → เตือน (_none) */
+  const tier=(g)=>g.key==="_none"?2:isTarget(g.project)?0:1;
+  return Object.values(groups).map(g=>({...g,kind:g.key==="_none"?"reminder":isTarget(g.project)?"target":"work",items:g.items.slice().sort((a,b)=>rank(a)-rank(b)),left:g.items.filter(t=>!taskDoneOn(t,today)).length}))
+    .sort((a,b)=>tier(a)-tier(b)||order.indexOf(a.key)-order.indexOf(b.key));
 }
 function projectCheckins(data,projectId){
   return (data.checkins||[]).filter(c=>c.projectId===projectId).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
@@ -1415,7 +1449,7 @@ function syncMilestones(data){
 /* ═══ Momentum: ความคืบหน้ารวม + เทียบย้อนหลัง ═══ */
 function activeProjectsAt(data,dateStr){
   return (data.projects||[]).filter(p=>{
-    if(p.status==="archived") return false;
+    if(p.status==="archived"||!isTarget(p)) return false;   // ข้อ 71: ความคืบหน้ารวม = target เท่านั้น
     const s=(p.startDate||p.createdAt||"").slice(0,10);
     return !s||s<=dateStr;
   });
@@ -1451,7 +1485,7 @@ function projectProgressAt(p,data,dateStr){
   return Math.max(0,Math.min(100,p.manualValue||0));
 }
 function overallProgressNow(data){
-  const ps=(data.projects||[]).filter(p=>p.status!=="archived");
+  const ps=targetProjects(data).filter(p=>p.status!=="archived");
   if(!ps.length) return 0;
   return ps.reduce((a,p)=>a+projectProgress(p,data),0)/ps.length;
 }
@@ -1463,8 +1497,9 @@ function overallProgressAt(data,dateStr){
 function earliestTrackerDate(data){
   let min=null;
   const take=(d)=>{ if(d&&(!min||d<min)) min=d; };
-  (data.projects||[]).forEach(p=>take((p.startDate||p.createdAt||"").slice(0,10)));
-  (data.checkins||[]).forEach(c=>take(c.date));
+  const tids=new Set(targetProjects(data).map(p=>p.id));
+  targetProjects(data).forEach(p=>take((p.startDate||p.createdAt||"").slice(0,10)));
+  (data.checkins||[]).forEach(c=>{ if(tids.has(c.projectId)) take(c.date); });
   Object.keys(data.progressLog||{}).forEach(take);
   return min;
 }
@@ -1486,8 +1521,10 @@ function shiftISO(dateStr,{d=0,m=0,y=0}){
 }
 function movementDates(data){
   const s=new Set();
-  (data.checkins||[]).forEach(c=>{ if(c.date) s.add(c.date); });
+  const tids=new Set(targetProjects(data).map(p=>p.id));   // ข้อ 71: "ขยับ" = เคลื่อนไหวใน target เท่านั้น
+  (data.checkins||[]).forEach(c=>{ if(c.date&&tids.has(c.projectId)) s.add(c.date); });
   (data.tasks||[]).forEach(t=>{
+    if(!tids.has(t.projectId)) return;
     if(isRecurring(t)){ if(t.recurrence==="daily") Object.keys(t.completions||{}).forEach(k=>s.add(k)); }
     else if(t.status==="done"&&t.completedAt) s.add(t.completedAt.slice(0,10));
   });
@@ -1840,8 +1877,10 @@ function prepareLoadedData(parsed) {
           : {...withFixedDates,projects:withFixedDates.projects||[],tasks:withFixedDates.tasks||[],checkins:withFixedDates.checkins||[]};
         const hm=migrateOldHealth(withTracker);                         // ข้อ 56 ขั้นที่ 7A: health เก่า → healthDaily ครั้งเดียว
         const withHealth=hm?{...withTracker,...hm}:withTracker;
-        const {data:cleaned,changed}=applyResets(withHealth);
-        return {cleaned,needsSave:!!(changed||dateFixed||invTyped||migrated||hm)};
+        const tv2=trackerV2Reset(withHealth);                           // ข้อ 71: ล้าง Tracker เดิม + รีเซ็ต XP (idempotent)
+        const withV2=tv2?{...withHealth,...tv2}:withHealth;
+        const {data:cleaned,changed}=applyResets(withV2);
+        return {cleaned,needsSave:!!(changed||dateFixed||invTyped||migrated||hm||tv2)};
 }
 function useSecretaryData() {
   const [data,setData]=useState(null);
@@ -3855,7 +3894,7 @@ function FinanceInvestmentsTab({finance,persist}) {
     );
   };
   /* ── เฟส 3: เป้าหมายการลงทุน — ดึงจาก projects (Tracker) ที่ category==="finance" ── */
-  const finGoals=(finance.projects||[]).filter(p=>p.category==="finance"&&p.status!=="archived");
+  const finGoals=(finance.projects||[]).filter(p=>isTarget(p)&&p.category==="finance"&&p.status!=="archived");
   const goalTerm=(p)=>{ const d=daysUntil(p.targetDate); return (d!=null&&d<365)?"short":"long"; };
   const shortGoals=finGoals.filter(p=>goalTerm(p)==="short");
   const longGoals=finGoals.filter(p=>goalTerm(p)==="long");
@@ -5836,9 +5875,10 @@ function GoalCard({goal,onEdit,onDelete,onUpdate}) {
     </div>
   );
 }
-const EMPTY_PROJECT={title:"",description:"",category:"personal",priority:"medium",color:GOAL_COLORS[0],status:"active",measureType:"tasks",targetValue:100,baselineValue:0,unit:"",manualValue:0,startDate:todayISO(),targetDate:"",milestones:[]};
-function ProjectModal({onClose,onSave,initial}) {
-  const [form,setForm]=useState(()=>initial?{...EMPTY_PROJECT,...initial,targetDate:initial.targetDate||"",milestones:(initial.milestones||[]).map(m=>({...m}))}:{...EMPTY_PROJECT,startDate:todayISO(),milestones:[]});
+const EMPTY_PROJECT={kind:"target",title:"",description:"",category:"personal",priority:"medium",color:GOAL_COLORS[0],status:"active",measureType:"tasks",targetValue:100,baselineValue:0,unit:"",manualValue:0,startDate:todayISO(),targetDate:"",milestones:[]};
+function ProjectModal({onClose,onSave,initial,defaultKind}) {
+  const [form,setForm]=useState(()=>initial?{...EMPTY_PROJECT,...initial,targetDate:initial.targetDate||"",milestones:(initial.milestones||[]).map(m=>({...m}))}:{...EMPTY_PROJECT,kind:defaultKind||"target",startDate:todayISO(),milestones:[]});
+  const isWork=form.kind==="work";
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const canSave=form.title.trim()&&(form.measureType!=="numeric"||Number(form.targetValue)!==Number(form.baselineValue));
   const msSorted=sortedMilestones(form);
@@ -5857,15 +5897,26 @@ function ProjectModal({onClose,onSave,initial}) {
       .filter(m=>{ if(seen.has(m.pct)) return false; seen.add(m.pct); return true; })
       .sort((a,b)=>a.pct-b.pct);
   };
-  const save=()=>{ if(!canSave) return; onSave({...form,id:initial?.id||uid(),title:form.title.trim(),description:form.description.trim(),targetValue:Number(form.targetValue)||100,baselineValue:Number(form.baselineValue)||0,manualValue:Number(form.manualValue)||0,targetDate:form.targetDate||null,milestones:cleanMilestones()}); };
+  const save=()=>{ if(!canSave) return; onSave({...form,gen:TRACKER_GEN,kind:form.kind==="work"?"work":"target",id:initial?.id||uid(),title:form.title.trim(),description:form.description.trim(),targetValue:Number(form.targetValue)||100,baselineValue:Number(form.baselineValue)||0,manualValue:Number(form.manualValue)||0,targetDate:form.targetDate||null,milestones:cleanMilestones()}); };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal goal-modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-head"><span>{initial?"แก้ไขโปรเจกต์":"เพิ่มโปรเจกต์ / เป้าหมายใหม่"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-head"><span>{initial?(isWork?"แก้ไข Project":"แก้ไข Target"):(isWork?"เพิ่ม Project ใหม่":"เพิ่ม Target ใหม่")}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
           <div>
-            <label className="field-label">ชื่อโปรเจกต์ / เป้าหมาย *</label>
-            <input className="modal-input" placeholder="เช่น เก็บเงินซื้อบ้าน, วิ่งมาราธอน..." value={form.title} onChange={e=>set("title",e.target.value)} autoFocus/>
+            <label className="field-label">ประเภท</label>
+            <div className="kind-picker">
+              {PROJECT_KINDS.map(k=>(
+                <button key={k.key} type="button" className={`kind-option${form.kind===k.key?" active":""}`} onClick={()=>set("kind",k.key)}>
+                  <div className="kind-option-head">{k.emoji} {k.label}</div>
+                  <div className="kind-option-hint">{k.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="field-label">{isWork?"ชื่อ Project *":"ชื่อ Target *"}</label>
+            <input className="modal-input" placeholder={isWork?"เช่น เตรียมเอกสารย้ายตำแหน่ง, ปิดงบไตรมาส...":"เช่น เก็บเงินซื้อบ้าน, วิ่งมาราธอน..."} value={form.title} onChange={e=>set("title",e.target.value)} autoFocus/>
           </div>
           <div>
             <label className="field-label">Note</label>
@@ -5947,7 +5998,7 @@ function ProjectModal({onClose,onSave,initial}) {
         </div>
         <div className="modal-foot">
           <button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button>
-          <button className="modal-btn-save" onClick={save} disabled={!canSave}>{initial?"บันทึก":"สร้างโปรเจกต์"}</button>
+          <button className="modal-btn-save" onClick={save} disabled={!canSave}>{initial?"บันทึก":isWork?"สร้าง Project":"สร้าง Target"}</button>
         </div>
       </div>
     </div>
@@ -5958,7 +6009,7 @@ function TaskModal({onClose,onSave,initial,projects,defaultProjectId}) {
     ?{...initial,dueDate:initial.dueDate||"",note:initial.note||""}
     :{title:"",note:"",projectId:defaultProjectId!==undefined?defaultProjectId:null,dueDate:smartDailyDate(),recurrence:"none",weight:1,status:"pending",completions:{}});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const save=()=>{ if(!form.title.trim()) return; onSave({...form,id:initial?.id||uid(),createdAt:(initial&&initial.createdAt)||form.createdAt||todayISO(),title:form.title.trim(),note:(form.note||"").trim(),weight:Number(form.weight)||1,dueDate:form.recurrence!=="none"?null:(form.dueDate||null),completions:form.completions||{}}); };
+  const save=()=>{ if(!form.title.trim()) return; onSave({...form,gen:TRACKER_GEN,id:initial?.id||uid(),createdAt:(initial&&initial.createdAt)||form.createdAt||todayISO(),title:form.title.trim(),note:(form.note||"").trim(),weight:Number(form.weight)||1,dueDate:form.recurrence!=="none"?null:(form.dueDate||null),completions:form.completions||{}}); };
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
@@ -5969,11 +6020,13 @@ function TaskModal({onClose,onSave,initial,projects,defaultProjectId}) {
             <input className="modal-input" placeholder="เช่น อ่านหนังสือ 30 นาที..." value={form.title} onChange={e=>set("title",e.target.value)} autoFocus onKeyDown={e=>e.key==="Enter"&&save()}/>
           </div>
           <div>
-            <label className="field-label">อยู่ในโปรเจกต์</label>
+            <label className="field-label">อยู่ใต้</label>
             <select className="modal-input" value={form.projectId||""} onChange={e=>set("projectId",e.target.value||null)} style={{cursor:"pointer"}}>
-              <option value="">📥 Inbox (งานทั่วไป)</option>
-              {projects.map(p=>(<option key={p.id} value={p.id}>{p.title}</option>))}
+              <option value="">🔔 เตือนความจำ (ไม่อยู่ใน Target/Project)</option>
+              {projects.some(isTarget)&&<optgroup label="🎯 Target">{projects.filter(isTarget).map(p=>(<option key={p.id} value={p.id}>{p.title}</option>))}</optgroup>}
+              {projects.some(p=>!isTarget(p))&&<optgroup label="🧰 Project">{projects.filter(p=>!isTarget(p)).map(p=>(<option key={p.id} value={p.id}>{p.title}</option>))}</optgroup>}
             </select>
+            {(()=>{ const p=projects.find(x=>x.id===form.projectId); return <div className="kind-xp-hint">{p&&isTarget(p)?`ได้ XP เมื่อทำเสร็จ (+${form.recurrence!=="none"?XP_PTS.routine:XP_PTS.task})`:p?"Project — ไม่นับแต้ม":"เตือนความจำ — ไม่นับแต้ม · Jack บอกในสรุป 07:00"}</div>; })()}
           </div>
           <div>
             <label className="field-label">ทำซ้ำ</label>
@@ -6040,7 +6093,7 @@ function TaskRow({task,project,onToggle,onEdit,onDelete,showProject}) {
         <div className="trk-task-meta">
           {showProject&&(project
             ? <span className="trk-task-project" style={{color:project.color,background:`${project.color}1f`}}>{project.title}</span>
-            : <span className="trk-task-project trk-inbox">📥 Inbox</span>)}
+            : <span className="trk-task-project trk-inbox">🔔 เตือน</span>)}
           {isRecurring(task)&&<span className="trk-recur-badge">🔁 {(RECURRENCE_OPTIONS.find(r=>r.key===task.recurrence)||{}).label}</span>}
           {streak>0&&<span className="trk-streak">🔥 {streak}</span>}
           {!isRecurring(task)&&task.dueDate&&<span className={`trk-due ${overdue?"overdue":""}`}>{overdue?"เลยกำหนด · ":""}{dayLabel(task.dueDate)}</span>}
@@ -6096,7 +6149,10 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
       {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
       <div className="db-hero">
         <div className="trk-hero-left">
-          <div className="goal-cat-badge trk-cat" style={{background:`${project.color}22`,color:project.color}}><CatIcon size={12}/> {cat.label}</div>
+          <div className="prj-kind-row">
+            <div className="goal-cat-badge trk-cat" style={{background:`${project.color}22`,color:project.color}}><CatIcon size={12}/> {cat.label}</div>
+            <span className={`prj-kind-badge${isTarget(project)?" t":""}`}>{isTarget(project)?"🎯 Target · ได้ XP":"🧰 Project · ไม่นับแต้ม"}</span>
+          </div>
           <h1 className="db-hero-title">{project.title}</h1>
           {project.description&&<div className="db-hero-line">{project.description}</div>}
           <div className="prj-badge-row">
@@ -6109,7 +6165,7 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
             <button className="db-btn primary inv-add-btn" onClick={()=>isNumeric?setShowAddPicker(true):(setEditTask(null),setShowTask(true))}>
               <Plus size={14}/> เพิ่มข้อมูล
             </button>
-            <button className="db-btn trk-edit-btn" onClick={()=>onEdit(project)}><Edit3 size={12}/> แก้ไขโปรเจกต์</button>
+            <button className="db-btn trk-edit-btn" onClick={()=>onEdit(project)}><Edit3 size={12}/> แก้ไข</button>
           </div>
         </div>
         <div className="db-bignums">
@@ -6402,13 +6458,13 @@ function trackerMonthStats(data,month){
     if(mv.has(d)){ active++; run++; idle=0; if(run>bestRun) bestRun=run; }
     else { if(run>=3) brokeAt=d; run=0; idle++; if(idle>longestIdle) longestIdle=idle; }
   }
-  const rows=(data.projects||[]).filter(p=>p.status!=="archived"&&(p.startDate||"")<=end).map(p=>{
+  const rows=targetProjects(data).filter(p=>p.status!=="archived"&&(p.startDate||"")<=end).map(p=>{   // ข้อ 71: Review = Target
     const a=projectProgressAt(p,data,end), b=(p.startDate||"")>before?0:projectProgressAt(p,data,before);
     return {p,delta:a-b,now:a};
   });
   const movers=rows.filter(r=>r.delta>0.05).sort((a,b)=>b.delta-a.delta);
   const still=rows.filter(r=>r.delta<=0.05&&r.now<100&&r.p.status!=="paused");
-  const ms=[]; (data.projects||[]).forEach(p=>(p.milestones||[]).forEach(m=>{ if(m.reachedAt&&String(m.reachedAt).slice(0,7)===month) ms.push({p,m}); }));
+  const ms=[]; targetProjects(data).forEach(p=>(p.milestones||[]).forEach(m=>{ if(m.reachedAt&&String(m.reachedAt).slice(0,7)===month) ms.push({p,m}); }));
   const doneTasks=(data.tasks||[]).filter(t=>!isRecurring(t)&&t.status==="done"&&t.completedAt&&t.completedAt.slice(0,7)===month).length;
   return {days,active,bestRun,longestIdle,brokeAt,movers,still,ms,doneTasks,startOv:progressOn(data,before),endOv:progressOn(data,end)};
 }
@@ -6518,13 +6574,17 @@ function TrackerPage({data,persist}) {
   const [editTask,setEditTask]=useState(null);
   const [showAddPicker,setShowAddPicker]=useState(false);
   const [filter,setFilter]=useState("active");
+  const [kindTab,setKindTab]=useState("target");   // ข้อ 71: target | work | reminder
+  const [newKind,setNewKind]=useState("target");
+  const [taskDefaultPid,setTaskDefaultPid]=useState(undefined);
   /* ต้องเรียก hook ก่อน early return ของหน้ารายละเอียดโปรเจกต์ ไม่งั้นผิด rules of hooks */
   const rl=useRowLimit(6);
   const projects=data.projects||[];
   const openProject=projects.find(p=>p.id===openId);
   const saveProject=(p)=>{
     const ex=projects.find(x=>x.id===p.id);
-    persist({...data,projects:ex?projects.map(x=>x.id===p.id?p:x):[...projects,p],activity:ex?data.activity:logActivity(data,{source:"goal",text:`สร้างโปรเจกต์ "${p.title}"`})});
+    persist({...data,projects:ex?projects.map(x=>x.id===p.id?p:x):[...projects,p],activity:ex?data.activity:logActivity(data,{source:"goal",text:`สร้าง${isTarget(p)?" Target":" Project"} "${p.title}"`})});
+    if(!ex) setKindTab(isTarget(p)?"target":"work");
     setShowProjModal(false); setEditProj(null);
   };
   const saveTask=(t)=>{
@@ -6533,7 +6593,7 @@ function TrackerPage({data,persist}) {
     setShowTaskModal(false); setEditTask(null);
   };
   const delProject=(id)=>{
-    if(!confirm("ลบโปรเจกต์นี้? งานและ check-in ทั้งหมดในโปรเจกต์จะถูกลบด้วย")) return;
+    if(!confirm("ลบรายการนี้? งานและ check-in ทั้งหมดข้างในจะถูกลบด้วย")) return;
     persist({...data,projects:projects.filter(p=>p.id!==id),tasks:(data.tasks||[]).filter(t=>t.projectId!==id),checkins:(data.checkins||[]).filter(c=>c.projectId!==id)});
     setOpenId(null);
   };
@@ -6542,11 +6602,19 @@ function TrackerPage({data,persist}) {
       {showProjModal&&<ProjectModal initial={editProj} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
       <ProjectDetail project={openProject} data={data} persist={persist} onBack={()=>setOpenId(null)} onEdit={p=>{setEditProj(p);setShowProjModal(true);}}/>
       <div className="trk-del-row">
-        <button className="del-txt-btn" onClick={()=>delProject(openProject.id)}><Trash2 size={12}/> ลบโปรเจกต์นี้</button>
+        <button className="del-txt-btn" onClick={()=>delProject(openProject.id)}><Trash2 size={12}/> ลบ{isTarget(openProject)?" Target":" Project"}นี้</button>
       </div>
     </div>
   );
-  const withProg=projects.map(p=>({...p,_prog:projectProgress(p,data),_health:projectHealth(p,data)}));
+  const tabKind=kindTab==="work"?"work":"target";
+  const kindProjects=projects.filter(p=>(tabKind==="target")===isTarget(p));
+  const withProg=kindProjects.map(p=>({...p,_prog:projectProgress(p,data),_health:projectHealth(p,data)}));
+  const nTarget=projects.filter(isTarget).length, nWork=projects.length-nTarget;
+  const reminders=(data.tasks||[]).filter(t=>!t.projectId);
+  const remPending=reminders.filter(t=>isRecurring(t)||t.status!=="done").sort((a,b)=>(isRecurring(a)?1:0)-(isRecurring(b)?1:0)||String(a.dueDate||"9999").localeCompare(String(b.dueDate||"9999")));
+  const remDone=reminders.filter(t=>!isRecurring(t)&&t.status==="done").sort((a,b)=>String(b.completedAt||"").localeCompare(String(a.completedAt||"")));
+  const jobsDone=projects.filter(p=>!isTarget(p)&&projectProgress(p,data)>=100).length;
+  const kindWord=tabKind==="work"?"Project":"Target";
   const activeList=withProg.filter(p=>p._prog<100&&p.status!=="paused");
   const doneList=withProg.filter(p=>p._prog>=100);
   const behindList=withProg.filter(p=>p._health.key==="behind"||p._health.key==="overdue");
@@ -6562,39 +6630,47 @@ function TrackerPage({data,persist}) {
     .map(b=>({key:b.key,label:b.label,color:b.color,value:bucketCount[b.key]}));
   const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
   const todayDone=todayTasks.filter(t=>taskDoneOn(t)).length;
-  const avgProg=Math.round(overallProgressNow(data));
+  const avgProg=tabKind==="target"?Math.round(overallProgressNow(data)):(withProg.length?Math.round(withProg.filter(p=>p.status!=="archived").reduce((a,p)=>a+p._prog,0)/Math.max(1,withProg.filter(p=>p.status!=="archived").length)):0);
   const nextDeadline=withProg.filter(p=>p._prog<100&&p.targetDate)
     .map(p=>({p,d:daysUntil(p.targetDate)})).sort((a,b)=>a.d-b.d)[0];
   const shownLimited=shown.slice(0,rl.limit);
   return (
     <div className="page-content trk-page">
-      {showProjModal&&<ProjectModal initial={editProj} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
-      {showTaskModal&&<TaskModal initial={editTask} projects={projects} onClose={()=>{setShowTaskModal(false);setEditTask(null);}} onSave={saveTask}/>}
+      {showProjModal&&<ProjectModal initial={editProj} defaultKind={newKind} onClose={()=>{setShowProjModal(false);setEditProj(null);}} onSave={saveProject}/>}
+      {showTaskModal&&<TaskModal initial={editTask} projects={projects} defaultProjectId={taskDefaultPid} onClose={()=>{setShowTaskModal(false);setEditTask(null);}} onSave={saveTask}/>}
       {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 ── */}
       <div className="db-hero">
         <div>
-          <h1 className="db-hero-title">Tracker <span>· โปรเจกต์และงาน</span></h1>
-          <div className="db-hero-line">
-            {projects.length} โปรเจกต์ · กำลังทำ {activeList.length} · สำเร็จ {doneList.length}
-            {nextDeadline&&<> · ใกล้ครบกำหนดสุด “{nextDeadline.p.title}” {nextDeadline.d<0?`เลยมา ${Math.abs(nextDeadline.d)} วัน`:`อีก ${nextDeadline.d} วัน`}</>}
+          <h1 className="db-hero-title">Tracker</h1>
+          {/* ข้อ 71: แยก 3 ชั้น — Target นับคะแนน · Project/เตือนความจำ ไม่นับ */}
+          <div className="trk-kind-tabs">
+            <button className={`trk-kind-tab${kindTab==="target"?" on":""}`} onClick={()=>setKindTab("target")}>🎯 Target <b className="db-mono">{nTarget}</b></button>
+            <button className={`trk-kind-tab${kindTab==="work"?" on":""}`} onClick={()=>setKindTab("work")}>🧰 Project <b className="db-mono">{nWork}</b></button>
+            <button className={`trk-kind-tab${kindTab==="reminder"?" on":""}`} onClick={()=>setKindTab("reminder")}>🔔 เตือน <b className="db-mono">{remPending.length}</b></button>
           </div>
-          <div className="fin-range">
+          <div className="db-hero-line">
+            {kindTab==="reminder"
+              ? <>เตือนความจำ {remPending.length} รายการค้าง · ไม่นับแต้ม · Jack บอกในสรุป 07:00</>
+              : <>{withProg.length} {kindWord} · กำลังทำ {activeList.length} · สำเร็จ {doneList.length}{tabKind==="work"?" · ไม่นับแต้ม":""}
+                {nextDeadline&&<> · ใกล้ครบกำหนดสุด “{nextDeadline.p.title}” {nextDeadline.d<0?`เลยมา ${Math.abs(nextDeadline.d)} วัน`:`อีก ${nextDeadline.d} วัน`}</>}</>}
+          </div>
+          {kindTab!=="reminder"&&<div className="fin-range">
             <button className={`fin-range-btn ${filter==="active"?"active":""}`} onClick={()=>setFilter("active")}>กำลังทำ</button>
             <button className={`fin-range-btn ${filter==="behind"?"active":""}`} onClick={()=>setFilter("behind")}>ต้องเร่ง</button>
             <button className={`fin-range-btn ${filter==="done"?"active":""}`} onClick={()=>setFilter("done")}>สำเร็จแล้ว</button>
             <button className={`fin-range-btn ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>ทั้งหมด</button>
-          </div>
+          </div>}
           {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว (เดิมมี + ในหัวการ์ด 2 จุด) */}
           <button className="db-btn primary inv-add-btn" onClick={()=>setShowAddPicker(true)}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
         <div className="db-bignums">
           <div className="db-bignum">
-            <div className="n acc db-mono">{avgProg}%</div>
-            <div className="l"><span className="db-dot a"/> ความคืบหน้าเฉลี่ย</div>
+            <div className="n acc db-mono">{Math.round(overallProgressNow(data))}%</div>
+            <div className="l"><span className="db-dot a"/> ความคืบหน้า Target</div>
           </div>
           <div className="db-bignum">
-            <div className="n gld db-mono">{activeList.length}</div>
-            <div className="l"><span className="db-dot g"/> โปรเจกต์ที่ทำอยู่</div>
+            <div className="n gld db-mono">{jobsDone}</div>
+            <div className="l"><span className="db-dot g"/> 🏁 ปิดจ๊อบแล้ว</div>
           </div>
           <div className="db-bignum">
             <div className="n db-mono">{todayDone}<span className="trk-of">/{todayTasks.length}</span></div>
@@ -6606,14 +6682,29 @@ function TrackerPage({data,persist}) {
       <div className="db-bento">
         <TodayPanel data={data} persist={persist} onOpenProject={setOpenId} onAddTask={()=>{setEditTask(null);setShowTaskModal(true);}} onEditTask={t=>{setEditTask(t);setShowTaskModal(true);}}/>
 
-        {/* ── การ์ดสถานะโปรเจกต์ — กด legend เพื่อกรองการ์ดด้านล่าง ── */}
+        {kindTab==="reminder"&&(
+          <div className="db-card db-span2 trk-rem-card">
+            <div className="db-head">
+              <div><div className="db-title">🔔 เตือนความจำ</div><div className="db-note">เรื่องที่ต้องทำ ไม่นับแต้ม — ติ๊กเมื่อเสร็จ</div></div>
+              <button className="db-chip" onClick={()=>{setTaskDefaultPid(null);setEditTask(null);setShowTaskModal(true);}}><Plus size={13}/> เพิ่ม</button>
+            </div>
+            {remPending.length===0&&<div className="db-empty">ไม่มีเรื่องค้าง — เพิ่มที่ปุ่ม “เพิ่ม” หรือบอก Jack ว่า “เตือนต่อภาษีรถ 15 ต.ค.”</div>}
+            {remPending.map(t=><TaskRow key={t.id} task={t} project={null} onToggle={(id)=>persist({...data,tasks:toggleTaskInList(data.tasks||[],id)})} onEdit={t=>{setEditTask(t);setShowTaskModal(true);}} onDelete={(id)=>persist({...data,tasks:(data.tasks||[]).filter(x=>x.id!==id)})}/>)}
+            {remDone.length>0&&<>
+              <div className="trk-section-label">เสร็จแล้ว ({remDone.length})</div>
+              {remDone.slice(0,10).map(t=><TaskRow key={t.id} task={t} project={null} onToggle={(id)=>persist({...data,tasks:toggleTaskInList(data.tasks||[],id)})} onEdit={t=>{setEditTask(t);setShowTaskModal(true);}} onDelete={(id)=>persist({...data,tasks:(data.tasks||[]).filter(x=>x.id!==id)})}/>)}
+            </>}
+          </div>
+        )}
+        {kindTab!=="reminder"&&<>
+        {/* ── การ์ดสถานะ — กด legend เพื่อกรองการ์ดด้านล่าง ── */}
         <div className="db-card db-span2">
           <div className="db-head">
-            <div><div className="db-title">สถานะโปรเจกต์</div><div className="db-note">กดที่สถานะเพื่อกรองรายการด้านล่าง</div></div>
-            <div className="db-bignum-inline db-mono">{projects.length}<span> โปรเจกต์</span></div>
+            <div><div className="db-title">สถานะ {kindWord}</div><div className="db-note">กดที่สถานะเพื่อกรองรายการด้านล่าง</div></div>
+            <div className="db-bignum-inline db-mono">{withProg.length}<span> {kindWord}</span></div>
           </div>
           {hSegs.length===0?(
-            <div className="db-empty">ยังไม่มีโปรเจกต์ — กด “เพิ่มข้อมูล” ด้านบนเพื่อสร้างอันแรก</div>
+            <div className="db-empty">ยังไม่มี {kindWord} — กด “เพิ่มข้อมูล” ด้านบนเพื่อสร้างอันแรก</div>
           ):(
             <div className="db-donut-wrap">
               <DashDonut segs={hSegs} total={withProg.length}/>
@@ -6631,21 +6722,22 @@ function TrackerPage({data,persist}) {
           )}
           <div className="db-track"><div className="db-fill" style={{width:`${avgProg}%`}}/></div>
           <div className="db-row">
-            <span className="lab">ความคืบหน้าเฉลี่ยของโปรเจกต์ที่ยังไม่เก็บเข้าคลัง</span>
+            <span className="lab">{tabKind==="target"?"ความคืบหน้ารวมของ Target (นับคะแนน)":"ความคืบหน้าเฉลี่ยของ Project (ไม่นับคะแนน)"}</span>
             <span className="val db-mono">{avgProg}%</span>
           </div>
         </div>
 
         {/* ── การ์ดโปรเจกต์ — .prj-grid เดิม ห่อด้วย DashCollapse + ปุ่ม "อีก X รายการ" (ข้อ 32/3) ── */}
-        <DashCollapse span="db-span4" title="โปรเจกต์"
-          note={shown.length?`${shown.length} รายการในตัวกรองนี้`:"ไม่มีโปรเจกต์ในตัวกรองนี้"}
+        <DashCollapse span="db-span4" title={kindWord}
+          note={shown.length?`${shown.length} รายการในตัวกรองนี้`:`ไม่มี ${kindWord} ในตัวกรองนี้`}
           defaultOpen={true}>
-          {shown.length===0&&<div className="db-empty">ไม่มีโปรเจกต์ในตัวกรองนี้ — กด “เพิ่มข้อมูล” ด้านบนเพื่อสร้าง</div>}
+          {shown.length===0&&<div className="db-empty">ไม่มี {kindWord} ในตัวกรองนี้ — กด “เพิ่มข้อมูล” ด้านบนเพื่อสร้าง</div>}
           <div className="prj-grid">
             {shownLimited.map(p=><ProjectCard key={p.id} project={p} data={data} onOpen={setOpenId}/>)}
           </div>
           <ShowMoreRow rl={rl} total={shown.length}/>
         </DashCollapse>
+        </>}
         <TrackerTimelineCard data={data} onOpen={setOpenId}/>
         <TrackerReviewCard data={data} persist={persist}/>
       </div>
@@ -6655,16 +6747,22 @@ function TrackerPage({data,persist}) {
           <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
             <div className="modal-head"><span>➕ เพิ่มข้อมูลใน Tracker</span><button className="modal-close" onClick={()=>setShowAddPicker(false)}><X size={15}/></button></div>
             <div className="modal-body">
-              <div className="quick-type-row inv-pick">
-                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditProj(null);setShowProjModal(true);}}>
-                  <Target size={13}/><span>โปรเจกต์</span>
+              <div className="quick-type-row inv-pick trk-pick4">
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditProj(null);setNewKind("target");setShowProjModal(true);}}>
+                  <span>🎯</span><span>Target</span>
                 </button>
-                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditTask(null);setShowTaskModal(true);}}>
-                  <ListTodo size={13}/><span>งาน</span>
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditProj(null);setNewKind("work");setShowProjModal(true);}}>
+                  <span>🧰</span><span>Project</span>
+                </button>
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditTask(null);const first=(tabKind==="work"?projects.filter(p=>!isTarget(p)):projects.filter(isTarget)).find(p=>p.status!=="archived");setTaskDefaultPid(first?first.id:null);setShowTaskModal(true);}}>
+                  <ListTodo size={13}/><span>งานย่อย</span>
+                </button>
+                <button className="quick-type-btn" onClick={()=>{setShowAddPicker(false);setEditTask(null);setTaskDefaultPid(null);setShowTaskModal(true);}}>
+                  <span>🔔</span><span>เตือนความจำ</span>
                 </button>
               </div>
               <div className="db-note trk-pick-note">
-                “โปรเจกต์” = เป้าหมายที่วัดความคืบหน้าได้ (ตัวเลข/งานย่อย/กรอกเอง) · “งาน” = สิ่งที่ต้องทำเป็นครั้งหรือทำซ้ำ จะผูกกับโปรเจกต์หรือไม่ก็ได้
+                🎯 Target = เป้าหมายชีวิต ได้ XP · 🧰 Project = งานที่ต้องทำให้จบ ไม่นับแต้ม (ปิดครบได้เหรียญ 🏁) · งานย่อย = งานครั้งเดียว/งานประจำใต้ Target หรือ Project · 🔔 เตือนความจำ = เรื่องเดียวจบ ไม่นับแต้ม
               </div>
             </div>
             <div className="modal-foot"><button className="modal-btn-cancel" onClick={()=>setShowAddPicker(false)}>ยกเลิก</button></div>
@@ -8539,7 +8637,7 @@ function useCountUp(target,ms=800){
    หลัก: XP "คำนวณจากข้อมูลจริงทุกครั้ง" ไม่มีสมุดบัญชี XP แยก → ลบ/ยกเลิกรายการ = XP หายเองอัตโนมัติ (หักคืน)
          ไม่ลดตามเวลา · นับเฉพาะของที่เกิดตั้งแต่ xp.start (วันเปิดระบบ) — ไม่ backfill ข้อมูลเก่า
    เก็บเพิ่มแค่: data.xp = {start, savingRateTarget, snapshots:{"YYYY-MM":{nw,debt}}} + project.xpDoneAt (วันที่ครบ 100%)
-   ด้าน: หมวด target การเงิน→Wealth · สุขภาพ→Health · ที่เหลือ/ไม่มี target→Growth
+   ด้าน: หมวด target การเงิน→Wealth · สุขภาพ→Health · ที่เหลือ→Growth · ข้อ 71: งาน/โปรเจกต์ kind "work" และเตือนความจำ (ไม่มีโปรเจกต์) = 0 XP
    ยังไม่มีแหล่งแต้ม: ออกกำลังกาย/นอน/น้ำ/ทดสอบสมรรถนะ/ตรวจสุขภาพ (ขั้นที่ 7 Health) — ค่าแต้มกำหนดไว้แล้วใน XP_PTS
    ═══════════════════════════════════════════════════════════════════ */
 const XP_SIDES=[
@@ -8558,7 +8656,9 @@ const XP_TITLES={
 const XP_BADGES=[
   {key:"first",emoji:"✨",name:"ก้าวแรก",desc:"ได้ XP ครั้งแรก",test:(ev)=>ev.length>0},
   {key:"streak",emoji:"🔥",name:"ติดกัน 7 วัน",desc:"ทำงานประจำรายวันครบ 7 วันติด",test:(ev)=>ev.some(e=>e.src==="streak")},
-  {key:"project",emoji:"🏁",name:"ปิดจ๊อบ",desc:"ปิดโปรเจกต์ (ครบ 100%) ครั้งแรก",test:(ev)=>ev.some(e=>e.src==="project")},
+  {key:"project",emoji:"🎯",name:"พิชิตเป้า",desc:"ทำเป้าหมาย (target) สำเร็จครบ 100% ครั้งแรก",test:(ev)=>ev.some(e=>e.src==="project")},
+  {key:"job",emoji:"🏁",name:"ปิดจ๊อบ",desc:"ปิดงานครบ 100% ครั้งแรก (งานไม่มีแต้ม แต่มีเหรียญ)",test:(ev,s,jobs)=>(jobs||[]).length>=1},
+  {key:"job10",emoji:"🧰",name:"มือโปร",desc:"ปิดงานครบ 10 ชิ้น",test:(ev,s,jobs)=>(jobs||[]).length>=10},
   {key:"book",emoji:"📚",name:"นักสรุป",desc:"สรุปหนังสือเล่มแรก",test:(ev)=>ev.some(e=>e.src==="bookSummary")},
   {key:"journal30",emoji:"📝",name:"นักบันทึก",desc:"เขียน Journal ครบ 30 วัน",test:(ev)=>ev.filter(e=>e.src==="journal").length>=30},
   {key:"wealth4",emoji:"💎",name:"เดือนทอง",desc:"ได้ XP การเงินรายเดือนครบ 4 เรื่องในเดือนเดียว",test:(ev)=>{ const c={}; ev.forEach(e=>{ if(e.src==="wealth") c[e.m]=(c[e.m]||0)+1; }); return Object.values(c).some(n=>n>=4); }},
@@ -8581,14 +8681,15 @@ function xpTitle(side,lv){ let t=XP_TITLES[side][0][1]; XP_TITLES[side].forEach(
 function xpNetWorthNow(data){ return Math.round(totalCash(data)+portfolioValue(data)-totalDebtBalance(data)); }
 function computeXP(data,today=todayISO()){
   const xp=(data&&data.xp)||{}, start=xp.start||null;
-  const ev=[];
+  const ev=[], jobs=[];
   const add=(date,side,pts,label,src,extra)=>{ if(start&&date&&date>=start&&date<=today) ev.push({date,side,pts,label,src,...(extra||{})}); };
   if(start){
     const projById={}; (data.projects||[]).forEach(p=>{ if(p&&p.id) projById[p.id]=p; });
     (data.tasks||[]).forEach(t=>{
       if(!t||!t.id) return;
       const p=t.projectId&&projById[t.projectId];
-      const side=p?xpSideOfCategory(p.category):"growth";
+      if(!isTarget(p)) return;                           // ข้อ 71: XP จากงานใน target เท่านั้น (งาน/เตือน = 0)
+      const side=xpSideOfCategory(p.category);
       if(isRecurring(t)){
         const startKey=periodKey(t.recurrence,start);
         const comp=t.completions||{};
@@ -8604,6 +8705,10 @@ function computeXP(data,today=todayISO()){
     });
     (data.projects||[]).forEach(p=>{
       if(!p) return;
+      if(!isTarget(p)){                                   // ข้อ 71: งานปิดครบ = เหรียญ "ปิดจ๊อบ" (ไม่มีแต้ม)
+        if(p.xpDoneAt&&/^\d{4}-\d{2}-\d{2}$/.test(p.xpDoneAt)&&p.xpDoneAt>=start&&p.xpDoneAt<=today) jobs.push({date:p.xpDoneAt,title:p.title,id:p.id});
+        return;
+      }
       const side=xpSideOfCategory(p.category);
       (p.milestones||[]).forEach(m=>{ if(m&&m.reachedAt) add(String(m.reachedAt).slice(0,10),side,XP_PTS.milestone,`ถึงหมุด ${milestoneLabel(m)} · ${p.title}`,"milestone"); });
       if(p.xpDoneAt&&/^\d{4}-\d{2}-\d{2}$/.test(p.xpDoneAt)) add(p.xpDoneAt,side,XP_PTS.project,`ปิดโปรเจกต์ · ${p.title}`,"project");
@@ -8658,8 +8763,9 @@ function computeXP(data,today=todayISO()){
   ev.forEach(e=>{ sums[e.side]+=e.pts; if(e.date>=mon) week[e.side]+=e.pts; });
   ev.sort((a,b)=>b.date.localeCompare(a.date));
   const sides=XP_SIDES.map(s=>{ const L=xpLevel(sums[s.key]); return {...s,...L,week:week[s.key],title:xpTitle(s.key,L.level)}; });
-  const badges=XP_BADGES.map(b=>({key:b.key,emoji:b.emoji,name:b.name,desc:b.desc,got:!!b.test(ev,sides)}));
-  return {start,events:ev,sides,badges,weekTotal:week.wealth+week.health+week.growth,savingRateTarget:Number(xp.savingRateTarget)||XP_DEFAULT_SAVING_TARGET};
+  jobs.sort((a,b)=>b.date.localeCompare(a.date));
+  const badges=XP_BADGES.map(b=>({key:b.key,emoji:b.emoji,name:b.name,desc:b.desc,got:!!b.test(ev,sides,jobs)}));
+  return {start,events:ev,jobs,sides,badges,weekTotal:week.wealth+week.health+week.growth,savingRateTarget:Number(xp.savingRateTarget)||XP_DEFAULT_SAVING_TARGET};
 }
 /* ข้อมูลเสริมที่ XP ต้องการ (เรียกใน effect เดียวกับ syncMilestones): ตั้ง xp.start ครั้งแรก · ประทับวันครบ 100% ของโปรเจกต์
    (ครบอยู่แล้วตอนเปิดระบบ = "before" ไม่ได้แต้ม · ลดต่ำกว่า 100% = ลบวัน → แต้มหาย) · จด net worth/หนี้ ของเดือนนี้ (ใช้เทียบเดือนก่อน) */
@@ -8688,7 +8794,10 @@ function syncXpMeta(data,today=todayISO()){
   return changed?{xp,projects}:null;
 }
 /* แต้มของงานตอนติ๊ก (ใช้โชว์ "+5"/"+10" ในการ์ดวันนี้) */
-function xpForTask(t){ return isRecurring(t)?XP_PTS.routine:XP_PTS.task; }
+function xpForTask(t,data){
+  if(data){ const p=t.projectId&&(data.projects||[]).find(x=>x.id===t.projectId); if(!isTarget(p)) return 0; }   // ข้อ 71
+  return isRecurring(t)?XP_PTS.routine:XP_PTS.task;
+}
 
 function DashLevelCard({data,onOpen}){
   const XP=useMemo(()=>computeXP(data),[data]);
@@ -8778,7 +8887,7 @@ function XpModal({data,persist,onClose}){
           </div>
           <details className="xp-rules">
             <summary>กติกาแต้ม</summary>
-            <div>งานประจำตรงรอบ +5 · งานครั้งเดียว +10 · ถึงหมุด +50 · ปิดโปรเจกต์ +150 → ด้านตามหมวด target (การเงิน=Wealth · สุขภาพ=Health · อื่นๆ/ไม่มี target=Growth)</div>
+            <div>เฉพาะใน Target: งานประจำตรงรอบ +5 · งานครั้งเดียว +10 · ถึงหมุด +50 · Target สำเร็จ +150 → ด้านตามหมวด (การเงิน=Wealth · สุขภาพ=Health · อื่นๆ=Growth) · Project/เตือนความจำ ไม่มีแต้ม (ปิด Project ครบได้เหรียญ 🏁)</div>
             <div>งานประจำรายวันติดกันครบ 7 วัน +20 (ครั้งเดียวต่อช่วง) · หนังสือจบ +30 + สรุป +120 (ดาว + รีวิว ≥3 บรรทัด หรือมีคำคม) · รีวิววิดีโอ/พอดแคสต์ +10 (≤2/วัน) · Journal +5/วัน → Growth</div>
             <div>รายเดือน (เดือนที่ปิดแล้ว) อัตราออมถึงเป้า / Net worth เพิ่ม / หนี้ลด +75 ต่อเรื่อง · ทำรีวิวเดือน +75 → Wealth</div>
             <div>ออกกำลังกาย +15/ครั้ง · นอนถึงเป้า +10/คืน · ดื่มน้ำถึงเป้า +5/วัน · ทดสอบสมรรถนะดีขึ้นจากครั้งก่อน +30/ค่า (น้ำหนักไม่นับ) → Health · ตรวจสุขภาพประจำปี (นำเข้าผลแล้ว) +100 ตามวันที่ตรวจ</div>
@@ -8867,6 +8976,16 @@ function ProfileModal({data,persist,onClose}){
 
 function MilestoneToast({toast,onClose}) {
   useEffect(()=>{ const t=setTimeout(onClose,toast.kind==="xp"?3200:7000); return()=>clearTimeout(t); },[]);
+  if(toast.kind==="job") return (
+    <div className="ms-toast xp-toast" style={{"--goal-color":"var(--gold)"}}>
+      <div className="ms-toast-icon xp-toast-icon">🏁</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div className="ms-toast-title">ปิดจ๊อบ! · {toast.title}</div>
+        <div className="ms-toast-sub">ปิดงานไปแล้ว {toast.count} ชิ้น{toast.badge?` · ได้เหรียญ ${toast.badge}`:""}</div>
+      </div>
+      <button className="ms-toast-x" onClick={onClose}><X size={13}/></button>
+    </div>
+  );
   if(toast.kind==="xp") return (
     <div className="ms-toast xp-toast" style={{"--goal-color":toast.color||"var(--accent)"}}>
       <div className="ms-toast-icon xp-toast-icon">{toast.emoji}</div>
@@ -8975,7 +9094,8 @@ function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
           <div className="td-group" key={g.key}>
             <div className="td-ghead">
               <span className="td-dot" style={{background:g.project?(g.project.color||"var(--accent)"):"var(--ink-5)"}}/>
-              <span className="td-gname">{g.project?g.project.title:"ไม่มี target"}</span>
+              <span className="td-gname">{g.project?g.project.title:"🔔 เตือนความจำ"}</span>
+              {g.kind==="work"&&<span className="td-kind">Project</span>}
               <span className="td-gleft db-mono">{g.left?`เหลือ ${g.left}`:"ครบ ✓"}</span>
             </div>
             {g.items.map(t=>{
@@ -8988,7 +9108,7 @@ function DashTasksCard({data,persist,setPage,onEditTask,onQuick}){
                     <div className="db-tname">{t.title}</div>
                     {sub(t)&&<div className="db-tsub">{sub(t)}</div>}
                   </div>
-                  {!isDone&&<span className="td-xp db-mono">+{xpForTask(t)}</span>}
+                  {!isDone&&xpForTask(t,data)>0&&<span className="td-xp db-mono">+{xpForTask(t,data)}</span>}
                   <div className={`db-tcheck${isDone?" on":""}`} onClick={(e)=>{e.stopPropagation();toggle(t);}} role="button" aria-label={isDone?"ยกเลิกติ๊ก":"ติ๊กว่าเสร็จ"}/>
                 </div>
               );
@@ -9049,7 +9169,7 @@ function DashDonut({segs,total}){
 function DashHero({data,greetEn,dateStr,timeStr,message,setPage}){
   const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
   const done=todayTasks.filter(t=>taskDoneOn(t)).length;
-  const projects=(data.projects||[]).filter(p=>p.status!=="archived");
+  const projects=targetProjects(data).filter(p=>p.status!=="archived"&&projectProgress(p,data)<100);   // ข้อ 71: นับเฉพาะเป้าหมายที่ยังไม่สำเร็จ
   const streak=momentumStreak(data);
   return (
     <div className="db-hero">
@@ -9068,7 +9188,7 @@ function DashHero({data,greetEn,dateStr,timeStr,message,setPage}){
         </div>
         <div className="db-bignum" onClick={()=>setPage(2)} role="button">
           <div className="n db-mono">{projects.length}</div>
-          <div className="l"><span className="db-dot"/> โปรเจกต์</div>
+          <div className="l"><span className="db-dot"/> เป้าหมาย</div>
         </div>
       </div>
     </div>
@@ -9091,7 +9211,7 @@ function DashTargetCard({data,setPage,wide}){
     return {now,delta7:w?now-w.value:null,streak:momentumStreak(data),days,vals,max:max>0?max:1,best:max>0?vals.indexOf(max):-1,total:vals.reduce((a,b)=>a+b,0)};
   },[data]);
   const pick=useMemo(()=>{
-    const act=(data.projects||[]).filter(p=>p.status!=="archived");
+    const act=targetProjects(data).filter(p=>p.status!=="archived");   // ข้อ 71
     let best=null;
     act.forEach(p=>{
       const prog=projectProgress(p,data);
@@ -9104,7 +9224,7 @@ function DashTargetCard({data,setPage,wide}){
   if(!pick) return (
     <div className={`db-card db-span2 tgt-card${wide?" tgt-wide":""}`}>
       <div className="db-head"><div className="db-title">Target</div></div>
-      <div className="db-empty">ยังไม่มีโปรเจกต์ — กดเพื่อสร้างเป้าหมายแรก</div>
+      <div className="db-empty">ยังไม่มีเป้าหมาย — กดเพื่อสร้างเป้าหมายแรก</div>
       <button className="db-btn primary" style={{marginTop:12}} onClick={()=>setPage(2)}>สร้างเป้าหมาย</button>
     </div>
   );
@@ -9116,7 +9236,7 @@ function DashTargetCard({data,setPage,wide}){
       <div className="db-head">
         <div style={{minWidth:0}}>
           <div className="db-title">Target</div>
-          <div className="db-note">ความคืบหน้ารวมทุกโปรเจกต์</div>
+          <div className="db-note">ความคืบหน้ารวมทุกเป้าหมาย</div>
         </div>
         <button className="db-chip" onClick={()=>setPage(2)}><ArrowRight size={13}/></button>
       </div>
@@ -9342,6 +9462,13 @@ function SecretaryDashboard() {
     if(!prev||prev.start!==xpNow.start) return;
     const gains=xpNow.sides.map((s,i)=>({s,d:s.total-prev.sides[i].total,up:s.level>prev.sides[i].level})).filter(x=>x.d>0);
     if(gains.length) setToasts(t=>[...t,...gains.map(g=>({id:uid(),kind:"xp",pts:g.d,label:g.s.label,emoji:g.s.emoji,color:g.s.color,levelUp:g.up?g.s.level:null,title:g.s.title}))].slice(-3));
+    /* ข้อ 71: ปิดงาน (kind work) ครบ 100% → toast "ปิดจ๊อบ" (ไม่มีแต้ม) */
+    const pj=new Set((prev.jobs||[]).map(j=>j.id));
+    const newJobs=(xpNow.jobs||[]).filter(j=>!pj.has(j.id));
+    if(newJobs.length){
+      const newBadges=xpNow.badges.filter(b=>b.got&&(b.key==="job"||b.key==="job10")&&!(prev.badges.find(x=>x.key===b.key)||{}).got).map(b=>b.emoji+" "+b.name);
+      setToasts(t=>[...t,...newJobs.map(j=>({id:uid(),kind:"job",title:j.title,count:xpNow.jobs.length,badge:newBadges.join(", ")}))].slice(-3));
+    }
   },[xpNow]);
   useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),30000); return()=>clearInterval(t); },[]);
   useEffect(()=>{
@@ -9375,7 +9502,7 @@ function SecretaryDashboard() {
   const rings=useMemo(()=>{
     if(!data) return {todo:0,budget:0,goals:0};
     const todayTasks=(data.tasks||[]).filter(taskIsDueToday);
-    const projects=data.projects||[];
+    const projects=targetProjects(data);
     return {
       todo:todayTasks.length?(todayTasks.filter(t=>taskDoneOn(t)).length/todayTasks.length)*100:0,
       budget:0,
@@ -9412,7 +9539,7 @@ function SecretaryDashboard() {
       persist({...data,notes:[...notes,{id:uid(),text,color:NOTE_COLORS[notes.length%NOTE_COLORS.length]}],activity:logActivity(data,{source:"note",text:`เพิ่มโน้ต "${text.slice(0,32)}${text.length>32?"…":""}"`})});
     } else if(type==="task"){
       const rec=section==="daily"?"none":section;
-      persist({...data,tasks:[...(data.tasks||[]),{id:uid(),projectId:null,title:text,note:"",status:"pending",dueDate:rec==="none"?smartDailyDate():null,recurrence:rec,weight:1,completions:{},createdAt:todayISO()}],activity:logActivity(data,{source:"task",text:`เพิ่มงาน "${text}"`})});
+      persist({...data,tasks:[...(data.tasks||[]),{gen:TRACKER_GEN,id:uid(),projectId:null,title:text,note:"",status:"pending",dueDate:rec==="none"?smartDailyDate():null,recurrence:rec,weight:1,completions:{},createdAt:todayISO()}],activity:logActivity(data,{source:"task",text:`เพิ่มงาน "${text}"`})});
     } else if(type==="expense"){
       persist({...data,finance:{...data.finance,expenses:[...data.finance.expenses,{id:uid(),date:todayISO(),amount:-Math.abs(amount),category,memo:text,source:"manual"}]},activity:logActivity(data,{source:"expense",text:`บันทึกรายจ่าย ${category} -฿${Math.abs(amount).toLocaleString()}`})});
     } else if(type==="journal"){

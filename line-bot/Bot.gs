@@ -357,7 +357,7 @@ function newCtx_() {
 // 4) เครื่องมือ (tool calling)
 // ============================================================
 var TOOLS = [
-  { name: "add_task", description: "เพิ่มงาน/สิ่งที่ต้องทำ",
+  { name: "add_task", description: "เพิ่มเตือนความจำ/สิ่งที่ต้องทำ (ไม่อยู่ใน Target/Project · ไม่นับแต้ม) เช่น \"เตือนต่อภาษีรถ 15 ต.ค.\" → dueDate = วันนั้น · Jack จะบอกในสรุป 07:00 ของวันนั้น",
     parameters: { type: "object", properties: {
       title: { type: "string" },
       dueDate: { type: "string", description: "YYYY-MM-DD ไม่ใส่ = วันนี้ (หลัง 18:00 = พรุ่งนี้)" },
@@ -471,7 +471,7 @@ function toolAddTask_(a, ctx) {
   var kind = a.kind === "want" || a.kind === "must" ? a.kind : null;            // ขั้นที่ 10: ต้องทำ/อยากทำ (ตอนวางแผนพรุ่งนี้)
   var note = clean_(a.note, 500);
   if (kind && !note) note = kind === "want" ? "อยากทำ" : "ต้องทำ";
-  var item = { id: id, projectId: null, title: title, note: note, status: "pending", dueDate: due, recurrence: rec, weight: 1, completions: {}, createdAt: ctx.today, via: "line" };
+  var item = { gen: TRACKER_GEN, id: id, projectId: null, title: title, note: note, status: "pending", dueDate: due, recurrence: rec, weight: 1, completions: {}, createdAt: ctx.today, via: "line" };
   if (kind) item.kind = kind;
   var plan = cacheGetJson_("plan");                                             // เพิ่มระหว่างโหมดวางแผนคืนนี้ + กำหนดพรุ่งนี้ → ให้สรุปเช้าโชว์เป็น "แผนเมื่อคืน"
   if (plan && rec === "none" && due === plan.target) item.plannedOn = plan.evening;
@@ -488,13 +488,13 @@ function toolListTasks_(a, ctx) {
   var G = readGroups_([{ id: "k.tasks", def: [] }, { id: "k.projects", def: null }]);
   var tasks = arrAll_(G["k.tasks"]);
   var projects = G["k.projects"].chunks[0].value || [];
-  var pname = {};
-  (Array.isArray(projects) ? projects : []).forEach(function (p) { if (p && p.id) pname[p.id] = p.title; });
+  var pname = {}, byId = {};
+  (Array.isArray(projects) ? projects : []).forEach(function (p) { if (p && p.id) { pname[p.id] = p.title; byId[p.id] = p; } });
   var today = ctx.today, week = addDays_(today, 7);
   var out = { overdue: [], today: [], recurringToday: [], upcoming7d: [], noDate: [] };
   tasks.forEach(function (t) {
     if (!t || !t.id) return;
-    var row = { ref: "k.tasks#" + t.id, title: t.title, dueDate: t.dueDate || null, project: pname[t.projectId] || null };
+    var row = { ref: "k.tasks#" + t.id, title: t.title, dueDate: t.dueDate || null, project: pname[t.projectId] || null, group: taskGroup_(t, byId) };   // group: target | project | reminder (ข้อ 71)
     if (isRecurring_(t)) { if (!taskDoneOn_(t, today)) out.recurringToday.push(Object.assign(row, { recurrence: t.recurrence })); return; }
     if (t.status === "done") return;
     if (!t.dueDate) out.noDate.push(row);
@@ -713,6 +713,11 @@ function taskRhythm_(t, today) {
   return { missed: missed, unit: unit, off: missed >= RHYTHM_MIN_MISSED[t.recurrence], score: missed * (t.recurrence === "daily" ? 1 : t.recurrence === "weekly" ? 7 : 30) };
 }
 function rhythmText_(r) { return r.missed >= RHYTHM_MAX ? "ไม่ได้ทำนานแล้ว" : "ไม่ได้ทำมา " + r.missed + " " + r.unit; }
+// ข้อ 71: แยก 3 ชั้น — Target (kind ≠ "work") ได้ XP/นับคะแนน · Project (kind "work") ไม่นับ · งานไม่มี projectId = เตือนความจำ
+// สูตรเดียวกับ isTarget ในแอป (preview-dashboard.html) — แก้ต้องแก้คู่กัน · งาน/โปรเจกต์ใหม่ต้องมี gen:2 ไม่งั้นแอปลบทิ้ง (trackerV2Reset)
+var TRACKER_GEN = 2;
+function isTarget_(p) { return !!p && p.kind !== "work"; }
+function taskGroup_(t, byId) { var p = t && t.projectId ? byId[t.projectId] : null; return !p ? "reminder" : isTarget_(p) ? "target" : "project"; }
 // target ที่หลุดจังหวะ เรียงจากหลุดนานสุด → [{target, routine, why, ref}] · งานประจำที่ไม่อยู่ในโปรเจกต์ = target ของตัวเอง · ข้าม archived/paused
 function offRhythm_(tasks, projects, today) {
   var byId = {}, groups = {}, keys = [];
@@ -722,8 +727,9 @@ function offRhythm_(tasks, projects, today) {
     var r = taskRhythm_(t, today);
     if (!r || !r.off) return;
     var p = t.projectId ? byId[t.projectId] : null;
-    if (p && (p.status === "archived" || p.status === "paused")) return;
-    var key = p ? p.id : "t:" + t.id;
+    if (!isTarget_(p)) return;                                  // ข้อ 71: จี้เฉพาะงานประจำใน Target (Project/เตือนความจำไม่จี้)
+    if (p.status === "archived" || p.status === "paused") return;
+    var key = p.id;
     var g = groups[key];
     if (!g) { g = groups[key] = { target: p ? p.title : t.title, hasProject: !!p, best: null, score: -1 }; keys.push(key); }
     if (r.score > g.score) { g.score = r.score; g.best = { t: t, r: r }; }
@@ -1051,7 +1057,7 @@ function targetsSummary_(G, today) {
     var since = last ? daysBetween_(last, today) : (p.startDate ? daysBetween_(p.startDate, today) : null);
     var nextMs = (p.milestones || []).map(function (m) { return m; }).filter(function (m) { return m && Number(m.pct) > prog; }).sort(function (a, b) { return Number(a.pct) - Number(b.pct); })[0];
     return {
-      title: p.title, category: CAT[p.category] || "อื่นๆ", progressPct: prog, expectedPct: exp, status: status,
+      title: p.title, type: isTarget_(p) ? "target" : "project", category: CAT[p.category] || "อื่นๆ", progressPct: prog, expectedPct: exp, status: status,
       targetDate: p.targetDate || null, daysLeft: daysLeft,
       value: p.measureType === "numeric" ? { current: cs.length ? nv_(cs[cs.length - 1].value) : nv_(p.baselineValue), target: nv_(p.targetValue), unit: p.unit || "" } : null,
       nextMilestone: nextMs ? (String(nextMs.label || "").trim() || nextMs.pct + "%") + " (" + nextMs.pct + "%)" : null,
@@ -1067,7 +1073,7 @@ function readTargets_(today) {
   return targetsSummary_(G, today);
 }
 function toolListTargets_(a, ctx) {
-  return { today: ctx.today, targets: readTargets_(ctx.today), note: "ตัวเลขระบบคำนวณแล้ว (สูตรเดียวกับแอป) — เล่าตามนี้ ห้ามคิดเอง · stalled = ไม่มีความเคลื่อนไหว ≥" + STALL_DAYS + " วัน" };
+  return { today: ctx.today, targets: readTargets_(ctx.today), note: "ตัวเลขระบบคำนวณแล้ว (สูตรเดียวกับแอป) — เล่าตามนี้ ห้ามคิดเอง · stalled = ไม่มีความเคลื่อนไหว ≥" + STALL_DAYS + " วัน · type target = เป้าหมายชีวิต (ได้ XP) · type project = งานที่ต้องทำให้จบ (ไม่นับแต้ม)" };
 }
 function targetsContextLines_(ctx) {
   var c = cacheGetJson_("tgt");
@@ -1076,7 +1082,7 @@ function targetsContextLines_(ctx) {
     catch (err) { noteError_(err); return []; }
   }
   return c.filter(function (t) { return t.status !== "สำเร็จแล้ว"; }).slice(0, 10).map(function (t) {
-    return "  • " + t.title + " (" + t.category + ") " + t.progressPct + "%" + (t.expectedPct != null ? " / ควรถึง " + t.expectedPct + "%" : "") + " · " + t.status +
+    return "  • " + (t.type === "project" ? "🧰 [Project] " : "🎯 [Target] ") + t.title + " (" + t.category + ") " + t.progressPct + "%" + (t.expectedPct != null ? " / ควรถึง " + t.expectedPct + "%" : "") + " · " + t.status +
       (t.daysLeft != null ? " · เหลือ " + t.daysLeft + " วัน" : "") + (t.stalled ? " · ไม่ขยับ " + t.daysSinceMove + " วัน" : "");
   });
 }
@@ -1825,9 +1831,17 @@ function morningFacts_(ctx) {
   return {
     date: ctx.today, weekday: "วัน" + TH_DAYS[ctx.weekday], dateThai: thDate_(ctx.today),
     plannedLastNight: { must: planned.must.slice(0, 8), want: planned.want.slice(0, 8) },
-    tasksOverdue: t.overdue.slice(0, 6).map(function (x) { return x.title + " (กำหนด " + thDate_(x.dueDate) + ")"; }),
-    tasksToday: t.today.filter(function (x) { return !plannedRefs[x.ref]; }).slice(0, 8).map(function (x) { return x.title + (x.project ? " · " + x.project : ""); }),
-    recurringToday: t.recurringToday.slice(0, 8).map(function (x) { return x.title; }),
+    // ข้อ 71: แยกเป็น 🎯 Target · 🧰 Project · 🔔 เตือนความจำ
+    groups: (function () {
+      var g = { target: [], project: [], reminder: [] };
+      t.overdue.forEach(function (x) { g[x.group || "reminder"].push("⚠️ เลยกำหนด: " + x.title + (x.project ? " · " + x.project : "") + " (กำหนด " + thDate_(x.dueDate) + ")"); });
+      t.today.filter(function (x) { return !plannedRefs[x.ref]; }).forEach(function (x) { g[x.group || "reminder"].push(x.title + (x.project ? " · " + x.project : "")); });
+      var rec = { target: [], project: [], reminder: [] };
+      t.recurringToday.forEach(function (x) { rec[x.group || "reminder"].push(x.title); });
+      ["target", "project", "reminder"].forEach(function (k) { g[k] = g[k].slice(0, 8); if (rec[k].length) g[k].push("🔁 งานประจำ: " + rec[k].slice(0, 8).join(", ")); });
+      return g;
+    })(),
+    remindersSoon: (t.upcoming7d || []).filter(function (x) { return x.group === "reminder" && x.dueDate <= addDays_(ctx.today, 3); }).slice(0, 5).map(function (x) { return x.title + " (" + thDate_(x.dueDate) + ")"; }),
     upcoming7dCount: t.upcoming7d.length,
     offRhythm: (t.offRhythm || []).slice(0, 2).map(function (x) { return x.target + (x.routine ? " · " + x.routine : "") + " — " + x.why; }),
     stalled: stalledForMorning_(ctx, t.offRhythm || []),
@@ -1853,7 +1867,7 @@ function stalledForMorning_(ctx, off) {
   var shown = {};
   off.slice(0, 2).forEach(function (x) { shown[x.target] = 1; });
   try {
-    return readTargets_(ctx.today).filter(function (t) { return t.stalled && !shown[t.title]; })
+    return readTargets_(ctx.today).filter(function (t) { return t.type === "target" && t.stalled && !shown[t.title]; })
       .sort(function (a, b) { return b.daysSinceMove - a.daysSinceMove; }).slice(0, 2)
       .map(function (t) { return t.title + " — ไม่ขยับ " + t.daysSinceMove + " วัน (" + t.progressPct + "%)"; });
   } catch (err) { noteError_(err); return []; }
@@ -1893,13 +1907,18 @@ function morningTemplate_(f) {
     pl.must.forEach(function (x) { L.push("• ต้องทำ: " + x); });
     pl.want.forEach(function (x) { L.push("• อยากทำ: " + x); });
   }
-  var nTask = f.tasksOverdue.length + f.tasksToday.length + f.recurringToday.length;
-  L.push("", "📋 งานวันนี้");
-  if (!nTask) L.push(pl.must.length || pl.want.length ? "• ไม่มีงานอื่นเพิ่ม" : "• ว่างครับ ไม่มีงานค้าง");
-  else {
-    f.tasksOverdue.forEach(function (x) { L.push("• ⚠️ เลยกำหนด: " + x); });
-    f.tasksToday.forEach(function (x) { L.push("• " + x); });
-    if (f.recurringToday.length) L.push("• 🔁 งานประจำ: " + f.recurringToday.join(", "));
+  var g = f.groups || { target: [], project: [], reminder: [] };
+  var soon = f.remindersSoon || [];
+  if (!g.target.length && !g.project.length && !g.reminder.length && !soon.length) {
+    L.push("", "📋 งานวันนี้", pl.must.length || pl.want.length ? "• ไม่มีงานอื่นเพิ่ม" : "• ว่างครับ ไม่มีงานค้าง");
+  } else {
+    if (g.target.length) { L.push("", "🎯 เป้าหมาย (Target)"); g.target.forEach(function (x) { L.push("• " + x); }); }
+    if (g.project.length) { L.push("", "🧰 Project"); g.project.forEach(function (x) { L.push("• " + x); }); }
+    if (g.reminder.length || soon.length) {
+      L.push("", "🔔 เตือนความจำ");
+      g.reminder.forEach(function (x) { L.push("• " + x); });
+      soon.forEach(function (x) { L.push("• เร็วๆ นี้: " + x); });
+    }
   }
   if (f.offRhythm && f.offRhythm.length) {
     L.push("", "⏸️ หลุดจังหวะ");
@@ -1911,7 +1930,7 @@ function morningTemplate_(f) {
     f.docsExpiring.forEach(function (x) { L.push("• " + x); });
   }
   if (f.stalled && f.stalled.length) {
-    L.push("", "💤 โปรเจกต์ไม่ขยับ");
+    L.push("", "💤 Target ไม่ขยับ");
     f.stalled.forEach(function (x) { L.push("• " + x); });
   }
   if (f.eventsToday.length || f.eventsTomorrow.length) {
