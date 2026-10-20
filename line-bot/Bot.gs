@@ -1039,6 +1039,7 @@ function targetsSummary_(G, today) {
       ts.forEach(function (t) { var w = nv_(t.weight) || 1; totW += w; doneW += isRecurring_(t) ? w * taskRate30_(t, today) / 100 : (t.status === "done" ? w : 0); });
       prog = totW ? Math.round(doneW / totW * 100) : 0;
     } else prog = Math.max(0, Math.min(100, Math.round(nv_(p.manualValue))));
+    if (p.measureType !== "numeric") (p.milestones || []).forEach(function (m) { if (m && m.done) prog = Math.max(prog, Math.min(100, Number(m.pct) || 0)); });   // ข้อ 72: หมุดที่ติ๊กเอง = ขั้นที่ผ่านแล้ว (สูตรเดียวกับ milestoneFloor ในแอป)
     var exp = null;
     if (p.startDate && p.targetDate) {
       var tot = daysBetween_(p.startDate, p.targetDate);

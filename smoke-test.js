@@ -1473,6 +1473,32 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const ovAfter=await p.evaluate(()=>{ const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1')); return [Math.round(overallProgressNow(d)),Math.round(overallProgressNow({...d,projects:d.projects.filter(x=>x.title!=='งานทดสอบข้อ71')}))]; });
   check('ข้อ 71: เพิ่ม Project (0%) ไม่ดึงความคืบหน้ารวมของ Target ลง',ovAfter[0]===ovAfter[1],JSON.stringify(ovAfter));
 
+  /* ───────── ข้อ 72: หมุดติ๊กเองได้ ───────── */
+  console.log('\n[ข้อ 72] หมุดติ๊กเอง');
+  const M=await p.evaluate(()=>{
+    const pj={id:"x",measureType:"tasks",milestones:[{id:"a",pct:20,done:true,reachedAt:"2026-10-01"},{id:"b",pct:60,reachedAt:null}]};
+    const num={...pj,measureType:"numeric",baselineValue:0,targetValue:100};
+    const D={projects:[pj],tasks:[],checkins:[]};
+    const s=syncMilestones(D);
+    return [projectProgress(pj,D),Math.round(projectProgressAt(pj,D,"2026-09-30")),Math.round(projectProgressAt(pj,D,"2026-10-02")),projectProgress(num,{tasks:[],checkins:[]}),s===null];
+  });
+  check('ข้อ 72: หมุดที่ติ๊กเอง = ความคืบหน้าขั้นต่ำ (ย้อนหลังนับตั้งแต่วันที่ติ๊ก) · แบบตัวเลขไม่ใช้ · sync ไม่ล้างหมุดที่ติ๊กเอง',JSON.stringify(M)==='[20,0,20,0,true]',JSON.stringify(M));
+  await p.locator('.trk-kind-tab').nth(0).click(); await p.waitForTimeout(500);
+  await p.locator('.fin-range-btn:has-text("ทั้งหมด")').first().click(); await p.waitForTimeout(500);
+  await p.locator('.prj-card:has-text("โปรเจกต์แบบงาน")').first().click(); await p.waitForTimeout(1000);
+  const hasMs=await p.locator('.ms-item').count();
+  if(!hasMs){
+    await p.locator('.trk-edit-btn').first().click(); await p.waitForTimeout(500);
+    await p.locator('.ms-edit-actions .text-btn').nth(1).click(); await p.waitForTimeout(300);
+    await p.locator('.goal-modal .modal-btn-save').click(); await p.waitForTimeout(900);
+  }
+  const before=await p.evaluate(()=>({n:document.querySelectorAll('.ms-item.tickable').length,ring:document.querySelector('.trk-ring-text').textContent}));
+  await p.locator('.ms-item.tickable').last().click(); await p.waitForTimeout(800);
+  const after=await p.evaluate(()=>({ring:document.querySelector('.trk-ring-text').textContent,hit:document.querySelectorAll('.ms-item.hit').length,st:JSON.parse(localStorage.getItem('secretary-dashboard-v1')).projects.find(x=>x.title==='โปรเจกต์แบบงาน').milestones.filter(m=>m.done).length}));
+  await p.locator('.ms-item.tickable.hit').last().click(); await p.waitForTimeout(800);
+  const undo=await p.evaluate(()=>({ring:document.querySelector('.trk-ring-text').textContent,st:JSON.parse(localStorage.getItem('secretary-dashboard-v1')).projects.find(x=>x.title==='โปรเจกต์แบบงาน').milestones.filter(m=>m.done).length}));
+  check('ข้อ 72: แตะหมุด → ติ๊ก (บันทึก done) วงความคืบหน้าขึ้นเป็น 100% · แตะอีกครั้ง → ยกเลิก กลับค่าเดิม',before.n>0&&after.ring==='100%'&&after.st===1&&undo.st===0&&undo.ring===before.ring,JSON.stringify([before,after,undo]));
+
   /* ───────── สรุป ───────── */
   const failed=results.filter(r=>!r.ok);
   console.log('\n════════ สรุป ════════');

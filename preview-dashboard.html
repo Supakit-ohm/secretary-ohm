@@ -1343,7 +1343,18 @@ function projectCurrentValue(p,data){
   const cs=projectCheckins(data,p.id);
   return cs.length?cs[cs.length-1].value:(p.baselineValue||0);
 }
+/* ข้อ 72: หมุดติ๊กเองได้ (ไม่ใช่โปรเจกต์แบบตัวเลข) — หมุดที่ติ๊ก done = ขั้นที่ผ่านแล้ว → ความคืบหน้าอย่างน้อยเท่า % ของหมุดนั้น
+   สูตรเดียวกับ msFloor_ ใน line-bot/Bot.gs — แก้ต้องแก้คู่กัน */
+function milestoneTickable(p){ return !!p&&p.measureType!=="numeric"; }
+function milestoneFloor(p,dateStr){
+  if(!milestoneTickable(p)) return 0;
+  return ((p&&p.milestones)||[]).reduce((mx,m)=>m&&m.done&&(!dateStr||!m.reachedAt||String(m.reachedAt).slice(0,10)<=dateStr)?Math.max(mx,Math.min(100,Number(m.pct)||0)):mx,0);
+}
 function projectProgress(p,data){
+  if(!p) return 0;
+  return Math.max(projectProgressRaw(p,data),milestoneFloor(p));
+}
+function projectProgressRaw(p,data){
   if(!p) return 0;
   if(p.measureType==="numeric"){
     const base=p.baselineValue||0, span=(p.targetValue||0)-base;
@@ -1437,7 +1448,7 @@ function syncMilestones(data){
         reached.push({id:uid(),projectId:p.id,title:p.title,color:p.color,label:milestoneLabel(m),pct:Number(m.pct),valueText:milestoneValueText(p,m.pct)});
         return {...m,reachedAt:t};
       }
-      if(!hit&&m.reachedAt){ touched=true; return {...m,reachedAt:null}; }
+      if(!hit&&m.reachedAt&&!m.done){ touched=true; return {...m,reachedAt:null}; }
       return m;
     });
     if(!touched) return p;
@@ -1467,6 +1478,10 @@ function taskCompletionRateAt(t,asOf,periods=30){
   return total?Math.round((done/total)*100):0;
 }
 function projectProgressAt(p,data,dateStr){
+  if(!p) return 0;
+  return Math.max(projectProgressAtRaw(p,data,dateStr),milestoneFloor(p,dateStr));
+}
+function projectProgressAtRaw(p,data,dateStr){
   if(!p) return 0;
   if(p.measureType==="numeric"){
     const base=p.baselineValue||0, span=(p.targetValue||0)-base;
@@ -6275,7 +6290,7 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
         )}
 
         {msList.length>0&&(
-          <DashCollapse title="หมุดความคืบหน้า" note={`ถึงแล้ว ${msDone} จาก ${msList.length} หมุด`} defaultOpen={true}>
+          <DashCollapse title="หมุดความคืบหน้า" note={`ถึงแล้ว ${msDone} จาก ${msList.length} หมุด${milestoneTickable(project)?" · แตะวงกลมเพื่อติ๊ก":""}`} defaultOpen={true}>
             <div className="prj-bar ms-track">
               <div className="prj-bar-fill" style={{width:`${prog}%`,background:project.color}}/>
               {msList.map(m=>(
@@ -6285,14 +6300,23 @@ function ProjectDetail({project,data,persist,onBack,onEdit}) {
             <div className="ms-list">
               {msList.map(m=>{
                 const hit=!!m.reachedAt; const vt=milestoneValueText(project,m.pct);
+                const tick=milestoneTickable(project);
+                /* ข้อ 72: แตะวงกลมเพื่อติ๊กหมุดเอง (ยกเลิกได้เฉพาะที่ติ๊กเอง — ที่ถึงเพราะความคืบหน้าจริงยกเลิกไม่ได้) */
+                const auto=hit&&!m.done;
+                const toggleMs=()=>{
+                  if(!tick||auto) return;
+                  const t=todayISO();
+                  persist({...data,projects:data.projects.map(p=>p.id!==project.id?p:{...p,...(p.measureType==="manual"&&!m.done?{manualValue:Math.max(Number(p.manualValue)||0,Number(m.pct)||0)}:{}),milestones:(p.milestones||[]).map(x=>x.id!==m.id?x:(x.done?{...x,done:false,reachedAt:null}:{...x,done:true,reachedAt:t}))}),
+                    activity:m.done?data.activity:logActivity(data,{source:"goal",text:`ผ่านหมุด ${milestoneLabel(m)} ของ "${project.title}"`,status:"completed"})});
+                };
                 return (
-                  <div key={m.id} className={`ms-item ${hit?"hit":""}`}>
+                  <div key={m.id} className={`ms-item ${hit?"hit":""}${tick&&!auto?" tickable":""}`} onClick={toggleMs} role={tick&&!auto?"button":undefined} aria-label={tick&&!auto?(m.done?"ยกเลิกติ๊กหมุด":"ติ๊กว่าผ่านหมุดนี้แล้ว"):undefined}>
                     <div className="ms-item-dot" style={hit?{background:project.color,borderColor:project.color,color:"var(--bg-1)"}:null}>{hit?<Check size={13}/>:null}</div>
                     <div className="ms-item-main">
                       <div className="ms-item-title">{milestoneLabel(m)}</div>
                       <div className="ms-item-sub">{m.pct}%{vt?` · ${vt}`:""}</div>
                     </div>
-                    <div className="ms-item-right" style={hit?{color:project.color}:null}>{hit?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:`อีก ${Math.max(0,Math.ceil(Number(m.pct)-prog))}%`}</div>
+                    <div className="ms-item-right" style={hit?{color:project.color}:null}>{hit?`ถึงแล้ว ${thaiDate(m.reachedAt)}`:tick?"แตะเพื่อติ๊ก":`อีก ${Math.max(0,Math.ceil(Number(m.pct)-prog))}%`}</div>
                   </div>
                 );
               })}

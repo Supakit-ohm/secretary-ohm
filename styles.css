@@ -1577,3 +1577,9 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .prj-kind-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:8px;background:var(--surface-sunken);color:var(--ink-4);border:1px solid var(--line);}
 .prj-kind-badge.t{color:var(--accent-soft);border-color:rgba(16,185,129,.35);background:rgba(16,185,129,.1);}
 .trk-rem-card .trk-task-row{margin-bottom:6px;}
+
+/* ข้อ 72: หมุดติ๊กเองได้ */
+.ms-item.tickable{cursor:pointer;transition:border-color .15s,background .15s;}
+.ms-item.tickable:hover{border-color:var(--line-hover);}
+.ms-item.tickable:active{transform:scale(.99);}
+.ms-item.tickable .ms-item-dot{border-color:var(--accent-soft);}
