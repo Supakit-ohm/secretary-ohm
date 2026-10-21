@@ -1759,3 +1759,10 @@ session นี้คุยอย่างเดียว ไม่ได้แ�
 - หมุดที่ถึงเพราะความคืบหน้าจริง (ไม่ได้ติ๊กเอง) แตะยกเลิกไม่ได้ · `syncMilestones` ไม่ล้าง `reachedAt` ของหมุดที่ติ๊กเอง · แบบ "กำหนด % เอง" ติ๊กแล้วดันแถบเลื่อน `manualValue` ขึ้นตาม
 - ได้ XP หมุด +50 ตามเดิม (ถ้าเป็น Target) · ติ๊กถึง 100% = ปิดโปรเจกต์ (+150 / ปิดจ๊อบ) · ยกเลิก = หักคืน · `sw.js` = v19 · CSS บล็อก "ข้อ 72" ท้าย styles.css
 - เทสต์: smoke บล็อก "[ข้อ 72]" 2 เช็ค
+
+## ข้อ 73 (2026-10-21) — Income/Expenses: ฟอร์มเพิ่มเป็น popup + by Source/Category ตามเดือน + ปุ่ม All time ✅ smoke 304/304 · รอโอม push
+- หน้า Income / Expenses: เอาการ์ด "Add Income / Add Expense" ออก → แถบ `.fin-toolbar` ด้านบน (เลือกเดือน ซ้าย · ปุ่ม Import Payslip / Import CSV + ปุ่ม **เพิ่มรายรับ / เพิ่มรายจ่าย** `.fin-add-btn` ขวา) กดแล้วเปิด popup `FinAddModal` (ใช้ state ฟอร์มเดิม `incDate/incAmount/...` `expDate/...` · ตรรกะ addIncome/addExpense เดิม แค่ปิด popup หลังบันทึก · ปุ่มบันทึก disabled ถ้ายังไม่ครบ · Enter = บันทึก · เปิดทุกครั้งตั้งวันที่เป็นวันนี้)
+- Import CSV (Expenses) → กดแล้วขึ้นกล่องอัปโหลดเป็นการ์ดใต้แถบเครื่องมือ (เดิมอยู่ในการ์ด Add Expense)
+- การ์ด "Income by Source" / "Expenses by Category" (เดิมชื่อ "(all time)") → มีปุ่มสลับ `FinScopeToggle` [เดือนที่เลือก | All time]: ค่าเริ่มต้น = ตามเดือนที่เลือกด้านบน · All time = ทุกเดือน + บรรทัด `FinScopeNote` "เก็บข้อมูลตั้งแต่ <เดือน ปี ค.ศ.> · N เดือน" (หาจากเดือนแรกสุดของรายการ — `finSinceInfo`) + ยอดรวมของช่วงที่แสดง
+- state `viewAll` แยกกันของแต่ละหน้า · โดนัทด้านบนยังตามเดือนที่เลือกอย่างเดียว (ไม่ผูกกับปุ่ม All time)
+- `sw.js` = v20 · CSS บล็อกท้าย styles.css (`.fin-toolbar` `.fin-scope-*`) · smoke: dbCards 4→3, ขั้นตอนกรอกฟอร์มเปลี่ยนเป็นผ่าน popup + เช็ค toggle/All time เพิ่ม

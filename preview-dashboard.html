@@ -2677,6 +2677,46 @@ function FinanceOverviewTab({finance,persist,setTab}) {
     </div>
   );
 }
+/* ปุ่มสลับ "เดือนที่เลือก / All time" ของการ์ด by Source / by Category + ข้อความบอกช่วงข้อมูล */
+function FinScopeToggle({all,setAll,monthLabel}) {
+  return (
+    <div className="type-tabs fin-scope-toggle">
+      <button className={`type-btn ${!all?"active":""}`} onClick={()=>setAll(false)}>{monthLabel}</button>
+      <button className={`type-btn ${all?"active":""}`} onClick={()=>setAll(true)}>All time</button>
+    </div>
+  );
+}
+function finSinceInfo(monthKeys) {
+  const ms=[...new Set((monthKeys||[]).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort();
+  if(!ms.length) return null;
+  const [y1,m1]=ms[0].split("-").map(Number), [y2,m2]=ms[ms.length-1].split("-").map(Number);
+  return {
+    label:new Date(`${ms[0]}-01`).toLocaleDateString("th-TH-u-ca-gregory",{month:"long",year:"numeric"}),
+    months:(y2-y1)*12+(m2-m1)+1,
+  };
+}
+function FinScopeNote({all,monthLabel,since,total,sign,color}) {
+  return (
+    <div className="fin-scope-note">
+      <span>{all?(since?`เก็บข้อมูลตั้งแต่ ${since.label} · ${since.months} เดือน`:"ยังไม่มีข้อมูล"):monthLabel}</span>
+      <span>รวม <b className="db-mono" style={{color}}>{sign}฿{Math.round(total).toLocaleString()}</b></span>
+    </div>
+  );
+}
+function FinAddModal({title,onClose,onSave,canSave,children}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>{title}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body" onKeyDown={e=>{if(e.key==="Enter"&&canSave) onSave();}}>{children}</div>
+        <div className="modal-foot">
+          <button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button>
+          <button className="modal-btn-save" onClick={onSave} disabled={!canSave}>บันทึก</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 function FinanceIncomeTab({finance,persist}) {
   const incomeByMonth={};
   (finance.finance.income||[]).forEach(inc=>{
@@ -2686,6 +2726,8 @@ function FinanceIncomeTab({finance,persist}) {
   const validMonths=Object.keys(incomeByMonth).filter(m=>/^\d{4}-\d{2}$/.test(m)).sort().reverse();
   const defaultMonth=validMonths.length>0?validMonths[0]:currentMonthKey();
   const [showSlip,setShowSlip]=useState(false);
+  const [showAddInc,setShowAddInc]=useState(false);
+  const [viewAll,setViewAll]=useState(false);
   const [incDate,setIncDate]=useState(todayISO());
   const [selectedMonth,setSelectedMonth]=useState(defaultMonth);
   const [incSource,setIncSource]=useState("เงินเดือน");
@@ -2703,7 +2745,9 @@ function FinanceIncomeTab({finance,persist}) {
       }
     });
     setIncAmount("");setIncNote("");setIncSource("เงินเดือน");
+    setShowAddInc(false);
   };
+  const openAddInc=()=>{ setIncDate(todayISO()); setShowAddInc(true); };
   const removeIncome=(id)=>{ persist({
     ...finance,
     finance:{...finance.finance,income:finance.finance.income.filter(i=>i.id!==id)}
@@ -2735,6 +2779,10 @@ function FinanceIncomeTab({finance,persist}) {
     incomeBySourceAll[inc.source]=(incomeBySourceAll[inc.source]||0)+inc.amount;
   });
   const sortedSourcesAll=Object.entries(incomeBySourceAll).sort((a,b)=>b[1]-a[1]);
+  const sortedSourcesMonth=sourceData.map(d=>[d.name,d.value]);
+  const sourceRows=viewAll?sortedSourcesAll:sortedSourcesMonth;
+  const sourceRowsTotal=sourceRows.reduce((a,x)=>a+x[1],0);
+  const incSince=finSinceInfo((finance.finance.income||[]).map(i=>i.month||monthYearKey(i.date)));
   const monthOptions = Object.keys(incomeByMonth).filter(m=>/^\d{4}-\d{2}$/.test(m)).sort().reverse();
   const monthLabel=monthOptions.includes(selectedMonth)?new Date(`${selectedMonth}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Select month";
   const allIncome=(finance.finance.income||[]).slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
@@ -2765,25 +2813,28 @@ function FinanceIncomeTab({finance,persist}) {
   };
   return (
     <div className="fin-section fin-page fin-list-page">
-      <div className="fin-month-picker">
-        <label className="field-label">Month</label>
-        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} className="fin-range-select">
-          {monthOptions.map(m=>(
-            <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
-          ))}
-        </select>
+      <div className="fin-toolbar">
+        <div className="fin-month-picker">
+          <label className="field-label">Month</label>
+          <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} className="fin-range-select">
+            {monthOptions.map(m=>(
+              <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
+            ))}
+          </select>
+        </div>
+        <div className="fin-toolbar-actions">
+          <button className="text-btn" onClick={()=>setShowSlip(true)}><Upload size={13}/> Import Payslip</button>
+          <button className="quick-capture-btn fin-add-btn" onClick={openAddInc}><Plus size={14}/> เพิ่มรายรับ</button>
+        </div>
       </div>
       <FinDonutCard
         title="Income by Source" note={monthLabel} data={sourceData} accent="var(--accent-soft)" sign="+"
         emptyText="No income recorded for this month"
         getItems={(name)=>(finance.finance.income||[]).filter(i=>i.source===name&&(i.month||monthYearKey(i.date))===selectedMonth).map(i=>({id:i.id,date:i.date,memo:i.note,amount:i.amount}))}/>
       {showSlip&&<SlipImportModal data={finance} persist={persist} onClose={()=>setShowSlip(false)}/>}
-      <div className="db-card">
-        <div className="db-head">
-          <div className="db-title">Add Income</div>
-          <button className="quick-capture-btn slip-btn" onClick={()=>setShowSlip(true)}><Upload size={12}/> Import Payslip</button>
-        </div>
-        <div className="fin-add-income">
+      {showAddInc&&(
+        <FinAddModal title="เพิ่มรายรับ" onClose={()=>setShowAddInc(false)} onSave={addIncome}
+          canSave={!!incSource.trim()&&Number(incAmount)>0&&!!incDate}>
           <div className="fin-row-2">
             <div>
               <label className="field-label">Date</label>
@@ -2791,7 +2842,7 @@ function FinanceIncomeTab({finance,persist}) {
             </div>
             <div>
               <label className="field-label">Amount</label>
-              <input type="number" placeholder="0" value={incAmount} onChange={e=>setIncAmount(e.target.value)} className="modal-input"/>
+              <input type="number" placeholder="0" value={incAmount} onChange={e=>setIncAmount(e.target.value)} className="modal-input" autoFocus/>
             </div>
           </div>
           <div>
@@ -2802,20 +2853,23 @@ function FinanceIncomeTab({finance,persist}) {
             <label className="field-label">Note</label>
             <input placeholder="เพิ่มเติม..." value={incNote} onChange={e=>setIncNote(e.target.value)} className="modal-input"/>
           </div>
-          <button className="icon-btn" onClick={addIncome} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
-        </div>
-      </div>
+        </FinAddModal>
+      )}
       <div className="db-card">
-        <div className="db-head"><div className="db-title">Income by Source (all time)</div></div>
-        {sortedSourcesAll.length===0&&<div className="db-empty">ยังไม่มีรายรับ</div>}
-        {sortedSourcesAll.map(([src,total],i)=>(
+        <div className="db-head">
+          <div className="db-title">Income by Source</div>
+          <FinScopeToggle all={viewAll} setAll={setViewAll} monthLabel={monthLabel}/>
+        </div>
+        <FinScopeNote all={viewAll} monthLabel={monthLabel} since={incSince} total={sourceRowsTotal} sign="+" color="var(--accent-soft)"/>
+        {sourceRows.length===0&&<div className="db-empty">{viewAll?"ยังไม่มีรายรับ":"ไม่มีรายรับในเดือนนี้"}</div>}
+        {sourceRows.map(([src,total],i)=>(
           <div key={src} className="fin-agg-row">
             <div className="fin-agg-row-top">
               <span className="fin-agg-name">{src}</span>
               <span className="fin-agg-amt db-mono" style={{color:"var(--accent-soft)"}}>+฿{total.toLocaleString()}</span>
             </div>
             <div className="fin-agg-bar">
-              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedSourcesAll.map(x=>x[1]))||1))*100}%`}}/>
+              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sourceRows.map(x=>x[1]))||1))*100}%`}}/>
             </div>
           </div>
         ))}
@@ -3201,6 +3255,8 @@ function FinanceExpensesTab({finance,persist}) {
   const validMonths=Object.keys(expensesMonths).filter(m=>/^\d{4}-\d{2}$/.test(m)).sort().reverse();
   const defaultMonth=validMonths.length>0?validMonths[0]:currentMonthKey();
   const [showCSVImport,setShowCSVImport]=useState(false);
+  const [showAddExp,setShowAddExp]=useState(false);
+  const [viewAll,setViewAll]=useState(false);
   const [depositRows,setDepositRows]=useState(null);
   const [investRows,setInvestRows]=useState(null);
   const [expAmount,setExpAmount]=useState("");
@@ -3220,7 +3276,9 @@ function FinanceExpensesTab({finance,persist}) {
       }
     });
     setExpAmount("");setExpMemo("");
+    setShowAddExp(false);
   };
+  const openAddExp=()=>{ setExpDate(todayISO()); setShowAddExp(true); };
   const removeExpense=(id)=>{ persist({
     ...finance,
     finance:{...finance.finance,expenses:finance.finance.expenses.filter(e=>e.id!==id)}
@@ -3342,6 +3400,7 @@ function FinanceExpensesTab({finance,persist}) {
     expensesByCategory[exp.category]=(expensesByCategory[exp.category]||0)+expOut(exp);
   });
   const sortedCategories=Object.entries(expensesByCategory).sort((a,b)=>b[1]-a[1]);
+  const expSince=finSinceInfo((finance.finance.expenses||[]).map(e=>monthYearKey(e.date)));
   const expensesThisMonth={};
   (finance.finance.expenses||[]).forEach(exp=>{
     const m=monthYearKey(exp.date);
@@ -3352,6 +3411,8 @@ function FinanceExpensesTab({finance,persist}) {
   const categoryData=Object.entries(expensesThisMonth).map(([cat,amt])=>({name:cat,value:amt})).sort((a,b)=>b.value-a.value);
   const monthOptions=validMonths;
   const monthLabel=monthOptions.includes(selectedMonth)?new Date(`${selectedMonth}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Select month";
+  const catRows=viewAll?sortedCategories:categoryData.map(d=>[d.name,d.value]);
+  const catRowsTotal=catRows.reduce((a,x)=>a+x[1],0);
   const allExpenses=(finance.finance.expenses||[]).slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const [fMonth,setFMonth]=useState("all");
   const [fCat,setFCat]=useState("all");
@@ -3416,60 +3477,70 @@ function FinanceExpensesTab({finance,persist}) {
           <button className="text-btn" onClick={fixStrayInvestments}>ย้ายไปเป็นเงินลงทุน</button>
         </div>
       )}
-      <div className="fin-month-picker">
-        <label className="field-label">Month</label>
-        <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} className="fin-range-select">
-          {monthOptions.map(m=>(
-            <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
-          ))}
-        </select>
+      <div className="fin-toolbar">
+        <div className="fin-month-picker">
+          <label className="field-label">Month</label>
+          <select value={selectedMonth} onChange={(e)=>setSelectedMonth(e.target.value)} className="fin-range-select">
+            {monthOptions.map(m=>(
+              <option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>
+            ))}
+          </select>
+        </div>
+        <div className="fin-toolbar-actions">
+          <button className="text-btn" onClick={()=>setShowCSVImport(!showCSVImport)}><Upload size={13}/> Import CSV</button>
+          <button className="quick-capture-btn fin-add-btn" onClick={openAddExp}><Plus size={14}/> เพิ่มรายจ่าย</button>
+        </div>
       </div>
+      {showCSVImport&&(
+        <div className="db-card">
+          <div className="fin-csv-box" style={{marginBottom:0}}>
+            <label className="field-label">Upload CSV exported from your banking app</label>
+            <input type="file" accept=".csv,.xlsx" onChange={handleCSVUpload}/>
+          </div>
+        </div>
+      )}
       <FinDonutCard
         title="Expenses by Category" note={monthLabel} data={categoryData} accent="var(--orange-soft)" sign="-"
         emptyText="No expenses recorded for this month"
         getItems={(name)=>(finance.finance.expenses||[]).filter(e=>e.category===name&&monthYearKey(e.date)===selectedMonth).map(e=>({id:e.id,date:e.date,memo:e.memo,amount:e.amount}))}/>
+      {showAddExp&&(
+        <FinAddModal title="เพิ่มรายจ่าย" onClose={()=>setShowAddExp(false)} onSave={addExpense}
+          canSave={!!expCategory.trim()&&Number(expAmount)>0&&!!expDate}>
+          <div className="fin-row-2">
+            <div>
+              <label className="field-label">Date</label>
+              <input type="date" value={expDate} onChange={e=>setExpDate(e.target.value)} className="modal-input"/>
+            </div>
+            <div>
+              <label className="field-label">Amount</label>
+              <input type="number" placeholder="0" value={expAmount} onChange={e=>setExpAmount(e.target.value)} className="modal-input" autoFocus/>
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Category</label>
+            <input placeholder="เช่น อาหาร, ค่าน้ำมัน..." value={expCategory} onChange={e=>setExpCategory(e.target.value)} className="modal-input"/>
+          </div>
+          <div>
+            <label className="field-label">Note</label>
+            <input placeholder="เพิ่มเติม..." value={expMemo} onChange={e=>setExpMemo(e.target.value)} className="modal-input"/>
+          </div>
+        </FinAddModal>
+      )}
       <div className="db-card">
         <div className="db-head">
-          <div className="db-title">Add Expense</div>
-          <button className="text-btn" onClick={()=>setShowCSVImport(!showCSVImport)}><Upload size={13}/> Import CSV</button>
+          <div className="db-title">Expenses by Category</div>
+          <FinScopeToggle all={viewAll} setAll={setViewAll} monthLabel={monthLabel}/>
         </div>
-        {showCSVImport&&(
-          <div className="fin-csv-box">
-            <label className="field-label">Upload CSV exported from your banking app</label>
-            <input type="file" accept=".csv,.xlsx" onChange={handleCSVUpload}/>
-          </div>
-        )}
-        <div className="fin-row-2">
-          <div>
-            <label className="field-label">Date</label>
-            <input type="date" value={expDate} onChange={e=>setExpDate(e.target.value)} className="modal-input"/>
-          </div>
-          <div>
-            <label className="field-label">Amount</label>
-            <input type="number" placeholder="0" value={expAmount} onChange={e=>setExpAmount(e.target.value)} className="modal-input"/>
-          </div>
-        </div>
-        <div>
-          <label className="field-label">Category</label>
-          <input placeholder="เช่น อาหาร, ค่าน้ำมัน..." value={expCategory} onChange={e=>setExpCategory(e.target.value)} className="modal-input"/>
-        </div>
-        <div>
-          <label className="field-label">Note</label>
-          <input placeholder="เพิ่มเติม..." value={expMemo} onChange={e=>setExpMemo(e.target.value)} className="modal-input"/>
-        </div>
-        <button className="icon-btn" onClick={addExpense} style={{alignSelf:"flex-end",marginTop:8}}><Plus size={14}/></button>
-      </div>
-      <div className="db-card">
-        <div className="db-head"><div className="db-title">Expenses by Category (all time)</div></div>
-        {sortedCategories.length===0&&<div className="db-empty">ยังไม่มีรายจ่าย</div>}
-        {sortedCategories.map(([cat,total],i)=>(
+        <FinScopeNote all={viewAll} monthLabel={monthLabel} since={expSince} total={catRowsTotal} sign="-" color="var(--orange-soft)"/>
+        {catRows.length===0&&<div className="db-empty">{viewAll?"ยังไม่มีรายจ่าย":"ไม่มีรายจ่ายในเดือนนี้"}</div>}
+        {catRows.map(([cat,total],i)=>(
           <div key={cat} className="fin-agg-row">
             <div className="fin-agg-row-top">
               <span className="fin-agg-name">{cat}</span>
               <span className="fin-agg-amt db-mono" style={{color:"var(--orange-soft)"}}>-฿{total.toLocaleString()}</span>
             </div>
             <div className="fin-agg-bar">
-              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sortedCategories.map(x=>x[1]))||1))*100}%`}}/>
+              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...catRows.map(x=>x[1]))||1))*100}%`}}/>
             </div>
           </div>
         ))}
