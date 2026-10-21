@@ -202,7 +202,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     await lg.click(); await p.waitForTimeout(400);
   } else check('กดหมวดใน legend แล้วกางรายการ',false,'ไม่เจอ legend');
   // ปุ่มเดียว → โมดัลเพิ่มบัญชีเงินสด
-  const ovAdd=p.locator('.fin-page .inv-add-btn').first();
+  const ovAdd=p.locator('.fin-page .fin-card-add').first();
   if(await ovAdd.count()){
     await ovAdd.click(); await p.waitForTimeout(800);
     const m=await p.evaluate(()=>{const x=document.querySelector('.modal-backdrop .modal');return x?{head:x.querySelector('.modal-head')?.innerText.trim(),inputs:x.querySelectorAll('input').length}:null;});

@@ -1632,3 +1632,19 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .exp-col-date{font-size:11px;}
   .exp-csv-badge{font-size:10px;padding:0 4px;margin-left:4px;}
 }
+/* ข้อ 73 (ต่อ 2): ปุ่มเพิ่มข้อมูลในการ์ดบัญชี · ปุ่มสลับเดือน/All time เล็กลงอยู่แถวหัวข้อ · ปุ่ม Filter */
+.fin-card-add{flex:none;width:auto;display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 12px;font-size:12px;}
+.db-head-actions{align-items:center;}
+.fin-scope-card .db-head{flex-wrap:nowrap;align-items:center;}
+.fin-scope-card .db-title{min-width:0;}
+.fin-scope-card .fin-scope-toggle .type-btn{height:26px;padding:0 10px;font-size:11px;border-radius:8px;}
+.txn-filter-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--line-hover);border-radius:10px;background:none;color:var(--ink-3);font-size:12px;cursor:pointer;font-family:'Noto Sans Thai',sans-serif;flex:none;}
+.txn-filter-btn:hover{border-color:var(--accent);color:var(--ink);}
+.txn-filter-btn.active{border-color:var(--accent);color:var(--accent-soft);}
+.txn-filter-n{min-width:16px;height:16px;border-radius:8px;background:var(--accent);color:var(--bg-nav);font-size:10px;font-weight:700;display:grid;place-items:center;padding:0 4px;}
+.txn-head{justify-content:space-between;}
+.modal-btn-cancel:disabled{opacity:.4;cursor:default;}
+@media(max-width:600px){
+  .fin-scope-card .db-title{font-size:14px;}
+  .fin-scope-card .fin-scope-toggle .type-btn{padding:0 8px;font-size:10.5px;}
+}

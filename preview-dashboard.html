@@ -1028,6 +1028,7 @@ const ArrowLeft = makeIcon("fa-arrow-left");
 const Edit3 = makeIcon("fa-pen");
 const BarChart3 = makeIcon("fa-chart-column");
 const Upload = makeIcon("fa-upload");
+const FilterIcon = makeIcon("fa-filter");
 const TrendingUp = makeIcon("fa-arrow-trend-up");
 const AlertCircle = makeIcon("fa-circle-exclamation");
 const Zap = makeIcon("fa-bolt");
@@ -2430,7 +2431,7 @@ function TxnEditModal({kind,initial,onClose,onSave,options,onDelete,onSplit}) {
     onSave(out);
   };
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <BodyPortal><div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
         <div className="modal-head"><span>{isIncome?"แก้ไขรายรับ":"แก้ไขรายจ่าย"}</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
         <div className="modal-body">
@@ -2482,7 +2483,7 @@ function TxnEditModal({kind,initial,onClose,onSave,options,onDelete,onSplit}) {
           <button className="modal-btn-save" onClick={save} disabled={!canSave}>บันทึก</button>
         </div>
       </div>
-    </div>
+    </div></BodyPortal>
   );
 }
 /* ── ที่มาของรายการ (ใช้กรอง "การนำเข้าข้อมูล") ──
@@ -2493,28 +2494,54 @@ function originOf(r){
   if(r&&(r.source==="kbank-csv"||r.source==="payslip"||r.source==="csv-refund")) return r.source;
   return "manual";
 }
+/* .db-card มี backdrop-filter → ทำให้ position:fixed ของโมดัลที่อยู่ในการ์ดอ้างอิงขอบการ์ดแทนหน้าจอ → ย้ายโมดัลออกไปไว้ที่ body */
+function BodyPortal({children}){ return ReactDOM.createPortal(children,document.body); }
 function fmtDMY(iso){ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(iso||""); return m?`${m[3]}/${m[2]}/${m[1].slice(2)}`:(iso||""); }
-function TxnFilterBar({months,cats,catLabel,fMonth,setFMonth,fCat,setFCat,origins,fSrc,setFSrc,shown,total,onReset}) {
-  const active=fMonth!=="all"||fCat!=="all"||(setFSrc&&fSrc!=="all");
-  const narrow=typeof window!=="undefined"&&!!window.matchMedia&&window.matchMedia("(max-width:600px)").matches;   // มือถือ: ใช้ข้อความสั้น ไม่ให้ถูกตัดเป็น "All …"
+function TxnFilterBar({months,cats,catLabel,fMonth,setFMonth,fCat,setFCat,origins,fSrc,setFSrc,onReset}) {
+  const [open,setOpen]=useState(false);
+  const n=(fMonth!=="all"?1:0)+(fCat!=="all"?1:0)+(setFSrc&&fSrc!=="all"?1:0);
   return (
-    <div className="txn-filter-bar">
-      <select className="txn-filter-select" value={fMonth} onChange={e=>setFMonth(e.target.value)}>
-        <option value="all">{narrow?"ทุกเดือน":"All months"}</option>
-        {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
-      </select>
-      <select className="txn-filter-select" value={fCat} onChange={e=>setFCat(e.target.value)}>
-        <option value="all">{narrow?(catLabel==="sources"?"ทุกแหล่ง":"ทุกหมวด"):`All ${catLabel}`}</option>
-        {cats.map(c=><option key={c} value={c}>{c}</option>)}
-      </select>
-      {setFSrc&&(
-        <select className="txn-filter-select" value={fSrc} onChange={e=>setFSrc(e.target.value)}>
-          <option value="all">ทุกที่มา</option>
-          {(origins||[]).map(o=><option key={o} value={o}>{ORIGIN_LABELS[o]||o}</option>)}
-        </select>
+    <>
+      <button className={`txn-filter-btn ${n>0?"active":""}`} onClick={()=>setOpen(true)}>
+        <FilterIcon size={12}/> Filter{n>0&&<span className="txn-filter-n">{n}</span>}
+      </button>
+      {open&&(
+        <BodyPortal><div className="modal-backdrop" onClick={()=>setOpen(false)}>
+          <div className="modal" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-head"><span>Filter</span><button className="modal-close" onClick={()=>setOpen(false)}><X size={15}/></button></div>
+            <div className="modal-body">
+              <div>
+                <label className="field-label">Month</label>
+                <select className="modal-input" value={fMonth} onChange={e=>setFMonth(e.target.value)}>
+                  <option value="all">All months</option>
+                  {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label">{catLabel==="sources"?"Source":"Category"}</label>
+                <select className="modal-input" value={fCat} onChange={e=>setFCat(e.target.value)}>
+                  <option value="all">All {catLabel}</option>
+                  {cats.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              {setFSrc&&(
+                <div>
+                  <label className="field-label">ที่มา</label>
+                  <select className="modal-input" value={fSrc} onChange={e=>setFSrc(e.target.value)}>
+                    <option value="all">ทุกที่มา</option>
+                    {(origins||[]).map(o=><option key={o} value={o}>{ORIGIN_LABELS[o]||o}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button className="modal-btn-cancel" style={{marginRight:"auto"}} onClick={onReset} disabled={n===0}>Clear</button>
+              <button className="modal-btn-save" onClick={()=>setOpen(false)}>เสร็จ</button>
+            </div>
+          </div>
+        </div></BodyPortal>
       )}
-      {active&&<button className="txn-filter-reset" onClick={onReset} title="Clear"><X size={12}/><span className="hide-m"> Clear</span></button>}
-    </div>
+    </>
   );
 }
 /* ═══ ข้อ 24/4: การ์ดโดนัทหมวดหมู่แบบ bento (ใช้ในหน้า Finance Overview)
@@ -2638,8 +2665,7 @@ function FinanceOverviewTab({finance,persist,setTab}) {
         <div>
           <h1 className="db-hero-title">Overview <span>· ภาพรวมการเงิน</span></h1>
           <div className="db-hero-line">
-            {rangeLabel} · รับ {incomeInRange.length} รายการ · จ่าย {expensesInRange.length} รายการ
-            {savingRate!=null&&<> · เก็บได้ {savingRate.toFixed(0)}% ของรายรับ</>}
+            {savingRate!=null?<>ออมได้ {savingRate.toFixed(0)}% ของรายรับ</>:rangeLabel}
           </div>
           {/* ตัวกรองช่วงเวลา — แคปซูลสเกลเดียวกับแถบเมนู */}
           <div className="fin-range">
@@ -2653,8 +2679,6 @@ function FinanceOverviewTab({finance,persist,setTab}) {
                   {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
                 </select>}
           </div>
-          {/* ข้อ 32/2: ปุ่มเพิ่มข้อมูลของทั้งหน้าเหลือปุ่มนี้ปุ่มเดียว */}
-          <button className="db-btn primary inv-add-btn" onClick={()=>setShowAddAcc(true)}><Plus size={14}/> เพิ่มข้อมูล</button>
         </div>
         <div className="db-bignums">
           <div className="db-bignum">
@@ -2673,7 +2697,7 @@ function FinanceOverviewTab({finance,persist,setTab}) {
       </div>
       <div className="db-bento">
         <NetWorthCard finance={finance} setTab={setTab}/>
-        <CashAccountsCard finance={finance} persist={persist}/>
+        <CashAccountsCard finance={finance} persist={persist} onAdd={()=>setShowAddAcc(true)}/>
         <FinDonutCard
           title="รายรับตามแหล่งที่มา" note={rangeLabel} data={incomePie} accent="var(--accent-soft)" sign="+"
           emptyText="ยังไม่มีรายรับในช่วงนี้"
@@ -2867,7 +2891,7 @@ function FinanceIncomeTab({finance,persist}) {
           </div>
         </FinAddModal>
       )}
-      <div className="db-card">
+      <div className="db-card fin-scope-card">
         <div className="db-head">
           <div className="db-title">Income by Source</div>
           <FinScopeToggle all={viewAll} setAll={setViewAll} monthLabel={monthLabel}/>
@@ -3543,7 +3567,7 @@ function FinanceExpensesTab({finance,persist}) {
           </div>
         </FinAddModal>
       )}
-      <div className="db-card">
+      <div className="db-card fin-scope-card">
         <div className="db-head">
           <div className="db-title">Expenses by Category</div>
           <FinScopeToggle all={viewAll} setAll={setViewAll} monthLabel={monthLabel}/>
@@ -4629,7 +4653,7 @@ function NetWorthCard({finance,setTab}) {
   );
 }
 /* บัญชีเงินสด/เงินฝาก — แก้ไข/ลบในการ์ด, เพิ่มใหม่ผ่านปุ่มเดียวของหน้า (ข้อ 32/2) */
-function CashAccountsCard({finance,persist}) {
+function CashAccountsCard({finance,persist,onAdd}) {
   const accounts=finance.finance.cashAccounts||[];
   const setAccounts=(next)=>persist({...finance,finance:{...finance.finance,cashAccounts:next}});
   const editAccount=(id,field,v)=>setAccounts(accounts.map(a=>a.id===id?{...a,[field]:v,updatedAt:todayISO()}:a));
@@ -4638,11 +4662,12 @@ function CashAccountsCard({finance,persist}) {
     <DashCollapse
       title="บัญชีเงินสด / เงินฝาก"
       note={accounts.length?`${accounts.length} บัญชี · รวม ฿${dbNum(totalCash(finance))}`:"ยังไม่มีบัญชี"}
-      defaultOpen={accounts.length>0&&accounts.length<=4}>
+      defaultOpen={accounts.length>0&&accounts.length<=4}
+      actions={onAdd&&<button className="db-btn primary fin-card-add" onClick={onAdd}><Plus size={12}/> เพิ่มข้อมูล</button>}>
       <div className="db-note" style={{marginTop:0,marginBottom:10}}>
         กรอกยอดคงเหลือเองเป็นระยะ — ไม่ได้คำนวณจากรายรับ-รายจ่ายอัตโนมัติ เพราะข้อมูลไม่ครอบคลุมทุกบัญชี
       </div>
-      {accounts.length===0&&<div className="db-empty">ยังไม่มีบัญชี — กด “เพิ่มข้อมูล” ด้านบนแล้วเลือก “บัญชีเงินสด”</div>}
+      {accounts.length===0&&<div className="db-empty">ยังไม่มีบัญชี — กด “เพิ่มข้อมูล” ที่มุมการ์ดนี้</div>}
       {accounts.map(a=>(
         <div key={a.id} className="db-row fin-acc-row">
           <span className="lab">
