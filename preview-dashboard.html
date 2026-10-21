@@ -2404,8 +2404,9 @@ function FileInbox({data,persist}){
     </div>
   );
 }
-function TxnEditModal({kind,initial,onClose,onSave,options}) {
+function TxnEditModal({kind,initial,onClose,onSave,options,onDelete,onSplit}) {
   const isIncome=kind==="income";
+  const [confirmDel,setConfirmDel]=useState(false);
   const [form,setForm]=useState(()=>({
     ...initial,
     amount:String(Math.abs(initial.amount)),
@@ -2469,6 +2470,14 @@ function TxnEditModal({kind,initial,onClose,onSave,options}) {
           </div>
         </div>
         <div className="modal-foot">
+          {(onDelete||onSplit)&&(
+            <div className="txn-edit-left">
+              {onSplit&&<button className="modal-btn-cancel" onClick={onSplit}>แยกหมวด</button>}
+              {onDelete&&(confirmDel
+                ?<button className="modal-btn-danger" onClick={onDelete}>ยืนยันลบ</button>
+                :<button className="modal-btn-cancel" onClick={()=>setConfirmDel(true)}><Trash2 size={13}/> ลบ</button>)}
+            </div>
+          )}
           <button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button>
           <button className="modal-btn-save" onClick={save} disabled={!canSave}>บันทึก</button>
         </div>
@@ -2484,16 +2493,18 @@ function originOf(r){
   if(r&&(r.source==="kbank-csv"||r.source==="payslip"||r.source==="csv-refund")) return r.source;
   return "manual";
 }
+function fmtDMY(iso){ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(iso||""); return m?`${m[3]}/${m[2]}/${m[1].slice(2)}`:(iso||""); }
 function TxnFilterBar({months,cats,catLabel,fMonth,setFMonth,fCat,setFCat,origins,fSrc,setFSrc,shown,total,onReset}) {
   const active=fMonth!=="all"||fCat!=="all"||(setFSrc&&fSrc!=="all");
+  const narrow=typeof window!=="undefined"&&!!window.matchMedia&&window.matchMedia("(max-width:600px)").matches;   // มือถือ: ใช้ข้อความสั้น ไม่ให้ถูกตัดเป็น "All …"
   return (
     <div className="txn-filter-bar">
       <select className="txn-filter-select" value={fMonth} onChange={e=>setFMonth(e.target.value)}>
-        <option value="all">All months</option>
+        <option value="all">{narrow?"ทุกเดือน":"All months"}</option>
         {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
       </select>
       <select className="txn-filter-select" value={fCat} onChange={e=>setFCat(e.target.value)}>
-        <option value="all">All {catLabel}</option>
+        <option value="all">{narrow?(catLabel==="sources"?"ทุกแหล่ง":"ทุกหมวด"):`All ${catLabel}`}</option>
         {cats.map(c=><option key={c} value={c}>{c}</option>)}
       </select>
       {setFSrc&&(
@@ -2502,8 +2513,7 @@ function TxnFilterBar({months,cats,catLabel,fMonth,setFMonth,fCat,setFCat,origin
           {(origins||[]).map(o=><option key={o} value={o}>{ORIGIN_LABELS[o]||o}</option>)}
         </select>
       )}
-      {active&&<button className="txn-filter-reset" onClick={onReset}><X size={12}/> Clear</button>}
-      <span className="txn-filter-count">{shown} / {total}</span>
+      {active&&<button className="txn-filter-reset" onClick={onReset} title="Clear"><X size={12}/><span className="hide-m"> Clear</span></button>}
     </div>
   );
 }
@@ -2790,6 +2800,8 @@ function FinanceIncomeTab({finance,persist}) {
   const [fCat,setFCat]=useState("all");
   const [fSrc,setFSrc]=useState("all");
   const [editRow,setEditRow]=useState(null);
+  const [selectMode,setSelectMode]=useState(false);
+  const toggleSelectMode=()=>{ setSelectMode(m=>!m); setSelectedIds(new Set()); };
   const attCounts=useAttachCounts("income");
   const listMonths=[...new Set(allIncome.map(i=>i.month||monthYearKey(i.date)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
   const listCats=[...new Set(allIncome.map(i=>i.source).filter(Boolean))].sort();
@@ -2875,44 +2887,46 @@ function FinanceIncomeTab({finance,persist}) {
         ))}
       </div>
       <div className="db-card">
-        <div className="db-head">
+        <div className="db-head txn-head">
           <div className="db-title">All Income</div>
-          {selectedIds.size>0&&(
-            <button className="del-selected-btn" onClick={removeSelectedIncome}>
-              <Trash2 size={13}/> ลบที่เลือก ({selectedIds.size})
-            </button>
-          )}
-        </div>
-        <TxnFilterBar months={listMonths} cats={listCats} catLabel="sources" fMonth={fMonth} setFMonth={setFMonth} fCat={fCat} setFCat={setFCat}
+          <TxnFilterBar months={listMonths} cats={listCats} catLabel="sources" fMonth={fMonth} setFMonth={setFMonth} fCat={fCat} setFCat={setFCat}
           origins={listOrigins} fSrc={fSrc} setFSrc={setFSrc}
           shown={sortedIncome.length} total={allIncome.length} onReset={()=>{setFMonth("all");setFCat("all");setFSrc("all");}}/>
+        </div>
         {allIncome.length===0&&<div className="db-empty">ยังไม่มีรายการ</div>}
         {allIncome.length>0&&sortedIncome.length===0&&<div className="db-empty">ไม่พบรายการตามตัวกรองนี้</div>}
         {sortedIncome.length>0&&(
           <>
-          <div className="txn-filter-total">รวม <b style={{color:"var(--accent-soft)"}}>+฿{sortedIncome.reduce((a,i)=>a+i.amount,0).toLocaleString()}</b></div>
+          <div className="txn-subbar">
+            <div className="txn-filter-total">รวม <b style={{color:"var(--accent-soft)"}}>+฿{sortedIncome.reduce((a,i)=>a+i.amount,0).toLocaleString()}</b></div>
+            <div className="txn-subbar-right">
+              <span className="txn-filter-count">{sortedIncome.length} / {allIncome.length}</span>
+              {selectMode&&selectedIds.size>0&&<button className="del-selected-btn" onClick={removeSelectedIncome}><Trash2 size={13}/> ลบ ({selectedIds.size})</button>}
+              <button className="txn-select-btn" onClick={toggleSelectMode}>{selectMode?"เสร็จ":"เลือก"}</button>
+            </div>
+          </div>
           <div className="exp-table-wrap">
             <table className="exp-table">
               <thead>
                 <tr>
-                  <th className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={allSelected} ref={el=>{if(el) el.indeterminate=someSelected;}} onChange={toggleSelectAll}/></th>
+                  {selectMode&&<th className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={allSelected} ref={el=>{if(el) el.indeterminate=someSelected;}} onChange={toggleSelectAll}/></th>}
                   <th>Date</th>
                   <th>Source</th>
                   <th className="exp-col-amount">Amount</th>
-                  <th>Note</th>
+                  <th className="exp-col-memo">Note</th>
                   <th className="exp-col-actions"></th>
                 </tr>
               </thead>
               <tbody>
                 {visibleIncome.map(inc=>(
-                  <tr key={inc.id} className={selectedIds.has(inc.id)?"row-selected":""}>
-                    <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(inc.id)} onChange={()=>toggleSelectId(inc.id)}/></td>
-                    <td className="exp-col-date">{inc.date}</td>
-                    <td>{inc.source}</td>
+                  <tr key={inc.id} className={`txn-row-click ${selectedIds.has(inc.id)?"row-selected":""}`} onClick={()=>selectMode?toggleSelectId(inc.id):setEditRow(inc)}>
+                    {selectMode&&<td className="exp-col-check" onClick={e=>e.stopPropagation()}><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(inc.id)} onChange={()=>toggleSelectId(inc.id)}/></td>}
+                    <td className="exp-col-date"><span className="d-full">{inc.date}</span><span className="d-short">{fmtDMY(inc.date)}</span></td>
+                    <td className="txn-cat-td"><div className="txn-cat-cell"><span className="txn-cat-name">{inc.source}</span></div></td>
                     <td className="exp-col-amount exp-amount-value" style={{color:"var(--accent-soft)"}}>+฿{inc.amount.toLocaleString()}</td>
                     <td className="exp-col-memo">{inc.note||"—"}{attCounts[inc.id]>0&&<button className="att-badge" title="ไฟล์แนบ" onClick={()=>setEditRow(inc)}><Paperclip size={10}/> {attCounts[inc.id]}</button>}</td>
                     <td className="exp-col-actions">
-                      <div className="txn-row-actions">
+                      <div className="txn-row-actions" onClick={e=>e.stopPropagation()}>
                         <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(inc)}><Edit3 size={13}/></button>
                         <button className="del-btn" title="ลบ" onClick={()=>removeIncome(inc.id)}><Trash2 size={13}/></button>
                       </div>
@@ -2925,7 +2939,8 @@ function FinanceIncomeTab({finance,persist}) {
           <ShowMoreRow rl={rl} total={sortedIncome.length}/>
           </>
         )}
-        {editRow&&<TxnEditModal kind="income" initial={editRow} options={listCats} onClose={()=>setEditRow(null)} onSave={saveEdit}/>}
+        {editRow&&<TxnEditModal kind="income" initial={editRow} options={listCats} onClose={()=>setEditRow(null)} onSave={saveEdit}
+          onDelete={()=>{removeIncome(editRow.id);setEditRow(null);}}/>}
       </div>
     </div>
   );
@@ -3418,6 +3433,8 @@ function FinanceExpensesTab({finance,persist}) {
   const [fCat,setFCat]=useState("all");
   const [fSrc,setFSrc]=useState("all");
   const [editRow,setEditRow]=useState(null);
+  const [selectMode,setSelectMode]=useState(false);
+  const toggleSelectMode=()=>{ setSelectMode(m=>!m); setSelectedIds(new Set()); };
   const attCounts=useAttachCounts("expense");
   const listMonths=[...new Set(allExpenses.map(e=>monthYearKey(e.date)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
   const listCats=[...new Set(allExpenses.map(e=>e.category).filter(Boolean))].sort();
@@ -3546,44 +3563,46 @@ function FinanceExpensesTab({finance,persist}) {
         ))}
       </div>
       <div className="db-card">
-        <div className="db-head">
+        <div className="db-head txn-head">
           <div className="db-title">All Expenses</div>
-          {selectedIds.size>0&&(
-            <button className="del-selected-btn" onClick={removeSelectedExpenses}>
-              <Trash2 size={13}/> ลบที่เลือก ({selectedIds.size})
-            </button>
-          )}
-        </div>
-        <TxnFilterBar months={listMonths} cats={listCats} catLabel="categories" fMonth={fMonth} setFMonth={setFMonth} fCat={fCat} setFCat={setFCat}
+          <TxnFilterBar months={listMonths} cats={listCats} catLabel="categories" fMonth={fMonth} setFMonth={setFMonth} fCat={fCat} setFCat={setFCat}
           origins={listOrigins} fSrc={fSrc} setFSrc={setFSrc}
           shown={sortedExpenses.length} total={allExpenses.length} onReset={()=>{setFMonth("all");setFCat("all");setFSrc("all");}}/>
+        </div>
         {allExpenses.length===0&&<div className="db-empty">ยังไม่มีรายการ</div>}
         {allExpenses.length>0&&sortedExpenses.length===0&&<div className="db-empty">ไม่พบรายการตามตัวกรองนี้</div>}
         {sortedExpenses.length>0&&(
           <>
-          <div className="txn-filter-total">รวม <b style={{color:"var(--orange-soft)"}}>-฿{sortedExpenses.reduce((a,e)=>a+expOut(e),0).toLocaleString()}</b></div>
+          <div className="txn-subbar">
+            <div className="txn-filter-total">รวม <b style={{color:"var(--orange-soft)"}}>-฿{sortedExpenses.reduce((a,e)=>a+expOut(e),0).toLocaleString()}</b></div>
+            <div className="txn-subbar-right">
+              <span className="txn-filter-count">{sortedExpenses.length} / {allExpenses.length}</span>
+              {selectMode&&selectedIds.size>0&&<button className="del-selected-btn" onClick={removeSelectedExpenses}><Trash2 size={13}/> ลบ ({selectedIds.size})</button>}
+              <button className="txn-select-btn" onClick={toggleSelectMode}>{selectMode?"เสร็จ":"เลือก"}</button>
+            </div>
+          </div>
           <div className="exp-table-wrap">
             <table className="exp-table">
               <thead>
                 <tr>
-                  <th className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={allSelected} ref={el=>{if(el) el.indeterminate=someSelected;}} onChange={toggleSelectAll}/></th>
+                  {selectMode&&<th className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={allSelected} ref={el=>{if(el) el.indeterminate=someSelected;}} onChange={toggleSelectAll}/></th>}
                   <th>Date</th>
                   <th>Category</th>
                   <th className="exp-col-amount">Amount</th>
-                  <th>Note</th>
+                  <th className="exp-col-memo">Note</th>
                   <th className="exp-col-actions"></th>
                 </tr>
               </thead>
               <tbody>
                 {visibleExpenses.map(exp=>(
-                  <tr key={exp.id} className={selectedIds.has(exp.id)?"row-selected":""}>
-                    <td className="exp-col-check"><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(exp.id)} onChange={()=>toggleSelectId(exp.id)}/></td>
-                    <td className="exp-col-date">{exp.date}</td>
-                    <td>{exp.category} {exp.source==="kbank-csv"&&<span className="exp-csv-badge">CSV</span>}{exp.source==="payslip"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>SLIP</span>}{exp.source==="csv-refund"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>คืนเงิน</span>}</td>
+                  <tr key={exp.id} className={`txn-row-click ${selectedIds.has(exp.id)?"row-selected":""}`} onClick={()=>selectMode?toggleSelectId(exp.id):setEditRow(exp)}>
+                    {selectMode&&<td className="exp-col-check" onClick={e=>e.stopPropagation()}><input type="checkbox" className="exp-checkbox" checked={selectedIds.has(exp.id)} onChange={()=>toggleSelectId(exp.id)}/></td>}
+                    <td className="exp-col-date"><span className="d-full">{exp.date}</span><span className="d-short">{fmtDMY(exp.date)}</span></td>
+                    <td className="txn-cat-td"><div className="txn-cat-cell"><span className="txn-cat-name">{exp.category}</span>{exp.source==="kbank-csv"&&<span className="exp-csv-badge">CSV</span>}{exp.source==="payslip"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>SLIP</span>}{exp.source==="csv-refund"&&<span className="exp-csv-badge" style={{color:"var(--accent-soft)",borderColor:"#2a5a48",background:"#16302a"}}>คืนเงิน</span>}</div></td>
                     <td className="exp-col-amount exp-amount-value" style={exp.amount>0?{color:"var(--accent-soft)"}:undefined}>{exp.amount>0?"+":"-"}฿{Math.abs(exp.amount).toLocaleString()}</td>
                     <td className="exp-col-memo">{exp.memo||"—"}{attCounts[exp.id]>0&&<button className="att-badge" title="ไฟล์แนบ" onClick={()=>setEditRow(exp)}><Paperclip size={10}/> {attCounts[exp.id]}</button>}</td>
                     <td className="exp-col-actions">
-                      <div className="txn-row-actions">
+                      <div className="txn-row-actions" onClick={e=>e.stopPropagation()}>
                         <button className="del-btn" title="แก้ไข" onClick={()=>setEditRow(exp)}><Edit3 size={13}/></button>
                         {/* รายการคืนเงิน (amount บวก) แยกไม่ได้ — SplitExpenseModal บังคับผลลัพธ์ติดลบ จะพลิกเครื่องหมายทำยอดเพี้ยน */}
                         {exp.amount<0&&<button className="del-btn" title="แยกเป็นหลายหมวด" onClick={()=>setSplitRow(exp)}><SplitIcon size={12}/></button>}
@@ -3598,7 +3617,9 @@ function FinanceExpensesTab({finance,persist}) {
           <ShowMoreRow rl={rl} total={sortedExpenses.length}/>
           </>
         )}
-        {editRow&&<TxnEditModal kind="expense" initial={editRow} options={listCats} onClose={()=>setEditRow(null)} onSave={saveEdit}/>}
+        {editRow&&<TxnEditModal kind="expense" initial={editRow} options={listCats} onClose={()=>setEditRow(null)} onSave={saveEdit}
+          onDelete={()=>{removeExpense(editRow.id);setEditRow(null);}}
+          onSplit={editRow.amount<0?()=>{setSplitRow(editRow);setEditRow(null);}:undefined}/>}
         {splitRow&&<SplitExpenseModal row={splitRow} catOptions={listCats.length?listCats:["อื่นๆ"]} onClose={()=>setSplitRow(null)} onApply={applySplit}/>}
         {depositRows&&<DepositReviewModal rows={depositRows} catOptions={listCats.length?listCats:["อื่นๆ"]}
           srcOptions={[...new Set([...(finance.finance.income||[]).map(i=>i.source).filter(Boolean),"อื่นๆ"])].sort()}
