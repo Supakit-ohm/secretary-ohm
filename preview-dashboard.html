@@ -7279,13 +7279,15 @@ function HealthPage({data,persist}) {
   const toForm=(h)=>({sleepH:h&&h.sleepMin!=null?String(Math.floor(h.sleepMin/60)):"",sleepM:h&&h.sleepMin!=null?String(Math.round(h.sleepMin%60)):"",waterL:h&&h.waterL!=null?String(h.waterL):"",weight:h&&h.weight!=null?String(h.weight):"",steps:h&&h.steps!=null?String(h.steps):"",restingHR:h&&h.restingHR!=null?String(h.restingHR):""});
   const [form,setForm]=useState(()=>toForm(cur));
   const [dirty,setDirty]=useState(false);
+  const [touched,setTouched]=useState({});      // ช่องที่โอมแก้เองจริง — บันทึกเฉพาะช่องเหล่านี้ (กันเขียนทับค่าที่ Jack เพิ่งซิงก์จาก Garmin)
+  const [editAuto,setEditAuto]=useState(false); // เปิดแก้ค่าที่ Garmin ส่งมา (ปิดไว้ก่อนกันกดพลาด)
   const [exType,setExType]=useState(EXERCISE_TYPES[0]);
   const [exMin,setExMin]=useState("30");
   const [goalForm,setGoalForm]=useState({sleepH:String(S.sleepGoalMin/60),waterL:String(S.waterGoalL)});
   const [testModal,setTestModal]=useState(null);   // null | "new" | test object
   useEffect(()=>{ if(!dirty) setForm(toForm(cur)); },[cur,date]);
-  const go=(n)=>{ if(dirty&&!window.confirm("ยังไม่ได้บันทึก — ทิ้งการแก้ไข?")) return; setDirty(false); const d=shiftISO(date,{d:n}); if(d<=today){ setDate(d); setForm(toForm(hm[d]||null)); } };
-  const f=(k,v)=>{ setForm(x=>({...x,[k]:v})); setDirty(true); };
+  const go=(n)=>{ if(dirty&&!window.confirm("ยังไม่ได้บันทึก — ทิ้งการแก้ไข?")) return; setDirty(false); setTouched({}); setEditAuto(false); const d=shiftISO(date,{d:n}); if(d<=today){ setDate(d); setForm(toForm(hm[d]||null)); } };
+  const f=(k,v)=>{ setForm(x=>({...x,[k]:v})); setTouched(t=>({...t,[k]:1})); setDirty(true); };
   const writeDay=(patch)=>{
     const list=data.healthDaily||[], ex=list.find(h=>h.date===date);
     const item={...(ex||{id:uid(),date}),...patch};
@@ -7296,9 +7298,13 @@ function HealthPage({data,persist}) {
   };
   const num=(s)=>{ const v=Number(s); return s!==""&&isFinite(v)?v:undefined; };
   const save=()=>{
-    const sh=num(form.sleepH), sm=num(form.sleepM);
-    writeDay({sleepMin:(sh!=null||sm!=null)?Math.round((sh||0)*60+(sm||0)):undefined,waterL:num(form.waterL),weight:num(form.weight),steps:num(form.steps),restingHR:num(form.restingHR)});
-    setDirty(false);
+    const patch={};
+    if(touched.sleepH||touched.sleepM){ const sh=num(form.sleepH), sm=num(form.sleepM); patch.sleepMin=(sh!=null||sm!=null)?Math.round((sh||0)*60+(sm||0)):undefined; }
+    if(touched.weight) patch.weight=num(form.weight);
+    if(touched.steps) patch.steps=num(form.steps);
+    if(touched.restingHR) patch.restingHR=num(form.restingHR);
+    if(Object.keys(patch).length) writeDay(patch);
+    setDirty(false); setTouched({}); setEditAuto(false);
   };
   const addWater=(d)=>{ const v=Math.max(0,Math.round(((num(form.waterL)||0)+d)*100)/100); setForm(x=>({...x,waterL:String(v)})); writeDay({waterL:v||undefined}); };
   const addEx=()=>{ const m=num(exMin); if(!m) return; writeDay({exercise:[...((cur&&cur.exercise)||[]),{id:uid(),type:exType,min:m,src:"app"}]}); };
@@ -7309,6 +7315,13 @@ function HealthPage({data,persist}) {
   const maxSleep=Math.max(S.sleepGoalMin,...week.map(w=>(w.h&&w.h.sleepMin)||0));
   const maxWater=Math.max(S.waterGoalL,...week.map(w=>(w.h&&w.h.waterL)||0));
   const maxEx=Math.max(30,...week.map(w=>exMinutes(w.h)));
+  const maxSteps=Math.max(1000,...week.map(w=>(w.h&&w.h.steps)||0));
+  const rhrVals=week.map(w=>w.h&&w.h.restingHR).filter(v=>v>0), rhrLo=rhrVals.length?Math.min(...rhrVals)-5:0, rhrHi=rhrVals.length?Math.max(...rhrVals):1;
+  const avgOf=(get)=>{ const v=week.map(get).filter(x=>x>0); return v.length?v.reduce((a,b)=>a+b,0)/v.length:null; };
+  const sleepAvg=avgOf(w=>w.h&&w.h.sleepMin), stepsAvg=avgOf(w=>w.h&&w.h.steps);
+  const rhrAvg=(()=>{ const v=week.filter(w=>w.d!==date).map(w=>w.h&&w.h.restingHR).filter(x=>x>0); return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null; })();
+  const autoEmpty=date===today?"รอซิงก์":"ไม่มีข้อมูล";
+  const srcLab={line:"LINE",health:"Garmin",garmin:"Garmin"};
   const sleepHit=week.filter(w=>w.h&&w.h.sleepMin>=S.sleepGoalMin).length, waterHit=week.filter(w=>w.h&&w.h.waterL>=S.waterGoalL).length, exDays=week.filter(w=>exMinutes(w.h)>0).length;
   /* ทดสอบสมรรถนะ */
   const tests=sortedTests(data), first=tests[0]||null, latest=tests[tests.length-1]||null;
@@ -7331,14 +7344,47 @@ function HealthPage({data,persist}) {
               <button className="db-chip" onClick={()=>go(1)} disabled={date>=today} aria-label="วันถัดไป"><ChevronRightIcon size={13}/></button>
             </div>
           </div>
-          <div className="hl-row">
-            <div className="hl-lab">😴 การนอน <span className="hl-goal">เป้า {fmtSleep(S.sleepGoalMin)} ชม.</span></div>
-            <div className="hl-inline"><input type="number" inputMode="numeric" className="modal-input hl-num" value={form.sleepH} onChange={e=>f("sleepH",e.target.value)} placeholder="7"/><span>ชม.</span>
-              <input type="number" inputMode="numeric" className="modal-input hl-num" value={form.sleepM} onChange={e=>f("sleepM",e.target.value)} placeholder="30"/><span>นาที</span>
-              {cur&&cur.sleepMin>=S.sleepGoalMin&&<span className="hl-ok">✓ ถึงเป้า</span>}</div>
+          <div className="hl-row hl-auto-sec">
+            <div className="hl-lab">⌚ อัตโนมัติจาก Garmin <span className="hl-goal">ซิงก์ตอนเปิด LINE</span>
+              <button type="button" className="hl-edit-toggle" onClick={()=>setEditAuto(v=>!v)}>{editAuto?"ปิดแก้ไข":"แก้เอง"}</button></div>
+            <div className="hl-auto">
+              <div className="hl-tile">
+                <div className="hl-tile-l">😴 นอน</div>
+                {cur&&cur.sleepMin!=null?(<>
+                  <div className="hl-tile-v db-mono">{fmtSleep(cur.sleepMin)}<small> ชม.</small></div>
+                  <div className="xp-bar" style={{"--xp-color":"#a78bfa"}}><div className="xp-fill" style={{width:`${Math.min(100,cur.sleepMin/S.sleepGoalMin*100)}%`}}/></div>
+                  <div className="hl-tile-s">เป้า {fmtSleep(S.sleepGoalMin)} {cur.sleepMin>=S.sleepGoalMin&&<span className="hl-ok">✓ ถึงเป้า</span>}</div>
+                </>):<div className="hl-tile-e">{autoEmpty}</div>}
+              </div>
+              <div className="hl-tile">
+                <div className="hl-tile-l">👟 ก้าวเดิน</div>
+                {cur&&cur.steps!=null?(<>
+                  <div className="hl-tile-v db-mono">{Number(cur.steps).toLocaleString("en-US")}</div>
+                  <div className="hl-tile-s">{date===today?"ถึงตอนซิงก์ล่าสุด":"ทั้งวัน"}</div>
+                </>):<div className="hl-tile-e">{autoEmpty}</div>}
+              </div>
+              <div className="hl-tile">
+                <div className="hl-tile-l">❤️ ชีพจรพัก</div>
+                {cur&&cur.restingHR!=null?(<>
+                  <div className="hl-tile-v db-mono">{cur.restingHR}<small> bpm</small></div>
+                  <div className="hl-tile-s">{rhrAvg!=null?`เฉลี่ย 7 วัน ${rhrAvg}`:""}</div>
+                </>):<div className="hl-tile-e">{autoEmpty}</div>}
+              </div>
+            </div>
+            {editAuto&&(
+              <div className="hl-auto-edit">
+                <div className="hl-inline"><span>นอน</span>
+                  <input type="number" inputMode="numeric" className="modal-input hl-num" value={form.sleepH} onChange={e=>f("sleepH",e.target.value)} placeholder="7"/><span>ชม.</span>
+                  <input type="number" inputMode="numeric" className="modal-input hl-num" value={form.sleepM} onChange={e=>f("sleepM",e.target.value)} placeholder="30"/><span>นาที</span></div>
+                <div className="hl-inline"><span>ก้าว</span><input type="number" inputMode="numeric" className="modal-input hl-num hl-num-w" value={form.steps} onChange={e=>f("steps",e.target.value)}/>
+                  <span>ชีพจรพัก</span><input type="number" inputMode="numeric" className="modal-input hl-num" value={form.restingHR} onChange={e=>f("restingHR",e.target.value)}/></div>
+                <div className="jr-hint">ใช้เมื่อลืมใส่นาฬิกา — การซิงก์ Garmin ครั้งถัดไปจะเขียนทับค่าที่แก้เอง</div>
+              </div>
+            )}
           </div>
-          <div className="hl-row">
-            <div className="hl-lab">💧 ดื่มน้ำ <span className="hl-goal">เป้า {S.waterGoalL} ลิตร</span></div>
+          <div className="hl-row hl-manual-sec">
+            <div className="hl-lab">✍️ จดเอง <span className="hl-goal">น้ำ · ออกกำลังกาย · น้ำหนัก</span></div>
+            <div className="hl-sub">💧 ดื่มน้ำ <span className="hl-goal">เป้า {S.waterGoalL} ลิตร</span></div>
             <div className="hl-inline">
               <button className="db-chip" onClick={()=>addWater(-0.25)} aria-label="ลดน้ำ 250 มล.">−</button>
               <div className="hl-water db-mono">{num(form.waterL)||0} <small>ลิตร</small></div>
@@ -7347,34 +7393,30 @@ function HealthPage({data,persist}) {
               {cur&&cur.waterL>=S.waterGoalL&&<span className="hl-ok">✓ ถึงเป้า</span>}
             </div>
             <div className="xp-bar" style={{"--xp-color":"#60a5fa",marginTop:6}}><div className="xp-fill" style={{width:`${Math.min(100,(num(form.waterL)||0)/S.waterGoalL*100)}%`}}/></div>
-          </div>
-          <div className="hl-row">
-            <div className="hl-lab">🏃 ออกกำลังกาย <span className="hl-goal">{exList.length?`${exMinutes(cur)} นาที`:""}</span></div>
+            <div className="hl-sub">🏃 ออกกำลังกาย <span className="hl-goal">{exList.length?`${exMinutes(cur)} นาที`:""}</span></div>
             {exList.map(e=>(
-              <div className="hl-ex" key={e.id}><span>{e.type}</span><span className="db-mono">{e.min} นาที</span>{e.src==="garmin"&&<span className="hl-src">Garmin</span>}<button className="hl-ex-x" onClick={()=>delEx(e.id)} aria-label="ลบ"><X size={11}/></button></div>
+              <div className="hl-ex" key={e.id}><span>{e.type}</span><span className="db-mono">{e.min} นาที</span>{srcLab[e.src]&&<span className="hl-src">{srcLab[e.src]}</span>}<button className="hl-ex-x" onClick={()=>delEx(e.id)} aria-label="ลบ"><X size={11}/></button></div>
             ))}
             <div className="hl-inline">
               <select className="modal-input hl-sel" value={exType} onChange={e=>setExType(e.target.value)}>{EXERCISE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
               <input type="number" inputMode="numeric" className="modal-input hl-num" value={exMin} onChange={e=>setExMin(e.target.value)}/><span>นาที</span>
               <button className="db-chip" onClick={addEx}>+ เพิ่ม</button>
             </div>
+            <div className="hl-inline hl-quick">{[15,30,45,60].map(m=><button key={m} type="button" className={`db-chip${String(m)===String(exMin)?" pf-ok":""}`} onClick={()=>setExMin(String(m))}>{m}'</button>)}</div>
+            <div className="hl-sub">⚖️ น้ำหนัก (กก.)</div>
+            <div className="hl-inline"><input type="number" inputMode="decimal" className="modal-input hl-num hl-num-w" value={form.weight} onChange={e=>f("weight",e.target.value)}/><button className="db-chip pf-ok" onClick={save} disabled={!dirty}>บันทึก</button></div>
           </div>
-          <div className="hl-row hl-more">
-            <div><label className="field-label">น้ำหนัก (กก.)</label><input type="number" inputMode="decimal" className="modal-input" value={form.weight} onChange={e=>f("weight",e.target.value)}/></div>
-            <div><label className="field-label">ก้าวเดิน</label><input type="number" inputMode="numeric" className="modal-input" value={form.steps} onChange={e=>f("steps",e.target.value)}/></div>
-            <div><label className="field-label">ชีพจรขณะพัก</label><input type="number" inputMode="numeric" className="modal-input" value={form.restingHR} onChange={e=>f("restingHR",e.target.value)}/></div>
-          </div>
-          <div className="jr-actions"><div className="jr-hint">ขั้นถัดไป Garmin จะส่งการนอน/ก้าว/ชีพจร/ออกกำลังกายเข้ามาเอง · น้ำกดตอบ Jack ตอน 20:00 ได้</div><button className="modal-btn-save" onClick={save} disabled={!dirty}>บันทึก</button></div>
+          <div className="jr-actions"><div className="jr-hint">นอน/ก้าว/ชีพจร Jack ซิงก์จาก Garmin ให้เอง · น้ำ ออกกำลังกาย น้ำหนัก จดเอง (หรือพิมพ์บอก Jack ใน LINE)</div>{dirty&&<button className="modal-btn-save" onClick={save}>บันทึก</button>}</div>
         </div>
         <div className="db-card db-span2 hl-week">
-          <div className="db-head"><div><div className="db-title">7 วันล่าสุด</div><div className="db-note">นอนถึงเป้า {sleepHit} · น้ำถึงเป้า {waterHit} · ออกกำลังกาย {exDays} วัน</div></div></div>
-          {[["😴 นอน",w=>(w.h&&w.h.sleepMin)||0,maxSleep,S.sleepGoalMin,v=>fmtSleep(v),"#a78bfa"],["💧 น้ำ",w=>(w.h&&w.h.waterL)||0,maxWater,S.waterGoalL,v=>v?`${v}L`:"",'#60a5fa'],["🏃 ออกกำลังกาย",w=>exMinutes(w.h),maxEx,null,v=>v?`${v}'`:"","var(--accent)"]].map(([lab,get,mx,goal,fmt,color])=>(
+          <div className="db-head"><div><div className="db-title">7 วันล่าสุด</div><div className="db-note">นอนถึงเป้า {sleepHit} · น้ำถึงเป้า {waterHit} · ออกกำลังกาย {exDays} วัน{sleepAvg!=null?` · นอนเฉลี่ย ${fmtSleep(sleepAvg)}`:""}{stepsAvg!=null?` · ก้าวเฉลี่ย ${Math.round(stepsAvg).toLocaleString("en-US")}`:""}</div></div></div>
+          {[["😴 นอน",w=>(w.h&&w.h.sleepMin)||0,maxSleep,S.sleepGoalMin,v=>fmtSleep(v),"#a78bfa"],["💧 น้ำ",w=>(w.h&&w.h.waterL)||0,maxWater,S.waterGoalL,v=>v?`${v}L`:"",'#60a5fa'],["🏃 ออกกำลังกาย",w=>exMinutes(w.h),maxEx,null,v=>v?`${v}'`:"","var(--accent)"],["👟 ก้าว",w=>(w.h&&w.h.steps)||0,maxSteps,null,v=>v?v.toLocaleString("en-US"):"","#34d399"],["❤️ ชีพจรพัก",w=>(w.h&&w.h.restingHR)||0,rhrHi,null,v=>v?`${v} bpm`:"","#f87171",rhrLo]].map(([lab,get,mx,goal,fmt,color,lo=0])=>(
             <div className="hl-wrow" key={lab}>
               <div className="hl-wlab">{lab}</div>
               <div className="hl-bars">
                 {week.map(w=>{ const v=get(w); const hit=goal!=null&&v>=goal; return (
                   <div className="hl-bar" key={w.d} title={`${thaiDate(w.d)} ${fmt(v)||"–"}`}>
-                    <div className="hl-bar-track">{goal!=null&&<div className="hl-bar-goal" style={{bottom:`${goal/mx*100}%`}}/>}<div className="hl-bar-fill" style={{height:`${v/mx*100}%`,background:color,opacity:hit||goal==null?1:.55}}/></div>
+                    <div className="hl-bar-track">{goal!=null&&<div className="hl-bar-goal" style={{bottom:`${goal/mx*100}%`}}/>}<div className="hl-bar-fill" style={{height:`${v?Math.max(6,(v-lo)/((mx-lo)||1)*100):0}%`,background:color,opacity:hit||goal==null?1:.55}}/></div>
                     <div className="hl-bar-d">{dayLab(w.d)}</div>
                   </div>); })}
               </div>
