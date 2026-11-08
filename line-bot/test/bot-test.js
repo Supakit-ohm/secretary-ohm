@@ -1813,8 +1813,10 @@ test("ขั้นที่ 8: form ของ Shortcut → นอนลงวั
 
 test("ขั้นที่ 8: แปลงหน่วยเวลานอน/ออกกำลังกายได้หลายรูป · JSON body · ค่าเพี้ยนไม่บันทึก · สถานะ jack บอกเวลาส่งล่าสุด", () => {
   assert.deepStrictEqual(["7.5", "450", "27000", "7:20", "7 hr 20 min", "6 ชม 45 นาที", "", "abc"].map(ctx.sleepMinutes_), [450, 450, 450, 440, 440, 405, null, null]);
-  assert.deepStrictEqual(["32", "0:32:10", "1:05", "45:30", "1920"].map(ctx.workoutMinutes_), [32, 32, 65, 46, 32]);
+  assert.deepStrictEqual(["32", "0:32:10", "1:05:00", "45:30", "1920", "7:00", "12:00"].map(ctx.workoutMinutes_), [32, 32, 65, 46, 32, 7, 12], "2 ส่วน = นาที:วินาที (ไม่ใช่ ชม:นาที)");
   assert.deepStrictEqual(["1 hr 5 min", "32 min", "45 วินาที", "2 ชม"].map(ctx.durationMinutes_), [65, 32, 1, 120]);
+  // ข้อมูลจริงจาก Shortcut (iPhone ภาษาไทย, Garmin Forerunner 265): ค่า| ระยะเวลา (มีเว้นวรรคหลัง |) · 3 ส่วน = ชม:นาที:วินาที · 2 ส่วน = นาที:วินาที · เลขล้วน = วินาที
+  assert.strictEqual(ctx.sleepFromSamples_(["In Bed| 6:58:46", "Core| 59", "Deep| 55:00", "Awake| 1:00", "Core| 7:00", "REM| 12:00", "Core| 19:00", "Deep| 45:00", "Awake| 4:00", "Core| 36:00", "Deep| 15:00", "Core| 33:00", "REM| 38:00", "Core| 28:00", "Deep| 14:00", "Core| 23:00", "REM| 42:00", "Core| 45:46"].join("\n")), 414, "ข้อมูลจริง: Core 193 + Deep 129 + REM 92 = 414 นาที (ไม่ใช่ 1,593)");
   assert.strictEqual(ctx.sleepFromSamples_("In Bed|8:00:00\nAsleep Core|3:00:00\nAsleep Deep|1:30:00\nAsleep REM|2:00:00\nAwake|0:20:00"), 390);
   assert.strictEqual(ctx.sleepFromSamples_("In Bed|7:40:00"), 460, "มีแต่ In Bed = ใช้ยอดนั้น");
   assert.strictEqual(ctx.sleepFromSamples_("อยู่บนเตียง|8 ชม\nหลับ|6 ชม 50 นาที\nตื่น|15 นาที"), 410, "ภาษาไทย");

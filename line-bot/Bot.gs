@@ -2291,19 +2291,21 @@ function sleepMinutes_(v) {
   if (n <= 1440) return Math.round(n);
   return Math.round(n / 60);
 }
-// ระยะเวลาต่อรายการ → นาที: "0:32:10" · "1:05" · "45:30" (mm:ss) · "1 hr 5 min" · "32 min" · "32" (นาที) · "1920" (>600 = วินาที)
-function durationMinutes_(v) {
+// ระยะเวลาต่อรายการ → นาที: "1:05:00" (ชม:นาที:วินาที) · "45:30" / "7:00" (นาที:วินาที) · "1 hr 5 min" · "32 min" · "32" (นาที; ถ้า plainIsSeconds = วินาที) · "1920" (>600 = วินาที)
+function durationMinutes_(v, plainIsSeconds) {
   var t = String(v == null ? "" : v).replace(/,/g, "").trim().toLowerCase();
   if (!t) return null;
   var hm = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (hm) {
-    if (hm[3] == null && Number(hm[1]) > 12) return Number(hm[1]) + (Number(hm[2]) >= 30 ? 1 : 0);
+    // รูปแบบที่ Shortcuts/iOS ส่งมา: 3 ส่วน = ชม:นาที:วินาที · 2 ส่วน = นาที:วินาที (7:00 = 7 นาที ไม่ใช่ 7 ชม.) · เลขล้วน = วินาที (ตอนส่ง "ค่า|ระยะเวลา" ของช่วงนอน)
+    if (hm[3] == null) return Number(hm[1]) + (Number(hm[2]) >= 30 ? 1 : 0);
     return Number(hm[1]) * 60 + Number(hm[2]) + (hm[3] != null && Number(hm[3]) >= 30 ? 1 : 0);
   }
   var h = t.match(/(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr|h(?![a-z])|ชั่วโมง|ชม)/), mi = t.match(/(\d+(?:\.\d+)?)\s*(minutes|minute|mins|min|m(?![a-z])|นาที)/), se = t.match(/(\d+(?:\.\d+)?)\s*(seconds|second|secs|sec|s(?![a-z])|วินาที)/);
   if (h || mi || se) return Math.round((h ? Number(h[1]) * 60 : 0) + (mi ? Number(mi[1]) : 0) + (se ? Number(se[1]) / 60 : 0));
   var n = healthNum_(t);
   if (n == null || n <= 0) return null;
+  if (plainIsSeconds) return Math.round(n / 60);
   return n > 600 ? Math.round(n / 60) : Math.round(n);
 }
 function workoutMinutes_(v) { return durationMinutes_(v); }
@@ -2313,7 +2315,7 @@ function sleepFromSamples_(text) {
   var asleep = 0, inBed = 0, n = 0;
   String(text || "").split(/\n|;/).forEach(function (line) {
     var l = line.trim(); if (!l) return;
-    var parts = l.split("|"), val = (parts.length > 1 ? parts[0] : "").toLowerCase(), min = durationMinutes_(parts.length > 1 ? parts.slice(1).join("|") : l);
+    var parts = l.split("|"), val = (parts.length > 1 ? parts[0] : "").toLowerCase(), min = durationMinutes_(parts.length > 1 ? parts.slice(1).join("|") : l, true);
     if (!min) return;
     n++;
     if (/in ?bed|บนเตียง|inbed/.test(val)) inBed += min;
