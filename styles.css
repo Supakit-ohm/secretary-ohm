@@ -1666,3 +1666,32 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 /* ข้อ 76 (ขั้น A): ปุ่มกลับจากหน้า Review + การ์ด Review บน Overview */
 .fin-review-back{margin-bottom:12px;}
 .fin-review-card .db-head{margin-bottom:6px;}
+
+/* ข้อ 77 (ขั้น B): หน้า Planning — แถวแผนเทียบจริง */
+.pl-head,.pl-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,150px) minmax(80px,120px) 52px;gap:10px;align-items:center;}
+.pl-head{font-size:10.5px;color:var(--ink-5);padding:0 0 8px;border-bottom:1px solid rgba(255,255,255,.075);letter-spacing:.04em;}
+.pl-head span:not(:first-child),.pl-row>.pl-num,.pl-row>.pl-pct{text-align:right;}
+.pl-line{padding:11px 0;border-bottom:1px solid rgba(255,255,255,.075);}
+.pl-line:last-child{border-bottom:none;}
+.pl-name{display:flex;align-items:center;min-width:0;}
+.pl-label{font-size:13px;color:var(--ink-2);overflow-wrap:anywhere;}
+.pl-label.strong{font-weight:600;color:var(--ink-bright);}
+.pl-num{font-size:12.5px;color:var(--ink-bright);white-space:nowrap;}
+.pl-pct{font-size:11px;font-weight:600;}
+.pl-input{width:100%;text-align:right;padding:7px 9px;font-size:12.5px;}
+.pl-sub{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:7px;font-size:11px;color:var(--ink-4);}
+.pl-sub:empty{display:none;}
+.pl-link{background:none;border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-family:'Noto Sans Thai',sans-serif;font-size:11px;color:var(--ink-3);cursor:pointer;}
+.pl-link:hover{color:var(--ink);border-color:var(--line-hover);}
+.pl-bar{height:5px;border-radius:999px;background:var(--chip-bg);margin-top:8px;overflow:hidden;}
+.pl-bar>span{display:block;height:100%;border-radius:999px;}
+.pl-ovr{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold-soft);margin-left:8px;opacity:.5;flex-shrink:0;}
+.pl-ovr.here{opacity:1;}
+.pl-sumline{padding:12px 0;}
+.pl-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px;}
+.pl-actions .db-btn{white-space:nowrap;}
+.pl-msg{margin-top:10px;}
+.pl-scope{margin-top:10px;}
+@media (max-width:520px){
+  .pl-head,.pl-row{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,.85fr) 42px;gap:6px;}
+}

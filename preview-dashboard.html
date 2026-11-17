@@ -1704,13 +1704,20 @@ const DEFAULT_DATA = {
   checkins:[],
   budgets:{},
   reviews:{},
+  plan:{},
 };
 /* ═══ Budget & monthly review ═══ */
 const FIXED_HINTS=["ผ่อน","ภาษี","สาธารณูปโภค","ประกัน","ค่าเช่า","รายการหักประจำเดือน","ค่าน้ำ","ค่าไฟ","อินเทอร์เน็ต","ค่าเน็ต","ค่าโทร","ค่าเทอม"];
 function guessCategoryType(cat){ return FIXED_HINTS.some(k=>String(cat).includes(k))?"fixed":"variable"; }
-function getBudget(data,cat){
+/* monthKey (ไม่บังคับ): ถ้าเดือนนั้นมีค่าแผนเฉพาะเดือน (plan.months[m].exp[cat] — ตั้งจากแท็บ Planning) ใช้ค่านั้นแทนค่ามาตรฐาน */
+function getBudget(data,cat,monthKey){
   const b=(data.budgets||{})[cat];
-  return {amount:b?Number(b.amount)||0:0,type:(b&&b.type)?b.type:guessCategoryType(cat)};
+  let amount=b?Number(b.amount)||0:0;
+  if(monthKey){
+    const o=((((data.plan||{}).months||{})[monthKey])||{}).exp;
+    if(o&&o[cat]!=null) amount=Number(o[cat])||0;
+  }
+  return {amount,type:(b&&b.type)?b.type:guessCategoryType(cat)};
 }
 // 0 = เกินงบ, 1 = ยังอยู่ในงบ, 2 = ยังไม่ตั้งงบ
 function budgetRank(r){
@@ -1749,7 +1756,7 @@ function buildMonthReview(data,monthKey){
   });
   const prev3=monthsBefore(monthKey,3);
   const rows=Object.values(byCat).map(r=>{
-    const b=getBudget(data,r.cat);
+    const b=getBudget(data,r.cat,monthKey);
     const hist=prev3.map(m=>expAll.filter(e=>e.category===r.cat&&monthYearKey(e.date)===m).reduce((a,e)=>a+expOut(e),0));
     const seen=hist.filter((v,i)=>expAll.some(e=>e.category===r.cat&&monthYearKey(e.date)===prev3[i]));
     const avg=seen.length?seen.reduce((a,v)=>a+v,0)/seen.length:null;
@@ -1853,7 +1860,7 @@ function applyResets(data) {
 /* ข้อ 55: แยกขั้น "ทำข้อมูลที่โหลดมาให้เป็นรูปปัจจุบัน" (migration + reset) ออกมา
    ใช้ทั้งตอนบูต และตอนได้ข้อมูลใหม่จากเครื่องอื่นผ่าน Firestore (event "secretary-remote-data") */
 function prepareLoadedData(parsed) {
-        const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,mediaReviews:parsed.mediaReviews||DEFAULT_DATA.mediaReviews,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{}};
+        const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,mediaReviews:parsed.mediaReviews||DEFAULT_DATA.mediaReviews,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{},plan:parsed.plan||{}};
         // migration: แก้ format วันที่รายจ่ายที่นำเข้าจาก CSV ให้เป็น ISO (YYYY-MM-DD) เพื่อให้ตัวกรองเดือนทำงานถูกต้อง
         let dateFixed=false;
         const fixedExpenses=(withTodos.finance.expenses||[]).map(exp=>{
@@ -5608,37 +5615,6 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
     </>
   );
 }
-function BudgetPanel({data,persist,cats,defaultOpen}) {
-  const setBudget=(cat,patch)=>{
-    const cur=getBudget(data,cat);
-    persist({...data,budgets:{...(data.budgets||{}),[cat]:{amount:patch.amount!=null?Number(patch.amount)||0:cur.amount,type:patch.type||cur.type}}});
-  };
-  const totalVar=cats.filter(c=>getBudget(data,c).type==="variable").reduce((a,c)=>a+getBudget(data,c).amount,0);
-  const totalFix=cats.filter(c=>getBudget(data,c).type==="fixed").reduce((a,c)=>a+getBudget(data,c).amount,0);
-  /* ข้อ 24/7: ยกมาเป็น DashCollapse ตามธรรมนูญข้อ 32 (เดิมเป็น .card พับเองด้วย useState) — ปิดเป็นค่าเริ่มต้นเหมือนเดิม */
-  return (
-    <DashCollapse span="db-span4" title="Budget Settings" defaultOpen={defaultOpen}
-      note={`คุมได้ ฿${totalVar.toLocaleString()} · คงที่ ฿${totalFix.toLocaleString()}`}>
-      <div className="db-note inv-inline-note" style={{marginBottom:12}}>ตั้งงบต่อเดือนของแต่ละหมวด และระบุว่าเป็นค่าคงที่ (ควบคุมไม่ได้) หรือคุมได้ — หน้ารีวิวจะโฟกัสเฉพาะหมวดที่คุมได้</div>
-      <div className="budget-grid">
-        {cats.length===0&&<div className="db-empty">ยังไม่มีหมวดหมู่</div>}
-        {cats.map(c=>{
-          const b=getBudget(data,c);
-          return (
-            <div key={c} className="budget-row">
-              <span className="budget-cat">{c}</span>
-              <div className="budget-type-toggle">
-                <button className={`budget-type-btn ${b.type==="variable"?"on":""}`} onClick={()=>setBudget(c,{type:"variable"})}>คุมได้</button>
-                <button className={`budget-type-btn ${b.type==="fixed"?"on fixed":""}`} onClick={()=>setBudget(c,{type:"fixed"})}>คงที่</button>
-              </div>
-              <input type="number" className="modal-input budget-input" placeholder="ไม่ตั้งงบ" value={b.amount||""} onChange={e=>setBudget(c,{amount:e.target.value})}/>
-            </div>
-          );
-        })}
-      </div>
-    </DashCollapse>
-  );
-}
 function FinanceReviewTab({finance,persist,initialMonth,onBack}) {
   const expAll=finance.finance.expenses||[];
   const incAll=finance.finance.income||[];
@@ -5682,7 +5658,6 @@ function FinanceReviewTab({finance,persist,initialMonth,onBack}) {
               {months.map(m=><option key={m} value={m}>{new Date(`${m}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</option>)}
             </select>
           </div>
-          <button className="db-btn inv-add-btn" onClick={()=>{setRecatCat(null);setShowRecat(true);}}><FileText size={14}/> จัดหมวดใหม่</button>
         </div>
         <div className="db-bignums">
           <div className="db-bignum">
@@ -5797,37 +5772,356 @@ function FinanceReviewTab({finance,persist,initialMonth,onBack}) {
     </div>
   );
 }
-/* ข้อ 76 (ขั้น A): แท็บ Planning — ตอนนี้มีแค่ Budget Settings ที่ย้ายมาจากหน้า Review
-   ขั้นถัดไป: แผนรับ-จ่ายรายเดือน/ปีเทียบของจริง (B) · พยากรณ์เงินสด 1–6 เดือน (C) · แผนปลดหนี้ (D) · เป้าหมายเงินก้อน (E) */
+/* ═══ ข้อ 77 (ขั้น B): Planning — แผนรับ/จ่าย/ออมรายเดือน-รายปี เทียบของจริง ═══
+   โมเดลข้อมูล (ทุกอย่างเป็น "ค่ามาตรฐานต่อเดือน" + "ค่าเฉพาะเดือน" ที่ทับได้):
+     budgets[cat]={amount,type}   = ค่ามาตรฐานรายจ่ายต่อเดือน (ของเดิม — Review กับ Jack อ่านต่อได้)
+     plan.inc[source]=n           = ค่ามาตรฐานรายรับต่อเดือนของแต่ละแหล่ง
+     plan.sav[investType]=n       = ค่ามาตรฐานออม/ลงทุนต่อเดือนของแต่ละประเภท (INVEST_TYPES)
+     plan.months["YYYY-MM"]={exp:{cat:n},inc:{src:n},sav:{type:n}} = ค่าเฉพาะเดือน ถ้าไม่มีใช้ค่ามาตรฐาน
+   ตรรกะทั้งหมดเป็นฟังก์ชันล้วน (planValue/setPlanValue/buildPlanView) — หน้า UI แค่เรียกใช้ */
+function planMonth(data,m){ return ((data.plan||{}).months||{})[m]||{}; }
+function planStd(data,group,key){
+  return group==="exp"?getBudget(data,key).amount:(Number(((data.plan||{})[group]||{})[key])||0);
+}
+function planValue(data,group,key,m){
+  if(group==="exp") return getBudget(data,key,m).amount;
+  const o=planMonth(data,m)[group];
+  if(o&&o[key]!=null) return Number(o[key])||0;
+  return planStd(data,group,key);
+}
+function hasPlanOverride(data,group,key,m){ const o=planMonth(data,m)[group]; return !!o&&o[key]!=null; }
+function addMonthKey(key,n){ const [y,m]=key.split("-").map(Number); const d=new Date(y,m-1+n,1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+/* scope "month" = ตั้งค่าเฉพาะเดือน m (ถ้าเท่าค่ามาตรฐานจะลบ override ทิ้ง) · scope "all" = แก้ค่ามาตรฐาน (เดือนที่มี override ยังคงค่าเดิม) */
+function setPlanValue(data,group,key,value,scope,m){
+  const v=Number(value)||0;
+  const plan=data.plan||{};
+  if(scope==="month"){
+    const months={...(plan.months||{})};
+    const cur={...(months[m]||{})};
+    const g={...(cur[group]||{})};
+    if(v===planStd(data,group,key)) delete g[key]; else g[key]=v;
+    if(Object.keys(g).length) cur[group]=g; else delete cur[group];
+    if(Object.keys(cur).length) months[m]=cur; else delete months[m];
+    return {...data,plan:{...plan,months}};
+  }
+  if(group==="exp"){
+    const b=getBudget(data,key);
+    return {...data,budgets:{...(data.budgets||{}),[key]:{amount:v,type:b.type}}};
+  }
+  return {...data,plan:{...plan,[group]:{...(plan[group]||{}),[key]:v}}};
+}
+function removePlanRow(data,group,key){
+  const plan=data.plan||{};
+  const months={};
+  Object.entries(plan.months||{}).forEach(([m,cur])=>{
+    const g={...((cur&&cur[group])||{})}; delete g[key];
+    const n={...cur}; if(Object.keys(g).length) n[group]=g; else delete n[group];
+    if(Object.keys(n).length) months[m]=n;
+  });
+  const next={...data,plan:{...plan,months}};
+  if(group==="exp"){ const b={...(data.budgets||{})}; delete b[key]; next.budgets=b; }
+  else { const g={...(plan[group]||{})}; delete g[key]; next.plan={...next.plan,[group]:g}; }
+  return next;
+}
+/* เดือนที่รวมในมุมมอง: รายเดือน = เดือนเดียว · รายปี = ม.ค.→เดือนปัจจุบัน (ปีปัจจุบัน) หรือครบ 12 เดือน (ปีอื่น) */
+function planPeriodMonths(mode,month,year){
+  if(mode==="month") return [month];
+  const now=new Date();
+  const last=year===now.getFullYear()?now.getMonth()+1:12;
+  return Array.from({length:last},(_,i)=>`${year}-${pad(i+1)}`);
+}
+function buildPlanView(data,months,refMonth){
+  const f=data.finance, inM=new Set(months);
+  const act={exp:{},inc:{},sav:{}}, ever={exp:new Set(),inc:new Set(),sav:new Set()}, byM={exp:{},inc:{},sav:{}};
+  const add=(g,k,m,n)=>{
+    ever[g].add(k);
+    if(!byM[g][k]) byM[g][k]={};
+    byM[g][k][m]=(byM[g][k][m]||0)+n;
+    if(inM.has(m)) act[g][k]=(act[g][k]||0)+n;
+  };
+  (f.income||[]).forEach(i=>{ if(i.source) add("inc",i.source,i.month||monthYearKey(i.date),Number(i.amount)||0); });
+  (f.expenses||[]).forEach(e=>{ if(e.category) add("exp",e.category,monthYearKey(e.date),expOut(e)); });
+  (f.investments||[]).forEach(v=>add("sav",v.type||"other",monthYearKey(v.date),Number(v.amount)||0));
+  const plan=data.plan||{};
+  const overrideKeys=(g)=>{ const s=new Set(); Object.values(plan.months||{}).forEach(c=>Object.keys((c&&c[g])||{}).forEach(k=>s.add(k))); return s; };
+  const keys={
+    exp:new Set([...ever.exp,...Object.keys(data.budgets||{}),...overrideKeys("exp")]),
+    inc:new Set([...ever.inc,...Object.keys(plan.inc||{}),...overrideKeys("inc")]),
+    sav:new Set([...Object.keys(plan.sav||{}),...overrideKeys("sav"),...Object.keys(act.sav)]),
+  };
+  /* ค่าแนะนำ: รายจ่าย = เฉลี่ยของ 3 เดือนก่อนเดือนอ้างอิง (เฉพาะเดือนที่มีรายการ) · รายรับ/ออม = เดือนล่าสุดที่มีข้อมูล */
+  const prev3=monthsBefore(refMonth,3);
+  const latest=(mm)=>{ const ks=Object.keys(mm).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort(); return ks.length?mm[ks[ks.length-1]]:0; };
+  const suggest=(g,k)=>{
+    const mm=byM[g][k]; if(!mm) return 0;
+    if(g==="exp"){ const seen=prev3.filter(m=>mm[m]!=null); return seen.length?seen.reduce((a,m)=>a+mm[m],0)/seen.length:0; }
+    return latest(mm);
+  };
+  const mk=(g,k)=>{
+    const std=planStd(data,g,k);
+    const ovr=months.some(m=>hasPlanOverride(data,g,k,m));
+    return {group:g,key:k,std,ovr,ovrHere:months.length===1&&ovr,
+      plan:months.reduce((a,m)=>a+planValue(data,g,k,m),0),
+      actual:act[g][k]||0,used:ever[g].has(k),sug:suggest(g,k),
+      type:g==="exp"?getBudget(data,k).type:null};
+  };
+  const rows={};
+  ["exp","inc","sav"].forEach(g=>{
+    rows[g]=[...keys[g]].map(k=>mk(g,k)).sort((a,b)=>(b.actual-a.actual)||(b.sug-a.sug)||String(a.key).localeCompare(String(b.key),"th"));
+  });
+  const sum=(g,field)=>rows[g].reduce((a,r)=>a+r[field],0);
+  const tot={
+    inc:{plan:sum("inc","plan"),actual:sum("inc","actual")},
+    exp:{plan:sum("exp","plan"),actual:sum("exp","actual")},
+    sav:{plan:sum("sav","plan"),actual:sum("sav","actual")},
+  };
+  tot.left={plan:tot.inc.plan-tot.exp.plan-tot.sav.plan,actual:tot.inc.actual-tot.exp.actual-tot.sav.actual};
+  return {...rows,tot};
+}
+const planFmt=(n)=>n===0?"—":((n<0?"-":"")+dbNum(Math.abs(n)));
+function planColor(kind,pct){
+  if(pct==null) return "var(--ink-4)";
+  if(kind==="exp") return pct>100?"#f87171":pct>85?"#fbbf24":"#34d399";
+  return pct>=100?"#34d399":"#fbbf24";
+}
+function PlanRow({row,label,kind,editable,onChange,onReset,onRemove,onUseSug,onType}) {
+  const pct=row.plan>0?(row.actual/row.plan)*100:null;
+  const color=planColor(kind,pct);
+  const sugLabel=kind==="exp"?"เฉลี่ย 3 เดือนก่อน":"เดือนล่าสุด";
+  const sugValue=kind==="inc"?Math.round(row.sug):Math.round(row.sug/100)*100;   // ค่าเดียวกับที่ปุ่ม "ใช้ค่านี้" จะเติม — ถ้าแผนตรงแล้วไม่ต้องโชว์ปุ่ม
+  return (
+    <div className="pl-line">
+      <div className="pl-row">
+        <div className="pl-name"><span className="pl-label">{label}</span>{row.ovr&&<span className={`pl-ovr ${row.ovrHere?"here":""}`}/>}</div>
+        {editable
+          ? <input className="modal-input pl-input db-mono" type="number" inputMode="decimal" placeholder="ไม่ตั้ง" value={row.plan||""} onChange={e=>onChange(e.target.value)}/>
+          : <span className="db-mono pl-num">{row.plan>0?dbNum(row.plan):"—"}</span>}
+        <span className="db-mono pl-num">{planFmt(row.actual)}</span>
+        <span className="db-mono pl-pct" style={{color}}>{pct==null?"—":Math.round(pct)+"%"}</span>
+      </div>
+      <div className="pl-sub">
+        {onType&&(
+          <span className="budget-type-toggle">
+            <button className={`budget-type-btn ${row.type==="variable"?"on":""}`} onClick={()=>onType("variable")}>คุมได้</button>
+            <button className={`budget-type-btn ${row.type==="fixed"?"on fixed":""}`} onClick={()=>onType("fixed")}>คงที่</button>
+          </span>
+        )}
+        {editable&&row.ovrHere&&<button className="pl-link" onClick={onReset}>เดือนนี้ต่างจากมาตรฐาน ฿{dbNum(row.std)} · คืนค่า</button>}
+        {!row.ovrHere&&row.ovr&&<span>บางเดือนตั้งค่าต่างจากมาตรฐาน</span>}
+        {row.sug>0&&(editable
+          ? (row.plan!==sugValue&&<button className="pl-link" onClick={onUseSug}>{sugLabel} ฿{dbNum(row.sug)} · ใช้ค่านี้</button>)
+          : <span>{sugLabel} ฿{dbNum(row.sug)}</span>)}
+        {editable&&!row.used&&<button className="pl-link" onClick={onRemove}>ลบแถว</button>}
+      </div>
+      {row.plan>0&&<div className="pl-bar"><span style={{width:Math.max(0,Math.min(100,pct))+"%",background:color}}/></div>}
+    </div>
+  );
+}
+function PlanSumLine({label,plan,actual,kind,strong}) {
+  const pct=kind==="left"?null:(plan>0?(actual/plan)*100:null);
+  return (
+    <div className="pl-line pl-sumline">
+      <div className="pl-row">
+        <span className={`pl-label ${strong?"strong":""}`}>{label}</span>
+        <span className="db-mono pl-num" style={kind==="left"&&plan<0?{color:"#f87171"}:null}>{kind==="left"?((plan<0?"-":"")+dbNum(Math.abs(plan))):planFmt(plan)}</span>
+        <span className="db-mono pl-num" style={kind==="left"&&actual<0?{color:"#f87171"}:null}>{kind==="left"?((actual<0?"-":"")+dbNum(Math.abs(actual))):planFmt(actual)}</span>
+        <span className="db-mono pl-pct" style={{color:planColor(kind,pct)}}>{pct==null?"—":Math.round(pct)+"%"}</span>
+      </div>
+    </div>
+  );
+}
+const PLAN_GROUP_OPTIONS=[
+  {key:"exp-variable",label:"รายจ่ายที่คุมได้"},
+  {key:"exp-fixed",label:"รายจ่ายคงที่"},
+  {key:"inc",label:"รายรับ (แหล่งที่มา)"},
+  {key:"sav",label:"ออม/ลงทุน (ประเภท)"},
+];
+function AddPlanItemModal({view,onClose,onSave}) {
+  const [group,setGroup]=useState("exp-variable");
+  const [name,setName]=useState("");
+  const [savType,setSavType]=useState("");
+  const [amount,setAmount]=useState("");
+  const isSav=group==="sav";
+  const existing=isSav?view.sav.map(r=>r.key):group==="inc"?view.inc.map(r=>r.key):view.exp.map(r=>r.key);
+  const freeTypes=INVEST_TYPES.filter(t=>!view.sav.some(r=>r.key===t.key));
+  const key=isSav?(savType||(freeTypes[0]&&freeTypes[0].key)||""):name.trim();
+  const dup=!!key&&existing.includes(key);
+  const ready=!!key&&!dup;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>➕ เพิ่มหมวดในแผน</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          <div><label className="field-label">ชนิด</label>
+            <select className="modal-input pl-add-group" value={group} onChange={e=>setGroup(e.target.value)}>
+              {PLAN_GROUP_OPTIONS.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}
+            </select></div>
+          {isSav
+            ? <div style={{marginTop:10}}><label className="field-label">ประเภทออม/ลงทุน</label>
+                {freeTypes.length===0
+                  ? <div className="db-note">ครบทุกประเภทแล้ว</div>
+                  : <select className="modal-input pl-add-type" value={key} onChange={e=>setSavType(e.target.value)}>
+                      {freeTypes.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}
+                    </select>}
+              </div>
+            : <div style={{marginTop:10}}><label className="field-label">{group==="inc"?"ชื่อแหล่งรายรับ":"ชื่อหมวด"}</label>
+                <input className="modal-input pl-add-name" placeholder={group==="inc"?"เช่น เงินเพิ่ม อก.9":"เช่น Food - กาแฟ"} value={name} onChange={e=>setName(e.target.value)}/>
+                {dup&&<div className="db-note" style={{color:"#f87171"}}>มีชื่อนี้อยู่แล้ว</div>}
+              </div>}
+          <div style={{marginTop:10}}><label className="field-label">แผนต่อเดือน (ไม่บังคับ)</label>
+            <input className="modal-input pl-add-amount" inputMode="decimal" placeholder="0" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+          <button className="modal-btn-save pl-add-save" style={{marginTop:12,width:"100%"}} disabled={!ready} onClick={()=>ready&&onSave({group,key,amount})}>เพิ่มหมวด</button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
 function FinancePlanningTab({finance,persist}) {
-  const expAll=finance.finance.expenses||[];
-  const cats=[...new Set([...expAll.map(e=>e.category),...Object.keys(finance.budgets||{})].filter(Boolean))].sort();
-  const totalVar=cats.filter(c=>getBudget(finance,c).type==="variable").reduce((a,c)=>a+getBudget(finance,c).amount,0);
-  const totalFix=cats.filter(c=>getBudget(finance,c).type==="fixed").reduce((a,c)=>a+getBudget(finance,c).amount,0);
+  const cur=currentMonthKey();
+  const [viewMode,setViewMode]=useState("month");
+  const [selMonth,setSelMonth]=useState(cur);
+  const [selYear,setSelYear]=useState(Number(cur.slice(0,4)));
+  const [scope,setScope]=useState("month");
+  const [showAdd,setShowAdd]=useState(false);
+  const [showRecat,setShowRecat]=useState(false);
+  const [msg,setMsg]=useState("");
+  const rlExp=useRowLimit(8);
+  useEffect(()=>{ if(!msg) return; const t=setTimeout(()=>setMsg(""),4500); return ()=>clearTimeout(t); },[msg]);
+  const f=finance.finance;
+  const known=[...new Set([
+    ...(f.income||[]).map(i=>i.month||monthYearKey(i.date)),
+    ...(f.expenses||[]).map(e=>monthYearKey(e.date)),
+    ...(f.investments||[]).map(v=>monthYearKey(v.date)),
+    ...Object.keys((finance.plan||{}).months||{}),cur,
+  ].filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort();
+  const monthOptions=[];
+  for(let k=known[0];k<=addMonthKey(cur,12);k=addMonthKey(k,1)) monthOptions.push(k);
+  const yearOptions=[...new Set(monthOptions.map(m=>Number(m.slice(0,4))))];
+  const months=planPeriodMonths(viewMode,selMonth,selYear);
+  const refMonth=viewMode==="month"?selMonth:months[months.length-1];
+  const view=buildPlanView(finance,months,refMonth);
+  const editable=viewMode==="month";
+  const mLabel=(m)=>new Date(`${m}-01`).toLocaleDateString("th-TH",{month:"long",year:"numeric"});
+  const periodLabel=viewMode==="month"?mLabel(selMonth):`ปี ${selYear}${months.length<12?` · ${months.length} เดือนแรก`:""}`;
+  const T=view.tot;
+  const edit=(group,key)=>(v)=>persist(setPlanValue(finance,group,key,v,scope,selMonth));
+  const useSug=(group,key,sug)=>{
+    const v=group==="inc"?Math.round(sug):Math.round(sug/100)*100;
+    if(v>0) persist(setPlanValue(finance,group,key,v,scope,selMonth));
+  };
+  const reset=(group,key)=>persist(setPlanValue(finance,group,key,planStd(finance,group,key),"month",selMonth));
+  const remove=(group,key)=>persist(removePlanRow(finance,group,key));
+  const setType=(cat,type)=>persist({...finance,budgets:{...(finance.budgets||{}),[cat]:{amount:getBudget(finance,cat).amount,type}}});
+  const fillFromActual=()=>{
+    let next=finance, n=0;
+    [["exp",100],["inc",1],["sav",100]].forEach(([g,step])=>{
+      view[g].forEach(r=>{
+        const v=Math.round(r.sug/step)*step;
+        if(r.std===0&&v>0){ next=setPlanValue(next,g,r.key,v,"all",selMonth); n++; }
+      });
+    });
+    if(n){ persist(next); setMsg(`เติมแผนมาตรฐานแล้ว ${n} รายการ (เฉพาะช่องที่ยังว่าง)`); }
+    else setMsg("ไม่มีช่องว่างที่เติมได้ — ทุกแถวมีแผนแล้ว หรือยังไม่มีข้อมูลจริงให้อ้างอิง");
+  };
+  const addItem=({group,key,amount})=>{
+    const v=Number(amount)||0;
+    if(group==="inc") persist({...finance,plan:{...(finance.plan||{}),inc:{...((finance.plan||{}).inc||{}),[key]:v}}});
+    else if(group==="sav") persist({...finance,plan:{...(finance.plan||{}),sav:{...((finance.plan||{}).sav||{}),[key]:v}}});
+    else persist({...finance,budgets:{...(finance.budgets||{}),[key]:{amount:v,type:group==="exp-fixed"?"fixed":"variable"}}});
+    setShowAdd(false); setMsg(`เพิ่ม “${INVEST_TYPE_LABELS[key]||key}” ในแผนแล้ว`);
+  };
+  const leftNeg=T.left.plan<0;
+  const shownExp=view.exp.slice(0,rlExp.limit);
   return (
     <div className="fin-section fin-page">
+      {showAdd&&<AddPlanItemModal view={view} onClose={()=>setShowAdd(false)} onSave={addItem}/>}
+      {showRecat&&<RecategorizeModal finance={finance} persist={persist} startCat={null} onClose={()=>setShowRecat(false)}/>}
       <div className="db-hero">
         <div>
           <h1 className="db-hero-title">Planning <span>· วางแผนการเงิน</span></h1>
-          <div className="db-hero-line">ตั้งงบรายเดือนของแต่ละหมวด · แผนรับ-จ่ายและพยากรณ์เงินสดจะตามมาในหน้านี้</div>
+          <div className="db-hero-line">
+            {periodLabel} · {leftNeg?<b style={{color:"#f87171"}}>แผนติดลบ ฿{dbNum(Math.abs(T.left.plan))}</b>:<>แผนเหลือ <b style={{color:"#34d399"}}>฿{dbNum(T.left.plan)}</b></>} หลังรายจ่ายและออม
+          </div>
+          <div className="fin-range">
+            <button className={`fin-range-btn ${viewMode==="month"?"active":""}`} onClick={()=>setViewMode("month")}>รายเดือน</button>
+            <button className={`fin-range-btn ${viewMode==="year"?"active":""}`} onClick={()=>setViewMode("year")}>รายปี</button>
+            {viewMode==="month"
+              ? <select className="fin-range-select pl-month-select" value={selMonth} onChange={e=>setSelMonth(e.target.value)}>
+                  {monthOptions.map(m=><option key={m} value={m}>{mLabel(m)}</option>)}
+                </select>
+              : <select className="fin-range-select" value={selYear} onChange={e=>setSelYear(Number(e.target.value))}>
+                  {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+                </select>}
+          </div>
+          {editable&&(
+            <div className="fin-range pl-scope">
+              <span className="db-note" style={{margin:0}}>แก้ตัวเลขแผนแบบ</span>
+              <button className={`fin-range-btn ${scope==="month"?"active":""}`} onClick={()=>setScope("month")}>เฉพาะเดือนนี้</button>
+              <button className={`fin-range-btn ${scope==="all"?"active":""}`} onClick={()=>setScope("all")}>ทุกเดือน</button>
+            </div>
+          )}
+          <div className="pl-actions">
+            <button className="db-btn primary pl-add" onClick={()=>setShowAdd(true)}><Plus size={14}/> เพิ่มหมวด</button>
+            <button className="db-btn pl-recat" onClick={()=>setShowRecat(true)}><FileText size={14}/> จัดหมวดใหม่</button>
+            {editable&&<button className="db-btn pl-fill" onClick={fillFromActual}>เติมแผนจากข้อมูลจริง</button>}
+          </div>
+          {msg&&<div className="db-note pl-msg">{msg}</div>}
         </div>
         <div className="db-bignums">
           <div className="db-bignum">
-            <div className="n acc db-mono">฿{dbShort(totalVar)}</div>
-            <div className="l"><span className="db-dot a"/> งบที่คุมได้</div>
+            <div className="n acc db-mono">฿{dbShort(T.inc.plan)}</div>
+            <div className="l"><span className="db-dot a"/> รายรับตามแผน</div>
           </div>
           <div className="db-bignum">
-            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(totalFix)}</div>
-            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> งบคงที่</div>
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(T.exp.plan)}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> รายจ่ายตามแผน</div>
           </div>
           <div className="db-bignum">
-            <div className="n gld db-mono">฿{dbShort(totalVar+totalFix)}</div>
-            <div className="l"><span className="db-dot g"/> รวม/เดือน</div>
+            <div className={`n db-mono ${leftNeg?"neg":"gld"}`}>{leftNeg?"-":""}฿{dbShort(Math.abs(T.left.plan))}</div>
+            <div className="l"><span className={`db-dot ${leftNeg?"d":"g"}`}/> เหลือตามแผน</div>
           </div>
         </div>
       </div>
       <div className="db-bento">
-        <BudgetPanel data={finance} persist={persist} cats={cats} defaultOpen={true}/>
+        <div className="db-card db-span4 pl-summary">
+          <div className="db-head"><div><div className="db-title">แผนเทียบจริง</div>
+            <div className="db-note">{periodLabel}{editable?"":" · มุมมองรายปีดูอย่างเดียว เลือก “รายเดือน” เพื่อแก้แผน"}</div></div></div>
+          <div className="pl-head"><span/><span>แผน</span><span>จริง</span><span>%</span></div>
+          <PlanSumLine label="รายรับ" kind="inc" plan={T.inc.plan} actual={T.inc.actual}/>
+          <PlanSumLine label="รายจ่าย" kind="exp" plan={T.exp.plan} actual={T.exp.actual}/>
+          <PlanSumLine label="ออม/ลงทุน" kind="sav" plan={T.sav.plan} actual={T.sav.actual}/>
+          <PlanSumLine label="เหลือ" kind="left" strong plan={T.left.plan} actual={T.left.actual}/>
+        </div>
+        <div className="db-card db-span2 pl-card-inc">
+          <div className="db-head"><div><div className="db-title">รายรับ</div><div className="db-note">แผนเทียบจริงตามแหล่งที่มา</div></div></div>
+          {view.inc.length===0&&<div className="db-empty">ยังไม่มีรายรับ — กด “เพิ่มหมวด”</div>}
+          {view.inc.length>0&&<div className="pl-head"><span/><span>แผน</span><span>จริง</span><span>%</span></div>}
+          {view.inc.map(r=>(
+            <PlanRow key={r.key} row={r} label={r.key} kind="inc" editable={editable}
+              onChange={edit("inc",r.key)} onReset={()=>reset("inc",r.key)} onRemove={()=>remove("inc",r.key)} onUseSug={()=>useSug("inc",r.key,r.sug)}/>
+          ))}
+        </div>
+        <div className="db-card db-span2 pl-card-sav">
+          <div className="db-head"><div><div className="db-title">ออม / ลงทุน</div><div className="db-note">ตามประเภทในหน้า Investments</div></div></div>
+          {view.sav.length===0&&<div className="db-empty">ยังไม่มีแผนออม — กด “เพิ่มหมวด”</div>}
+          {view.sav.length>0&&<div className="pl-head"><span/><span>แผน</span><span>จริง</span><span>%</span></div>}
+          {view.sav.map(r=>(
+            <PlanRow key={r.key} row={r} label={INVEST_TYPE_LABELS[r.key]||r.key} kind="sav" editable={editable}
+              onChange={edit("sav",r.key)} onReset={()=>reset("sav",r.key)} onRemove={()=>remove("sav",r.key)} onUseSug={()=>useSug("sav",r.key,r.sug)}/>
+          ))}
+        </div>
+        <div className="db-card db-span4 pl-card-exp">
+          <div className="db-head"><div><div className="db-title">รายจ่ายตามหมวด</div><div className="db-note">{view.exp.length} หมวด · ตั้งแผนและระบุว่าคุมได้หรือคงที่</div></div></div>
+          {view.exp.length===0&&<div className="db-empty">ยังไม่มีหมวดรายจ่าย — กด “เพิ่มหมวด”</div>}
+          {view.exp.length>0&&<div className="pl-head"><span/><span>แผน</span><span>จริง</span><span>%</span></div>}
+          {shownExp.map(r=>(
+            <PlanRow key={r.key} row={r} label={r.key} kind="exp" editable={editable}
+              onChange={edit("exp",r.key)} onReset={()=>reset("exp",r.key)} onRemove={()=>remove("exp",r.key)} onUseSug={()=>useSug("exp",r.key,r.sug)}
+              onType={(t)=>setType(r.key,t)}/>
+          ))}
+          <ShowMoreRow rl={rlExp} total={view.exp.length}/>
+        </div>
       </div>
     </div>
   );

@@ -327,7 +327,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('ตัวเลขใหญ่สรุป 3 ตัว (รับ/จ่าย/คงเหลือ)',rvw.bignums===3,`${rvw.bignums} ตัว`);
   check('ตัวเลือกเดือนยังอยู่ในฮีโร่',rvw.monthSelect);
   check('การ์ดพับได้อย่างน้อย 3 ใบ (ข้อ 32/3)',rvw.collapses>=3,`${rvw.collapses} ใบ`);
-  check('หน้านี้ไม่มีปุ่ม "เพิ่มข้อมูล" ปลอม มีแค่ปุ่ม "จัดหมวดใหม่" ปุ่มเดียว (ข้อ 32/2)',rvw.addBtns.length===0&&rvw.recatBtn===1,`เพิ่มข้อมูล ${rvw.addBtns.length} · จัดหมวดใหม่ ${rvw.recatBtn}`);
+  check('หน้า Review ไม่มีปุ่ม "เพิ่มข้อมูล"/"จัดหมวดใหม่" แล้ว (ปุ่มจัดหมวดย้ายไป Planning · ข้อ 77)',rvw.addBtns.length===0&&rvw.recatBtn===0,`เพิ่มข้อมูล ${rvw.addBtns.length} · จัดหมวดใหม่ ${rvw.recatBtn}`);
   check('ไม่เหลือคลาสธีมเก่า/ตารางในหน้านี้',rvw.legacy===0,`เจอ ${rvw.legacy}`);
   check('ไม่เหลือ fontSize inline ในหน้านี้ (ข้อ 32/4)',rvw.inlineFs.length===0,rvw.inlineFs.slice(0,5).join(' | '));
   check('ตรรกะ anomaly detection ยังทำงาน (seed มี 2 หมวดใหม่ใน ก.ค.)',rvw.anomRows>0,`${rvw.anomRows} รายการ`);
@@ -354,33 +354,125 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     });
     check('บันทึกรีวิว (คะแนน+โน้ต) ลง localStorage จริง',!!savedReview&&savedReview.rating===4&&savedReview.notes==='ทดสอบสรุปเดือนนี้',JSON.stringify(savedReview));
   } else check('บันทึกรีวิว (คะแนน+โน้ต) ลง localStorage จริง',false,'ไม่เจอดาวให้กด');
-  // ปุ่มจัดหมวดใหม่ยังเปิด RecategorizeModal ได้ (ตรรกะเดิมไม่ได้แตะ)
-  const recatBtnLoc=p.locator('.fin-page .inv-add-btn:has-text("จัดหมวดใหม่")').first();
+  // ปุ่ม "ดู/จัดหมวด" ในรายการผิดปกติยังเปิด RecategorizeModal ได้ (ตรรกะเดิมไม่ได้แตะ)
+  const recatBtnLoc=p.locator('.fin-page .rv-anom button:has-text("ดู/จัดหมวด")').first();
   if(await recatBtnLoc.count()){
     await recatBtnLoc.click(); await p.waitForTimeout(800);
     const hasModal=await p.evaluate(()=>!!document.querySelector('.modal-backdrop .recat-modal'));
-    check('ปุ่มจัดหมวดใหม่เปิด RecategorizeModal ได้',hasModal);
+    check('ปุ่ม "ดู/จัดหมวด" ในรายการผิดปกติเปิด RecategorizeModal ได้',hasModal);
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
-  } else check('ปุ่มจัดหมวดใหม่เปิด RecategorizeModal ได้',false,'ไม่เจอปุ่ม');
-  // ข้อ 76: Budget Settings ย้ายจาก Review ไป Planning (ตรรกะ getBudget/setBudget ไม่ได้แตะ)
+  } else check('ปุ่ม "ดู/จัดหมวด" ในรายการผิดปกติเปิด RecategorizeModal ได้',false,'ไม่เจอปุ่ม');
+  // ข้อ 76: Budget Settings ย้ายออกจาก Review แล้ว
   const rvHasBudget=await p.evaluate(()=>[...document.querySelectorAll('.fin-page .db-title')].some(x=>x.textContent.trim()==='Budget Settings'));
   check('หน้า Review ไม่มี Budget Settings แล้ว',!rvHasBudget);
   await p.locator('.fin-review-back').first().click(); await p.waitForTimeout(1200);
   const backOk=await p.evaluate(()=>!!document.querySelector('.fin-review-card'));
   check('ปุ่ม "กลับ Overview" ในหน้า Review กลับไปหน้า Overview ได้',backOk);
-  await p.locator('.fin-tab-btn:has-text("Planning")').first().click(); await p.waitForTimeout(1500);
-  const planInfo=await p.evaluate(()=>({
-    heading:(document.querySelector('.fin-page .db-hero-title')||{}).textContent||'',
-    rows:document.querySelectorAll('.fin-page .budget-row').length,
-    big:document.querySelectorAll('.fin-page .db-hero .db-bignum').length,
-  }));
-  check('Planning: Budget Settings กางอยู่แล้วและแสดงรายการหมวด + ตัวเลขใหญ่ 3 ช่อง',/^Planning/.test(planInfo.heading.trim())&&planInfo.rows>0&&planInfo.big===3,JSON.stringify(planInfo));
-  const bRow=p.locator('.fin-page .budget-row:has(.budget-cat:text-is("อาหาร")) input.budget-input').first();
-  if(await bRow.count()){
-    await bRow.fill('9000'); await p.waitForTimeout(700);
-    const savedBudget=await p.evaluate(()=>{ const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1')); return (d.budgets||{})['อาหาร']; });
-    check('Planning: แก้งบหมวดแล้วบันทึกลง budgets (root) จริง',!!savedBudget&&Number(savedBudget.amount)===9000,JSON.stringify(savedBudget));
-  } else check('Planning: แก้งบหมวดแล้วบันทึกลง budgets (root) จริง',false,'ไม่เจอแถวหมวดอาหาร');
+
+  /* ───────── ข้อ 77 ขั้น B: Planning — ใช้หน้าแยก (q) เพราะเทสต์นี้แก้ข้อมูล (budgets/plan) หลายอย่าง ไม่ให้กระทบเทสต์ต่อๆ ไป ───────── */
+  console.log('\n[ข้อ 77 ขั้น B] Planning: แผนรับ/จ่าย/ออมเทียบจริง + เพิ่มหมวด');
+  const q=await b.newPage({viewport:{width:1440,height:950}});
+  q.on('pageerror',e=>errs.push('PAGEERROR(planning): '+String(e).slice(0,300)));
+  q.on('console',m=>{ if(m.type()==='error'&&!/favicon|manifest|sw\.js|Failed to load resource|net::|deoptimised the styling/i.test(m.text())) errs.push('CONSOLE(planning): '+m.text().slice(0,300)); });
+  await q.addInitScript(d=>localStorage.setItem('secretary-dashboard-v1',JSON.stringify(d)),SEED);
+  await q.goto('file://'+path.resolve('test-dashboard.html')); await q.waitForTimeout(6000);
+  await q.locator('button:has-text("Finance")').first().click(); await q.waitForTimeout(1500);
+  await q.locator('.fin-tab-btn:has-text("Planning")').first().click(); await q.waitForTimeout(1500);
+  const LS=()=>q.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')));
+  const expRow=(name)=>q.locator(`.pl-card-exp .pl-line:has(.pl-label:text-is("${name}"))`).first();
+  const pl0=await q.evaluate(()=>{
+    const h=document.querySelector('.fin-page .db-hero-title');
+    return {heading:(h||{}).textContent||'',heroFs:h?getComputedStyle(h).fontSize:'',big:document.querySelectorAll('.fin-page .db-hero .db-bignum').length,
+      cards:document.querySelectorAll('.fin-page .db-bento > .db-card').length,sum:document.querySelectorAll('.pl-summary .pl-sumline').length,
+      add:!!document.querySelector('.pl-add'),recat:!!document.querySelector('.pl-recat'),fill:!!document.querySelector('.pl-fill'),
+      expInputs:document.querySelectorAll('.pl-card-exp .pl-input').length,oldPanel:document.querySelectorAll('.budget-row').length,
+      scope:!!document.querySelector('.pl-scope'),monthSel:!!document.querySelector('.pl-month-select')};
+  });
+  check('Planning: ฮีโร่ 38px + ตัวเลขใหญ่ 3 + การ์ด 4 ใบ + สรุป 4 แถว + ปุ่มเพิ่มหมวด/จัดหมวดใหม่/เติมแผน',
+    /^Planning/.test(pl0.heading.trim())&&pl0.heroFs==='38px'&&pl0.big===3&&pl0.cards===4&&pl0.sum===4&&pl0.add&&pl0.recat&&pl0.fill&&pl0.scope&&pl0.monthSel&&pl0.oldPanel===0,JSON.stringify(pl0));
+  check('Planning: แถวรายจ่ายเป็นช่องกรอกแผน (หมวดจาก budgets + รายจ่ายจริง)',pl0.expInputs>=3,`${pl0.expInputs} แถว`);
+  await q.selectOption('.pl-month-select','2026-07'); await q.waitForTimeout(800);
+  const sumTxt=await q.evaluate(()=>[...document.querySelectorAll('.pl-summary .pl-sumline')].map(x=>x.textContent));
+  check('Planning (ก.ค. 2026): ยอดจริง รายรับ 45,000 · รายจ่าย 6,600 (หักคืนเงิน) · ออม 1,500 · เหลือ 36,900',
+    /45,000/.test(sumTxt[0])&&/6,600/.test(sumTxt[1])&&/1,500/.test(sumTxt[2])&&/36,900/.test(sumTxt[3]),JSON.stringify(sumTxt));
+  // แก้แผนเฉพาะเดือน → plan.months (ค่ามาตรฐานใน budgets ต้องไม่ถูกแตะ)
+  await expRow('อาหาร').locator('.pl-input').fill('9000'); await q.waitForTimeout(800);
+  let d=await LS();
+  check('Planning: แก้แผน "เฉพาะเดือนนี้" → เก็บใน plan.months[ก.ค.].exp · budgets.อาหาร ยัง 8000',
+    d.plan&&d.plan.months&&d.plan.months['2026-07']&&d.plan.months['2026-07'].exp['อาหาร']===9000&&d.budgets['อาหาร'].amount===8000,JSON.stringify([d.plan,d.budgets['อาหาร']]));
+  const hasResetLink=await expRow('อาหาร').locator('.pl-link:has-text("คืนค่า")').count();
+  check('Planning: แถวที่ตั้งเฉพาะเดือนมีจุดทอง + ปุ่ม "คืนค่า"',hasResetLink===1&&await expRow('อาหาร').locator('.pl-ovr.here').count()===1);
+  await expRow('อาหาร').locator('.pl-link:has-text("คืนค่า")').click(); await q.waitForTimeout(700);
+  d=await LS();
+  check('Planning: กด "คืนค่า" → ลบ override ของเดือนนั้นทิ้ง',!(d.plan&&d.plan.months&&d.plan.months['2026-07']),JSON.stringify(d.plan));
+  // แก้ค่ามาตรฐานทุกเดือน → budgets
+  await q.locator('.pl-scope .fin-range-btn:has-text("ทุกเดือน")').click();
+  await expRow('อาหาร').locator('.pl-input').fill('9500'); await q.waitForTimeout(700);
+  d=await LS();
+  check('Planning: แก้ "ทุกเดือน" → budgets.อาหาร = 9500 (ที่ root เดิม · type ไม่เปลี่ยน)',d.budgets['อาหาร'].amount===9500&&d.budgets['อาหาร'].type==='variable',JSON.stringify(d.budgets['อาหาร']));
+  // สลับคุมได้/คงที่
+  await expRow('อาหาร').locator('.budget-type-btn:has-text("คงที่")').click(); await q.waitForTimeout(600);
+  d=await LS();
+  check('Planning: สลับ คุมได้/คงที่ ของหมวดได้ (budgets.type)',d.budgets['อาหาร'].type==='fixed'&&d.budgets['อาหาร'].amount===9500,JSON.stringify(d.budgets['อาหาร']));
+  await expRow('อาหาร').locator('.budget-type-btn:has-text("คุมได้")').click(); await q.waitForTimeout(500);
+  // เติมแผนจากข้อมูลจริง (เฉพาะช่องที่ยังว่าง)
+  await q.locator('.pl-fill').click(); await q.waitForTimeout(900);
+  d=await LS();
+  check('Planning: "เติมแผนจากข้อมูลจริง" → ผ่อนรถ 2,500 (เฉลี่ยก่อนหน้า) · เงินเดือน 45,000 · กบข. 1,500 · ไม่ทับอาหารที่ตั้งไว้แล้ว',
+    d.budgets['ผ่อนรถ']&&d.budgets['ผ่อนรถ'].amount===2500&&d.plan.inc&&d.plan.inc['เงินเดือน']===45000&&d.plan.sav&&d.plan.sav.retirement===1500&&d.budgets['อาหาร'].amount===9500,
+    JSON.stringify([d.budgets['ผ่อนรถ'],d.plan.inc,d.plan.sav]));
+  // เพิ่มหมวดรายจ่าย + ลบแถวที่ยังไม่เคยมีรายการ
+  await q.locator('.pl-add').click(); await q.waitForTimeout(500);
+  await q.locator('.pl-add-name').fill('หมวดทดสอบ B'); await q.locator('.pl-add-amount').fill('1234');
+  await q.locator('.pl-add-save').click(); await q.waitForTimeout(800);
+  d=await LS();
+  check('Planning: เพิ่มหมวดรายจ่าย → budgets[หมวด]={1234,variable} และมีแถวขึ้นทันที',
+    d.budgets['หมวดทดสอบ B']&&d.budgets['หมวดทดสอบ B'].amount===1234&&d.budgets['หมวดทดสอบ B'].type==='variable'&&await expRow('หมวดทดสอบ B').count()===1,JSON.stringify(d.budgets['หมวดทดสอบ B']));
+  await expRow('หมวดทดสอบ B').locator('.pl-link:has-text("ลบแถว")').click(); await q.waitForTimeout(700);
+  d=await LS();
+  check('Planning: ลบแถวหมวดที่ยังไม่เคยมีรายการ → หายจาก budgets',!d.budgets['หมวดทดสอบ B']&&await expRow('หมวดทดสอบ B').count()===0);
+  check('Planning: หมวดที่มีรายการจริงแล้วไม่มีปุ่มลบแถว (กันข้อมูลหลุด)',await expRow('ผ่อนรถ').locator('.pl-link:has-text("ลบแถว")').count()===0);
+  // เพิ่มแผนออม/ลงทุน (ประเภททอง) + ชื่อซ้ำถูกกัน
+  await q.locator('.pl-add').click(); await q.waitForTimeout(400);
+  await q.selectOption('.pl-add-group','sav'); await q.selectOption('.pl-add-type','gold'); await q.locator('.pl-add-amount').fill('500');
+  await q.locator('.pl-add-save').click(); await q.waitForTimeout(800);
+  d=await LS();
+  check('Planning: เพิ่มแผนออม/ลงทุนตามประเภท (ทอง 500) → plan.sav.gold',d.plan.sav&&d.plan.sav.gold===500,JSON.stringify(d.plan.sav));
+  await q.locator('.pl-add').click(); await q.waitForTimeout(400);
+  await q.locator('.pl-add-name').fill('อาหาร');
+  const dupBlocked=await q.locator('.pl-add-save').isDisabled();
+  check('Planning: เพิ่มหมวดชื่อซ้ำไม่ได้ (ปุ่มบันทึกปิด)',dupBlocked);
+  await q.locator('.modal-close').first().click(); await q.waitForTimeout(400);
+  // จัดหมวดใหม่ย้ายมาอยู่ที่ Planning
+  await q.locator('.pl-recat').click(); await q.waitForTimeout(800);
+  check('Planning: ปุ่ม "จัดหมวดใหม่" เปิด RecategorizeModal ได้',await q.evaluate(()=>!!document.querySelector('.modal-backdrop .recat-modal')));
+  await q.locator('.modal-close').first().click().catch(()=>{}); await q.waitForTimeout(500);
+  // Review อ่านค่าแผนเฉพาะเดือน
+  await q.locator('.pl-scope .fin-range-btn:has-text("เฉพาะเดือนนี้")').click();
+  await expRow('อาหาร').locator('.pl-input').fill('6500'); await q.waitForTimeout(700);
+  await q.locator('.fin-tab-btn:has-text("Overview")').first().click(); await q.waitForTimeout(1200);
+  await q.locator('.fin-review-open').first().click(); await q.waitForTimeout(1800);
+  const rvTxt=await q.evaluate(()=>document.querySelector('.fin-page').innerText);
+  check('Review ใช้ค่าแผนเฉพาะเดือนจาก Planning (อาหาร ก.ค. = 6,500 ไม่ใช่ค่ามาตรฐาน 9,500)',/6,500/.test(rvTxt)&&!/9,500/.test(rvTxt));
+  // มุมมองรายปี: ดูอย่างเดียว + รวมแผนทุกเดือนถึงเดือนปัจจุบัน
+  await q.locator('.fin-tab-btn:has-text("Planning")').first().click(); await q.waitForTimeout(1200);
+  await q.locator('.pl-scope').count();
+  await q.locator('.fin-range-btn:has-text("รายปี")').click(); await q.waitForTimeout(900);
+  const yr=await q.evaluate(()=>({inputs:document.querySelectorAll('.pl-input').length,scope:!!document.querySelector('.pl-scope'),fill:!!document.querySelector('.pl-fill'),
+    note:(document.querySelector('.pl-summary .db-note')||{}).textContent||'',inc:(document.querySelector('.pl-summary .pl-sumline')||{}).textContent||''}));
+  check('Planning รายปี: ไม่มีช่องกรอก/ปุ่มเติม/ตัวเลือกขอบเขต · มีข้อความดูอย่างเดียว · รายรับจริงรวม 45,000',
+    yr.inputs===0&&!yr.scope&&!yr.fill&&/ดูอย่างเดียว/.test(yr.note)&&/45,000/.test(yr.inc),JSON.stringify(yr));
+  const planScan=await q.evaluate(()=>{
+    const purple=(r,g,b)=>b>g+18&&r>g+4&&b>60;
+    const bad=[]; for(const e of document.querySelectorAll('.fin-page *')){ if(e.offsetParent===null) continue; const m=/rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(e).color||''); if(m&&purple(+m[1],+m[2],+m[3])) bad.push(e.className); }
+    return bad.slice(0,3);
+  });
+  check('Planning: ไม่มีสีม่วงหลงเหลือ',planScan.length===0,planScan.join(','));
+  await q.setViewportSize({width:390,height:844}); await q.waitForTimeout(800);
+  await q.locator('.fin-range-btn:has-text("รายเดือน")').click(); await q.waitForTimeout(800);
+  const mob=await q.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
+  check('Planning บนมือถือ 390px ไม่ล้นแนวนอน',mob.sw<=mob.iw+2,`scrollWidth ${mob.sw} vs ${mob.iw}`);
+  await q.close();
 
   console.log('\n[ข้อ 24/8] หน้า Income + Expenses — reskin เท่านั้น (ห้ามรื้อเป็น bento)');
   const finListScan=async()=>await p.evaluate(()=>{
