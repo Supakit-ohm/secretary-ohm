@@ -1662,3 +1662,7 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
   .fin-scope-card .db-title{font-size:14px;}
   .fin-scope-card .fin-scope-toggle .type-btn{padding:0 8px;font-size:10.5px;}
 }
+
+/* ข้อ 76 (ขั้น A): ปุ่มกลับจากหน้า Review + การ์ด Review บน Overview */
+.fin-review-back{margin-bottom:12px;}
+.fin-review-card .db-head{margin-bottom:6px;}

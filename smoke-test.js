@@ -151,8 +151,8 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   await p.locator('button:has-text("Finance")').first().click(); await p.waitForTimeout(1500);
   const nw=(await p.evaluate(()=>document.body.innerText)).match(/Net Worth[\s\S]{0,60}/);
   check('Net Worth คำนวณได้',!!nw,nw?nw[0].replace(/\n/g,' | '):"");
-  for(const t of ['Overview','Income','Expenses','Investments','Debts','Review']){
-    await p.locator(`button:has-text("${t}")`).first().click().catch(()=>{});
+  for(const t of ['Overview','Planning','Income','Expenses','Investments','Debts']){
+    await p.locator(`.fin-tab-btn:has-text("${t}")`).first().click().catch(()=>{});
     await p.waitForTimeout(1600);
     const len=(await p.evaluate(()=>document.querySelector('.fin-section')?.innerText.length))||0;
     check(`แท็บ ${t}`,len>50,`${len} ตัวอักษร`);
@@ -284,8 +284,22 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('ปุ่มแก้ไขเปิดโมดัลพร้อมค่าเดิม',false,'ไม่เจอปุ่มแก้ไข');
 
+  console.log('\n[ข้อ 76 ขั้น A] แถบ Finance: ตัด Review → เพิ่ม Planning · การ์ด Review บน Overview');
+  await p.locator('.fin-tab-btn:has-text("Overview")').first().click(); await p.waitForTimeout(1500);
+  const navTabs=await p.evaluate(()=>[...document.querySelectorAll('.fin-tab-nav .fin-tab-btn')].map(b=>b.textContent.trim()));
+  check('แถบ Finance มี 6 แท็บ: Overview/Planning/Income/Expenses/Investments/Debts (ไม่มี Review)',
+    JSON.stringify(navTabs)===JSON.stringify(['Overview','Planning','Income','Expenses','Investments','Debts']),navTabs.join(' | '));
+  const rvCard=await p.evaluate(()=>{ const c=document.querySelector('.fin-page .fin-review-card'); return c?{title:(c.querySelector('.db-title')||{}).textContent,btn:!!c.querySelector('.fin-review-open'),rows:c.querySelectorAll('.db-row').length}:null; });
+  check('Overview มีการ์ด Review + ปุ่มเปิดรีวิว + สรุป 3 แถว',!!rvCard&&rvCard.title==='Review'&&rvCard.btn&&rvCard.rows===3,JSON.stringify(rvCard));
+  await p.locator('.fin-review-open').first().click(); await p.waitForTimeout(2000);
+  const rvOpen=await p.evaluate(()=>({
+    heading:(document.querySelector('.fin-page .db-hero-title')||{}).textContent||'',
+    back:!!document.querySelector('.fin-review-back'),
+    activeTab:(document.querySelector('.fin-tab-nav .fin-tab-btn.active')||{}).textContent||'',
+  }));
+  check('กด "เปิดรีวิว" → เข้าหน้า Review (Overview ยังไฮไลต์ · มีปุ่มกลับ)',/^Review/.test(rvOpen.heading.trim())&&rvOpen.back&&/Overview/.test(rvOpen.activeTab),JSON.stringify(rvOpen));
+
   console.log('\n[ข้อ 24/7] หน้า Finance Review รีดีไซน์ตามธรรมนูญข้อ 32');
-  await p.locator('button:has-text("Review")').first().click(); await p.waitForTimeout(2000);
   const rvw=await p.evaluate(()=>{
     const sec=document.querySelector('.fin-section');
     const inlineFs=[...(sec?sec.querySelectorAll('[style]'):[])]
@@ -348,13 +362,25 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check('ปุ่มจัดหมวดใหม่เปิด RecategorizeModal ได้',hasModal);
     await p.locator('.modal-close').first().click().catch(()=>{}); await p.waitForTimeout(500);
   } else check('ปุ่มจัดหมวดใหม่เปิด RecategorizeModal ได้',false,'ไม่เจอปุ่ม');
-  // Budget Settings พับได้ + ยังแสดงรายการหมวด (ตรรกะเดิม getBudget/setBudget ไม่ได้แตะ)
-  const budgetHead=p.locator('.fin-page .db-head:has(.db-title:text-is("Budget Settings"))').first();
-  if(await budgetHead.count()){
-    await budgetHead.click(); await p.waitForTimeout(600);
-    const rows=await p.evaluate(()=>document.querySelectorAll('.fin-page .budget-row').length);
-    check('Budget Settings กางออกมาแสดงรายการหมวดได้ (ปิดเป็นค่าเริ่มต้น)',rows>0,`${rows} หมวด`);
-  } else check('Budget Settings กางออกมาแสดงรายการหมวดได้ (ปิดเป็นค่าเริ่มต้น)',false,'ไม่เจอหัวการ์ด');
+  // ข้อ 76: Budget Settings ย้ายจาก Review ไป Planning (ตรรกะ getBudget/setBudget ไม่ได้แตะ)
+  const rvHasBudget=await p.evaluate(()=>[...document.querySelectorAll('.fin-page .db-title')].some(x=>x.textContent.trim()==='Budget Settings'));
+  check('หน้า Review ไม่มี Budget Settings แล้ว',!rvHasBudget);
+  await p.locator('.fin-review-back').first().click(); await p.waitForTimeout(1200);
+  const backOk=await p.evaluate(()=>!!document.querySelector('.fin-review-card'));
+  check('ปุ่ม "กลับ Overview" ในหน้า Review กลับไปหน้า Overview ได้',backOk);
+  await p.locator('.fin-tab-btn:has-text("Planning")').first().click(); await p.waitForTimeout(1500);
+  const planInfo=await p.evaluate(()=>({
+    heading:(document.querySelector('.fin-page .db-hero-title')||{}).textContent||'',
+    rows:document.querySelectorAll('.fin-page .budget-row').length,
+    big:document.querySelectorAll('.fin-page .db-hero .db-bignum').length,
+  }));
+  check('Planning: Budget Settings กางอยู่แล้วและแสดงรายการหมวด + ตัวเลขใหญ่ 3 ช่อง',/^Planning/.test(planInfo.heading.trim())&&planInfo.rows>0&&planInfo.big===3,JSON.stringify(planInfo));
+  const bRow=p.locator('.fin-page .budget-row:has(.budget-cat:text-is("อาหาร")) input.budget-input').first();
+  if(await bRow.count()){
+    await bRow.fill('9000'); await p.waitForTimeout(700);
+    const savedBudget=await p.evaluate(()=>{ const d=JSON.parse(localStorage.getItem('secretary-dashboard-v1')); return (d.budgets||{})['อาหาร']; });
+    check('Planning: แก้งบหมวดแล้วบันทึกลง budgets (root) จริง',!!savedBudget&&Number(savedBudget.amount)===9000,JSON.stringify(savedBudget));
+  } else check('Planning: แก้งบหมวดแล้วบันทึกลง budgets (root) จริง',false,'ไม่เจอแถวหมวดอาหาร');
 
   console.log('\n[ข้อ 24/8] หน้า Income + Expenses — reskin เท่านั้น (ห้ามรื้อเป็น bento)');
   const finListScan=async()=>await p.evaluate(()=>{
@@ -1102,25 +1128,33 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     check(`${label} · ไม่มีตัวอักษรนอกสเกล`,r.badFs.length===0,r.badFs.slice(0,3).join(' | '));
   }
   await p.locator('.nav-pill button:has-text("Finance")').first().click(); await p.waitForTimeout(1500);
-  for(const t of ['Overview','Review','Income','Expenses','Investments','Debts']){
+  for(const t of ['Overview','Planning','Income','Expenses','Investments','Debts']){
     await p.locator(`.fin-tab-btn:has-text("${t}")`).first().click().catch(()=>{});
     await p.waitForTimeout(1800);
     const r=await scanPage(t);
     check(`Finance/${t} · ไม่มีสีม่วง + สเกลตรง`,r.badColor.length===0&&r.badFs.length===0,
       [...r.badColor.slice(0,2),...r.badFs.slice(0,2)].join(' | '));
   }
+  await p.locator('.fin-tab-btn:has-text("Overview")').first().click(); await p.waitForTimeout(1200);
+  await p.locator('.fin-review-open').first().click(); await p.waitForTimeout(1800);
+  { const r=await scanPage('Review (เปิดจากการ์ด)');
+    check('Finance/Review (เปิดจากการ์ด) · ไม่มีสีม่วง + สเกลตรง',r.badColor.length===0&&r.badFs.length===0,[...r.badColor.slice(0,2),...r.badFs.slice(0,2)].join(' | ')); }
 
   console.log('\n[จอมือถือ 390px] ห้ามล้นแนวนอน');
   await p.setViewportSize({width:390,height:844}); await p.waitForTimeout(1200);
   /* ข้อ 56 ขั้นที่ 2: มือถือไม่มีแถบล่างแล้ว — เปลี่ยนหน้าผ่านเมนู Jack (กดหัว → เลือกหน้า) */
   const mobileGo=async(label)=>{ await p.locator('.brand-trigger').click(); await p.waitForTimeout(450); await p.locator(`.jm-item:has-text("${label}")`).click(); await p.waitForTimeout(500); };
   await mobileGo('Finance'); await p.waitForTimeout(1200);
-  for(const t of ['Overview','Review','Investments','Debts']){
-    await p.locator(`button:has-text("${t}")`).first().click().catch(()=>{});
+  for(const t of ['Overview','Planning','Investments','Debts']){
+    await p.locator(`.fin-tab-btn:has-text("${t}")`).first().click().catch(()=>{});
     await p.waitForTimeout(1500);
     const o=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
     check(`มือถือ · แท็บ ${t} ไม่ล้นแนวนอน`,o.sw<=o.iw+2,`scrollWidth ${o.sw} vs ${o.iw}`);
   }
+  await p.locator('.fin-tab-btn:has-text("Overview")').first().click().catch(()=>{}); await p.waitForTimeout(1200);
+  await p.locator('.fin-review-open').first().click().catch(()=>{}); await p.waitForTimeout(1500);
+  { const o=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth,onReview:/^Review/.test(((document.querySelector('.fin-page .db-hero-title')||{}).textContent||'').trim())}));
+    check('มือถือ · หน้า Review (เปิดจากการ์ด) ไม่ล้นแนวนอน',o.onReview&&o.sw<=o.iw+2,`scrollWidth ${o.sw} vs ${o.iw} · onReview=${o.onReview}`); }
   await mobileGo('Tracker'); await p.waitForTimeout(1600);
   const mTrk=await p.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:window.innerWidth}));
   check('มือถือ · หน้า Tracker ไม่ล้นแนวนอน',mTrk.sw<=mTrk.iw+2,`scrollWidth ${mTrk.sw} vs ${mTrk.iw}`);

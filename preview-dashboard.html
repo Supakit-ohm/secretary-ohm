@@ -2618,7 +2618,38 @@ function FinDonutCard({title,note,data,getItems,accent,sign,emptyText,span}){
     </div>
   );
 }
-function FinanceOverviewTab({finance,persist,setTab}) {
+/* ข้อ 76 (ขั้น A): การ์ด Review บน Overview — แท็บ Review ถูกย้ายมาเป็นปุ่ม "เปิดรีวิว" ในการ์ดนี้
+   เนื้อหาในการ์ดแค่สรุปสั้นๆ ของเดือนที่เลือก (รายละเอียดการ์ดคุยทีหลัง) · ไม่แตะตรรกะ buildMonthReview */
+function ReviewSummaryCard({finance,month,onOpen}) {
+  const valid=/^\d{4}-\d{2}$/.test(month);
+  const R=valid?buildMonthReview(finance,month):null;
+  const saved=valid?((finance.reviews||{})[month]||null):null;
+  const rating=saved&&saved.rating?saved.rating:0;
+  const hasNote=!!(saved&&saved.notes&&saved.notes.trim());
+  const monthLabel=valid?new Date(`${month}-01`).toLocaleDateString("th-TH",{month:"long",year:"numeric"}):"ยังไม่มีข้อมูล";
+  return (
+    <div className="db-card db-span4 fin-review-card">
+      <div className="db-head">
+        <div><div className="db-title">Review</div><div className="db-note">รีวิวรายเดือน · {monthLabel}</div></div>
+        <div className="db-head-actions">
+          <button className="db-btn fin-review-open" onClick={onOpen}>เปิดรีวิว <ArrowRight size={12}/></button>
+        </div>
+      </div>
+      {!R&&<div className="db-empty">ยังไม่มีข้อมูลรายเดือนให้รีวิว</div>}
+      {R&&(
+        <>
+          <div className="db-row"><span className="lab">อัตราการออม</span>
+            <span className="val db-mono">{R.savingRate.toFixed(1)}%</span></div>
+          <div className="db-row"><span className="lab">คะแนนที่ให้เดือนนี้</span>
+            <span className="val db-mono gld">{rating>0?"★".repeat(rating)+"☆".repeat(5-rating):"ยังไม่ได้ให้คะแนน"}</span></div>
+          <div className="db-row"><span className="lab">บันทึกสรุปเดือน</span>
+            <span className="val">{hasNote?"เขียนแล้ว":"ยังไม่ได้เขียน"}</span></div>
+        </>
+      )}
+    </div>
+  );
+}
+function FinanceOverviewTab({finance,persist,setTab,onOpenReview}) {
   const [viewMode,setViewMode]=useState("month");
   const [showAddAcc,setShowAddAcc]=useState(false);
   const income=finance.finance.income||[];
@@ -2706,6 +2737,7 @@ function FinanceOverviewTab({finance,persist,setTab}) {
           title="รายจ่ายตามหมวด" note={rangeLabel} data={expensePie} accent="var(--orange-soft)" sign="-"
           emptyText="ยังไม่มีรายจ่ายในช่วงนี้"
           getItems={(name)=>expensesInRange.filter(e=>e.category===name).map(e=>({id:e.id,date:e.date,memo:e.memo,amount:e.amount}))}/>
+        <ReviewSummaryCard finance={finance} month={viewMode==="month"?selectedMonth:(monthOptions[0]||currentMonthKey())} onOpen={()=>onOpenReview(viewMode==="month"?selectedMonth:(monthOptions[0]||currentMonthKey()))}/>
       </div>
       {showAddAcc&&<AddCashAccountModal onClose={()=>setShowAddAcc(false)} onSave={addAccount}/>}
     </div>
@@ -5576,7 +5608,7 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
     </>
   );
 }
-function BudgetPanel({data,persist,cats}) {
+function BudgetPanel({data,persist,cats,defaultOpen}) {
   const setBudget=(cat,patch)=>{
     const cur=getBudget(data,cat);
     persist({...data,budgets:{...(data.budgets||{}),[cat]:{amount:patch.amount!=null?Number(patch.amount)||0:cur.amount,type:patch.type||cur.type}}});
@@ -5585,7 +5617,7 @@ function BudgetPanel({data,persist,cats}) {
   const totalFix=cats.filter(c=>getBudget(data,c).type==="fixed").reduce((a,c)=>a+getBudget(data,c).amount,0);
   /* ข้อ 24/7: ยกมาเป็น DashCollapse ตามธรรมนูญข้อ 32 (เดิมเป็น .card พับเองด้วย useState) — ปิดเป็นค่าเริ่มต้นเหมือนเดิม */
   return (
-    <DashCollapse span="db-span4" title="Budget Settings"
+    <DashCollapse span="db-span4" title="Budget Settings" defaultOpen={defaultOpen}
       note={`คุมได้ ฿${totalVar.toLocaleString()} · คงที่ ฿${totalFix.toLocaleString()}`}>
       <div className="db-note inv-inline-note" style={{marginBottom:12}}>ตั้งงบต่อเดือนของแต่ละหมวด และระบุว่าเป็นค่าคงที่ (ควบคุมไม่ได้) หรือคุมได้ — หน้ารีวิวจะโฟกัสเฉพาะหมวดที่คุมได้</div>
       <div className="budget-grid">
@@ -5607,11 +5639,11 @@ function BudgetPanel({data,persist,cats}) {
     </DashCollapse>
   );
 }
-function FinanceReviewTab({finance,persist}) {
+function FinanceReviewTab({finance,persist,initialMonth,onBack}) {
   const expAll=finance.finance.expenses||[];
   const incAll=finance.finance.income||[];
   const months=[...new Set([...expAll.map(e=>monthYearKey(e.date)),...incAll.map(i=>i.month||monthYearKey(i.date))].filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
-  const [month,setMonth]=useState(months[0]||currentMonthKey());
+  const [month,setMonth]=useState(initialMonth&&months.includes(initialMonth)?initialMonth:(months[0]||currentMonthKey()));
   const [showRecat,setShowRecat]=useState(false);
   const [recatCat,setRecatCat]=useState(null);
   const cats=[...new Set(expAll.map(e=>e.category).filter(Boolean))].sort();
@@ -5639,6 +5671,7 @@ function FinanceReviewTab({finance,persist}) {
       {/* ── ฮีโร่: สเกลเดียวกับหน้า Home ตามธรรมนูญข้อ 32 (38px + margin:0) ── */}
       <div className="db-hero">
         <div>
+          {onBack&&<button className="db-btn fin-review-back" onClick={onBack}><ArrowLeft size={12}/> กลับ Overview</button>}
           <h1 className="db-hero-title">Review <span>· รีวิวรายเดือน</span></h1>
           <div className="db-hero-line">
             {monthLabel} · อัตราการออม <b style={{color:R.savingRate>=20?"#34d399":R.savingRate>=10?"#fbbf24":"#fb923c"}}>{R.savingRate.toFixed(1)}%</b> ของรายรับ
@@ -5759,18 +5792,52 @@ function FinanceReviewTab({finance,persist}) {
             {saved.updatedAt&&!dirty&&<span className="db-note" style={{marginTop:0}}>แก้ไขล่าสุด {relativeTime(saved.updatedAt)}</span>}
           </div>
         </div>
-
-        {/* ── การ์ด 6: ตั้งงบ (ข้อ 32/3 พับได้ ปิดเป็นค่าเริ่มต้นเหมือนเดิม) ── */}
-        <BudgetPanel data={finance} persist={persist} cats={cats}/>
+        {/* ข้อ 76: Budget Settings ย้ายไปแท็บ Planning แล้ว (หน้านี้ยังอ่านงบจาก getBudget เหมือนเดิม) */}
+      </div>
+    </div>
+  );
+}
+/* ข้อ 76 (ขั้น A): แท็บ Planning — ตอนนี้มีแค่ Budget Settings ที่ย้ายมาจากหน้า Review
+   ขั้นถัดไป: แผนรับ-จ่ายรายเดือน/ปีเทียบของจริง (B) · พยากรณ์เงินสด 1–6 เดือน (C) · แผนปลดหนี้ (D) · เป้าหมายเงินก้อน (E) */
+function FinancePlanningTab({finance,persist}) {
+  const expAll=finance.finance.expenses||[];
+  const cats=[...new Set([...expAll.map(e=>e.category),...Object.keys(finance.budgets||{})].filter(Boolean))].sort();
+  const totalVar=cats.filter(c=>getBudget(finance,c).type==="variable").reduce((a,c)=>a+getBudget(finance,c).amount,0);
+  const totalFix=cats.filter(c=>getBudget(finance,c).type==="fixed").reduce((a,c)=>a+getBudget(finance,c).amount,0);
+  return (
+    <div className="fin-section fin-page">
+      <div className="db-hero">
+        <div>
+          <h1 className="db-hero-title">Planning <span>· วางแผนการเงิน</span></h1>
+          <div className="db-hero-line">ตั้งงบรายเดือนของแต่ละหมวด · แผนรับ-จ่ายและพยากรณ์เงินสดจะตามมาในหน้านี้</div>
+        </div>
+        <div className="db-bignums">
+          <div className="db-bignum">
+            <div className="n acc db-mono">฿{dbShort(totalVar)}</div>
+            <div className="l"><span className="db-dot a"/> งบที่คุมได้</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n db-mono" style={{color:"var(--orange-soft)"}}>฿{dbShort(totalFix)}</div>
+            <div className="l"><span className="db-dot" style={{background:"var(--orange)"}}/> งบคงที่</div>
+          </div>
+          <div className="db-bignum">
+            <div className="n gld db-mono">฿{dbShort(totalVar+totalFix)}</div>
+            <div className="l"><span className="db-dot g"/> รวม/เดือน</div>
+          </div>
+        </div>
+      </div>
+      <div className="db-bento">
+        <BudgetPanel data={finance} persist={persist} cats={cats} defaultOpen={true}/>
       </div>
     </div>
   );
 }
 function FinancePage({data,persist}) {
   const [tab,setTab]=useState("overview");
+  const [reviewMonth,setReviewMonth]=useState(null);
   const tabs=[
     {key:"overview",label:"Overview",icon:BarChart3},
-    {key:"review",label:"Review",icon:Lightbulb},
+    {key:"planning",label:"Planning",icon:Target},
     {key:"income",label:"Income",icon:TrendingUp},
     {key:"expenses",label:"Expenses",icon:Wallet},
     {key:"investments",label:"Investments",icon:TrendingUp},
@@ -5782,14 +5849,15 @@ function FinancePage({data,persist}) {
         {tabs.map(t=>{
           const Icon=t.icon;
           return (
-            <button key={t.key} className={`fin-tab-btn ${tab===t.key?"active":""}`} onClick={()=>setTab(t.key)}>
+            <button key={t.key} className={`fin-tab-btn ${(tab===t.key||(t.key==="overview"&&tab==="review"))?"active":""}`} onClick={()=>setTab(t.key)}>
               <Icon size={13}/> {t.label}
             </button>
           );
         })}
       </div>
-      {tab==="overview"&&<FinanceOverviewTab finance={data} persist={persist} setTab={setTab}/>}
-      {tab==="review"&&<FinanceReviewTab finance={data} persist={persist}/>}
+      {tab==="overview"&&<FinanceOverviewTab finance={data} persist={persist} setTab={setTab} onOpenReview={(m)=>{setReviewMonth(m);setTab("review");}}/>}
+      {tab==="planning"&&<FinancePlanningTab finance={data} persist={persist}/>}
+      {tab==="review"&&<FinanceReviewTab finance={data} persist={persist} initialMonth={reviewMonth} onBack={()=>setTab("overview")}/>}
       {tab==="income"&&<FinanceIncomeTab finance={data} persist={persist}/>}
       {tab==="expenses"&&<FinanceExpensesTab finance={data} persist={persist}/>}
       {tab==="investments"&&<FinanceInvestmentsTab finance={data} persist={persist}/>}
