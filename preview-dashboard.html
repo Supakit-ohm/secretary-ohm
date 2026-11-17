@@ -5783,7 +5783,10 @@ function FinanceReviewTab({finance,persist,initialMonth,onBack}) {
    ตรรกะทั้งหมดเป็นฟังก์ชันล้วน (planValue/setPlanValue/buildPlanGrid) — หน้า UI แค่เรียกใช้ */
 function planMonth(data,m){ return ((data.plan||{}).months||{})[m]||{}; }
 function planStd(data,group,key){
-  return group==="exp"?getBudget(data,key).amount:(Number(((data.plan||{})[group]||{})[key])||0);
+  if(group==="exp") return getBudget(data,key).amount;
+  const v=((data.plan||{})[group]||{})[key];
+  if(group==="debt"&&v==null){ const d=((data.finance||{}).debts||[]).find(x=>x.id===key); return d?(Number(d.minPayment)||0):0; }
+  return Number(v)||0;
 }
 function planValue(data,group,key,m){
   if(group==="exp") return getBudget(data,key,m).amount;
@@ -5831,7 +5834,7 @@ function planNice(x){ return x>=1000?Math.round(x/100)*100:Math.round(x/10)*10; 
 function buildPlanGrid(data,year,avgN){
   const months=Array.from({length:12},(_,i)=>`${year}-${pad(i+1)}`);
   const f=data.finance, plan=data.plan||{};
-  const hist={exp:{},inc:{},sav:{}};
+  const hist={exp:{},inc:{},sav:{},debt:{}};
   const dataMonths=new Set();
   const addH=(g,k,m,n)=>{ const h=hist[g][k]||(hist[g][k]={}); h[m]=(h[m]||0)+n; };
   (f.income||[]).forEach(i=>{ if(!i.source) return; const m=i.month||monthYearKey(i.date); addH("inc",i.source,m,Number(i.amount)||0); dataMonths.add(m); });
@@ -5856,17 +5859,24 @@ function buildPlanGrid(data,year,avgN){
   /* เรียงตามค่าเฉลี่ยมาก→น้อย แล้วตามชื่อ — ไม่ขึ้นกับแผนที่กำลังพิมพ์ แถวจึงไม่กระโดดตอนแก้ */
   const sortRows=(a,b)=>(b.avg-a.avg)||String(a.key).localeCompare(String(b.key),"th");
   const rows={exp:[...keys.exp].map(k=>mk("exp",k)).sort(sortRows),inc:[...keys.inc].map(k=>mk("inc",k)).sort(sortRows),sav:[...keys.sav].map(k=>mk("sav",k)).sort(sortRows)};
+  /* หนี้ที่ต้องจ่าย: 1 แถวต่อหนี้ (key = id) ค่าตั้งต้น = ยอดผ่อนขั้นต่ำของหนี้ · หนี้ที่ผูกหมวดรายจ่ายอยู่แล้ว (linkedExpenseCategory)
+     แสดงเป็นแถวอ้างอิง ไม่รวมในยอดหนี้ เพราะค่างวดอยู่ในรายจ่ายหมวดนั้นแล้ว (กันนับซ้ำ) */
+  const debtList=(f.debts||[]).filter(d=>d&&d.id!=null&&(Number(d.currentBalance)>0||planStd(data,"debt",d.id)>0||overrideKeys("debt").has(d.id)));
+  rows.debt=debtList.filter(d=>!d.linkedExpenseCategory).map(d=>({...mk("debt",d.id),label:d.name||"หนี้",used:true,balance:Number(d.currentBalance)||0})).sort((a,b)=>(b.std-a.std)||a.label.localeCompare(b.label,"th"));
+  rows.debtLinked=debtList.filter(d=>d.linkedExpenseCategory).map(d=>({key:d.id,label:d.name||"หนี้",cat:d.linkedExpenseCategory,
+    vals:months.map(m=>planValue(data,"exp",d.linkedExpenseCategory,m))}));
   const expVar=rows.exp.filter(r=>r.type==="variable"), expFix=rows.exp.filter(r=>r.type==="fixed");
   const colSum=(arr)=>months.map((_,i)=>arr.reduce((a,r)=>a+r.vals[i],0));
   const sumOf=(arr,f2)=>arr.reduce((a,r)=>a+r[f2],0);
   const T={inc:colSum(rows.inc),exp:colSum(rows.exp),expVar:colSum(expVar),expFix:colSum(expFix),sav:colSum(rows.sav)};
-  T.left=months.map((_,i)=>T.inc[i]-T.exp[i]-T.sav[i]);
+  T.debt=colSum(rows.debt);
+  T.left=months.map((_,i)=>T.inc[i]-T.exp[i]-T.sav[i]-T.debt[i]);
   const S={ // รวมของคอลัมน์ "ทุกเดือน" (std) และ "เฉลี่ย" (avg) ต่อกลุ่ม
-    std:{inc:sumOf(rows.inc,"std"),exp:sumOf(rows.exp,"std"),expVar:sumOf(expVar,"std"),expFix:sumOf(expFix,"std"),sav:sumOf(rows.sav,"std")},
-    avg:{inc:sumOf(rows.inc,"avg"),exp:sumOf(rows.exp,"avg"),expVar:sumOf(expVar,"avg"),expFix:sumOf(expFix,"avg"),sav:sumOf(rows.sav,"avg")},
+    std:{inc:sumOf(rows.inc,"std"),exp:sumOf(rows.exp,"std"),expVar:sumOf(expVar,"std"),expFix:sumOf(expFix,"std"),sav:sumOf(rows.sav,"std"),debt:sumOf(rows.debt,"std")},
+    avg:{inc:sumOf(rows.inc,"avg"),exp:sumOf(rows.exp,"avg"),expVar:sumOf(expVar,"avg"),expFix:sumOf(expFix,"avg"),sav:sumOf(rows.sav,"avg"),debt:0},
   };
   const yr=(a)=>a.reduce((x,v)=>x+v,0);
-  return {months,rows,expVar,expFix,T,S,win,year:{inc:yr(T.inc),exp:yr(T.exp),expVar:yr(T.expVar),expFix:yr(T.expFix),sav:yr(T.sav),left:yr(T.left)}};
+  return {months,rows,expVar,expFix,T,S,win,year:{inc:yr(T.inc),exp:yr(T.exp),expVar:yr(T.expVar),expFix:yr(T.expFix),sav:yr(T.sav),debt:yr(T.debt),left:yr(T.left)}};
 }
 /* ช่องกรอกตัวเลข 1 บรรทัด — พิมพ์ได้อิสระ บันทึกตอนออกจากช่อง/กด Enter · Enter/ลูกศรขึ้นลง = ย้ายไปช่องบน/ล่างในคอลัมน์เดียวกัน (แบบชีต) */
 function PlanCell({value,onCommit,r,c}) {
@@ -5897,7 +5907,7 @@ function PlanCell({value,onCommit,r,c}) {
 }
 function PlanGridRow({row,r,label,onStd,onMonth,onApplyAvg,onType,onRemove}) {
   return (
-    <tr className="pl-tr" data-key={row.key}>
+    <tr className={`pl-tr g-${row.group}`} data-key={row.key}>
       <td className="pl-name-cell">
         <div className="pl-namebox">
           {onType&&<button className={`pl-type ${row.type==="fixed"?"fixed":""}`} title="กดเพื่อสลับ คุมได้ / คงที่" onClick={()=>onType(row.type==="fixed"?"variable":"fixed")}>{row.type==="fixed"?"คงที่":"คุมได้"}</button>}
@@ -5992,7 +6002,7 @@ function FinancePlanningTab({finance,persist}) {
   const thYear=(y)=>new Date(`${y}-06-01`).toLocaleDateString("th-TH",{year:"numeric"});
   const winLabel=G.win.length?G.win.slice().reverse().map(m=>new Date(`${m}-01`).toLocaleDateString("th-TH",{month:"short",year:"numeric"})).join(", "):"ยังไม่มีข้อมูลย้อนหลัง";
   const avgLeft=G.S.avg.inc-G.S.avg.exp-G.S.avg.sav;
-  const stdLeft=G.S.std.inc-G.S.std.exp-G.S.std.sav;
+  const stdLeft=G.S.std.inc-G.S.std.exp-G.S.std.sav-G.S.std.debt;
   const leftNeg=G.year.left<0;
   const onStd=(g,k)=>(n)=>persist(setPlanValue(finance,g,k,n,"all"));
   const onMonth=(g,k)=>(i,n)=>persist(setPlanValue(finance,g,k,n,"month",G.months[i]));
@@ -6030,7 +6040,7 @@ function FinancePlanningTab({finance,persist}) {
         <div>
           <h1 className="db-hero-title">Planning <span>· วางแผนการเงิน</span></h1>
           <div className="db-hero-line">
-            ปี {thYear(year)} · {leftNeg?<b style={{color:"#f87171"}}>แผนติดลบรวม ฿{dbNum(Math.abs(G.year.left))}</b>:<>แผนเหลือรวม <b style={{color:"#34d399"}}>฿{dbNum(G.year.left)}</b></>} หลังรายจ่ายและออม
+            ปี {thYear(year)} · {leftNeg?<b style={{color:"#f87171"}}>แผนติดลบรวม ฿{dbNum(Math.abs(G.year.left))}</b>:<>แผนเหลือรวม <b style={{color:"#34d399"}}>฿{dbNum(G.year.left)}</b></>} หลังรายจ่าย ออม และหนี้
           </div>
           <div className="fin-range">
             <select className="fin-range-select pl-year-select" value={year} onChange={e=>setYear(Number(e.target.value))}>
@@ -6088,6 +6098,18 @@ function FinancePlanningTab({finance,persist}) {
               <PlanTotalRow label="ออม / ลงทุน" cls="sec sav" std={G.S.std.sav} avg={G.S.avg.sav} vals={G.T.sav} total={G.year.sav}/>
               {G.rows.sav.length===0&&<tr><td className="pl-empty" colSpan={16}>ยังไม่มีแผนออม — กด “เพิ่มหมวด”</td></tr>}
               {renderRows(G.rows.sav,"sav",(k)=>INVEST_TYPE_LABELS[k]||k,false)}
+              <PlanTotalRow label="หนี้ที่ต้องจ่าย" cls="sec debt" std={G.S.std.debt} avg={0} vals={G.T.debt} total={G.year.debt}/>
+              {G.rows.debt.length===0&&G.rows.debtLinked.length===0&&<tr><td className="pl-empty" colSpan={16}>ยังไม่มีหนี้ — เพิ่มได้ที่แท็บ Debts (ยอดผ่อนขั้นต่ำจะเข้ามาเป็นแผนให้เอง)</td></tr>}
+              {renderRows(G.rows.debt,"debt",(k)=>(G.rows.debt.find(r=>r.key===k)||{}).label||k,false)}
+              {G.rows.debtLinked.map(r=>(
+                <tr key={"dl"+r.key} className="pl-tr g-debt pl-linked" data-key={r.key}>
+                  <td className="pl-name-cell"><div className="pl-namebox"><span className="pl-type" title={`ค่างวดอยู่ในรายจ่ายหมวด “${r.cat}” แล้ว — แก้ที่หมวดนั้น ไม่นับซ้ำ`}>ในรายจ่าย</span><span className="pl-name" title={r.label}>{r.label}</span></div></td>
+                  <td className="pl-ref-cell"><span className="pl-dash">—</span></td>
+                  <td className="pl-std-cell"><span className="pl-dash">—</span></td>
+                  {r.vals.map((v,i)=><td key={i} className="pl-m-cell db-mono pl-dim">{v?dbNum(v):"—"}</td>)}
+                  <td className="pl-tot-cell db-mono pl-dim">{dbNum(r.vals.reduce((a,v)=>a+v,0))||"—"}</td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr className="pl-left-row">

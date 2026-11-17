@@ -460,17 +460,27 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   d=await LS();
   check('Planning: "เติมช่องว่างด้วยค่าเฉลี่ย" → รายรับเงินเดือน 22,500 · ไม่ทับอาหารที่ตั้งไว้',
     d.plan&&d.plan.inc&&d.plan.inc['เงินเดือน']===22500&&d.budgets['อาหาร'].amount===9500,JSON.stringify(d.plan&&d.plan.inc));
+  // หนี้ที่ต้องจ่าย
+  const dbtInfo=await q.evaluate(()=>({sec:!!document.querySelector('.pl-grid tbody tr.pl-sumrow.sec.debt'),
+    linked:document.querySelectorAll('.pl-grid tr.pl-linked').length,linkedTxt:(document.querySelector('.pl-grid tr.pl-linked')||{}).innerText||'',
+    cols:['inc','exp','sav','debt'].map(c=>{const t=document.querySelector(`.pl-grid tbody tr.pl-sumrow.sec.${c} td`);return getComputedStyle(t).backgroundColor;})}));
+  check('Planning: มีส่วน "หนี้ที่ต้องจ่าย" ใต้ออม/ลงทุน · หนี้ที่ผูกหมวดรายจ่าย (ผ่อนรถ Honda) เป็นแถวอ้างอิง "ในรายจ่าย" ไม่นับซ้ำ',
+    dbtInfo.sec&&dbtInfo.linked===1&&/ผ่อนรถ Honda/.test(dbtInfo.linkedTxt)&&/ในรายจ่าย/.test(dbtInfo.linkedTxt),JSON.stringify(dbtInfo));
+  check('Planning: แถวสรุป รายรับ/รายจ่าย/ออม/หนี้ มีสีพื้นต่างกันทั้ง 4 กลุ่ม',new Set(dbtInfo.cols).size===4,dbtInfo.cols.join(' | '));
+  await pcell('ยืมเงินเก็บซ่อมบ้าน',0).fill('1000'); await pcell('ยืมเงินเก็บซ่อมบ้าน',0).blur(); await q.waitForTimeout(700);
+  d=await LS();
+  check('Planning: ตั้งแผนจ่ายหนี้ → plan.debt[d2]=1000 และทุกเดือนขึ้น 1,000',d.plan.debt&&d.plan.debt.d2===1000&&(await pcell('ยืมเงินเก็บซ่อมบ้าน',4).inputValue())==='1000',JSON.stringify(d.plan.debt));
   // ผลรวม + เหลือ
   const sums=await q.evaluate(()=>{
     const n=(t)=>Number(String(t).replace(/[^0-9.\-]/g,''))||0;
     const rowOf=(cls)=>[...document.querySelector(`.pl-grid tbody tr.pl-sumrow.${cls}`).querySelectorAll('td')].map(td=>td.textContent.trim());
-    const inc=rowOf('inc'),exp=rowOf('exp'),sav=rowOf('sav');
+    const inc=rowOf('inc'),exp=rowOf('exp'),sav=rowOf('sav'),dbt=rowOf('debt');
     const left=[...document.querySelectorAll('.pl-grid tfoot td')].map(td=>td.textContent.trim());
     const sign=(t)=>/^-/.test(t)?-n(t):n(t);
     const idx=[2,3,9,14,15];
-    return idx.map(i=>({i,inc:n(inc[i]),exp:n(exp[i]),sav:n(sav[i]),left:sign(left[i])}));
+    return idx.map(i=>({i,inc:n(inc[i]),exp:n(exp[i]),sav:n(sav[i]),dbt:n(dbt[i]),left:sign(left[i])}));
   });
-  check('Planning: แถว "เหลือ" = รายรับ − รายจ่าย − ออม ทุกคอลัมน์ (ทุกเดือน/ม.ค./ก.ค./ธ.ค./รวมปี)',sums.every(s=>s.left===s.inc-s.exp-s.sav)&&sums[0].inc===22500,JSON.stringify(sums));
+  check('Planning: แถว "เหลือ" = รายรับ − รายจ่าย − ออม − หนี้ ทุกคอลัมน์ (ทุกเดือน/ม.ค./ก.ค./ธ.ค./รวมปี)',sums.every(s=>s.left===s.inc-s.exp-s.sav-s.dbt)&&sums[0].dbt===1000&&sums[0].inc===22500,JSON.stringify(sums));
   const yrSum=await q.evaluate(()=>{const g=(cls)=>[...document.querySelector(`.pl-grid tbody tr.pl-sumrow.${cls}`).querySelectorAll('td.pl-m-cell')].map(td=>Number(td.textContent.replace(/[^0-9.]/g,''))||0).reduce((a,b)=>a+b,0);
     return {inc:g('inc'),tot:Number(document.querySelector('.pl-grid tbody tr.pl-sumrow.inc .pl-tot-cell').textContent.replace(/[^0-9.]/g,''))||0};});
   check('Planning: "รวมปี" = ผลรวม 12 เดือน',yrSum.inc===yrSum.tot&&yrSum.tot>0,JSON.stringify(yrSum));

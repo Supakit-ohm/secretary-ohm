@@ -1708,3 +1708,21 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
 .pl-actions .db-btn{white-space:nowrap;}
 .pl-msg{margin-top:8px;}
+
+/* ข้อ 78b: แยกสีกลุ่ม รายรับ(เขียว)/รายจ่าย(ส้ม)/ออม(ฟ้า)/หนี้(แดง) + หนี้ที่นับอยู่ในรายจ่ายแล้ว */
+.pl-sumrow.sec.inc td{background:#1b3a2c;color:#6ee7b7;box-shadow:inset 0 1px 0 rgba(52,211,153,.35);}
+.pl-sumrow.sec.exp td{background:#3a2a1a;color:#fdba74;box-shadow:inset 0 1px 0 rgba(251,146,60,.35);}
+.pl-sumrow.sec.sav td{background:#173441;color:#7dd3fc;box-shadow:inset 0 1px 0 rgba(56,189,248,.35);}
+.pl-sumrow.sec.debt td{background:#3b1f24;color:#fca5a5;box-shadow:inset 0 1px 0 rgba(248,113,113,.35);}
+.pl-tr.g-inc .pl-name-cell{border-left:3px solid #34d399;}
+.pl-tr.g-exp .pl-name-cell{border-left:3px solid #fb923c;}
+.pl-tr.g-sav .pl-name-cell{border-left:3px solid #38bdf8;}
+.pl-tr.g-debt .pl-name-cell{border-left:3px solid #f87171;}
+.pl-tr.g-inc .pl-m-cell,.pl-tr.g-inc .pl-std-cell{background:rgba(52,211,153,.05);}
+.pl-tr.g-exp .pl-m-cell,.pl-tr.g-exp .pl-std-cell{background:rgba(251,146,60,.05);}
+.pl-tr.g-sav .pl-m-cell,.pl-tr.g-sav .pl-std-cell{background:rgba(56,189,248,.05);}
+.pl-tr.g-debt .pl-m-cell,.pl-tr.g-debt .pl-std-cell{background:rgba(248,113,113,.05);}
+.pl-tr .pl-m-cell.ovr{background:rgba(230,195,92,.16);}
+.pl-sumrow.sec .pl-name{font-weight:700;}
+.pl-linked{opacity:.7;}
+.pl-dim{color:var(--ink-5);}
