@@ -1726,3 +1726,17 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pl-sumrow.sec .pl-name{font-weight:700;}
 .pl-linked{opacity:.7;}
 .pl-dim{color:var(--ink-5);}
+
+/* ข้อ 78c: บนจอคอมตารางพอดีหน้า ไม่ต้องเลื่อนซ้ายขวา (เลื่อนขึ้นลงอย่างเดียว) · จอแคบค่อยเลื่อนในกรอบ */
+.pl-grid{table-layout:fixed;width:100%;min-width:960px;font-size:12px;}
+.pl-grid th,.pl-grid td{padding:0 3px;}
+.pl-name-cell{width:176px;min-width:176px;max-width:176px;}
+.pl-ref-cell{width:66px;min-width:66px;}
+.pl-std-cell{width:72px;min-width:72px;}
+.pl-m-cell{width:auto;min-width:0;}
+.pl-tot-cell{width:82px;min-width:82px;}
+.pl-cell{padding:4px 3px;font-size:12px;}
+.pl-name{font-size:12px;}
+.pl-namebox{gap:4px;}
+.pl-card{padding:12px 10px 8px;}
+@media (max-width:1100px){.pl-grid{min-width:1040px;}}

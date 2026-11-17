@@ -401,11 +401,13 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     const hs=rows.map(r=>Math.round(r.getBoundingClientRect().height));
     const wrap=[...document.querySelectorAll('.pl-grid td,.pl-grid th')].filter(c=>getComputedStyle(c).whiteSpace!=='nowrap').length;
     const sc=document.querySelector('.pl-scroll');
-    return {max:Math.max(...hs),n:rows.length,wrap,scrollable:sc.scrollWidth>sc.clientWidth,pageOver:document.documentElement.scrollWidth>window.innerWidth+2,
+    return {max:Math.max(...hs),n:rows.length,wrap,scrollable:sc.scrollWidth>sc.clientWidth+1,vscroll:sc.scrollHeight>sc.clientHeight,pageOver:document.documentElement.scrollWidth>window.innerWidth+2,
       sticky:getComputedStyle(document.querySelector('.pl-grid tbody .pl-name-cell')).position};
   });
-  check('Planning: ทุกแถวบรรทัดเดียว (สูง ≤46px) · เซลล์ nowrap · ตารางเลื่อนได้ในกรอบ · คอลัมน์หมวดตรึงซ้าย · หน้าไม่ล้น',
-    geo.max<=46&&geo.wrap===0&&geo.scrollable&&!geo.pageOver&&geo.sticky==='sticky',JSON.stringify(geo));
+  check('Planning: ทุกแถวบรรทัดเดียว (สูง ≤46px) · เซลล์ nowrap · ตารางพอดีหน้าจอคอม ไม่ต้องเลื่อนซ้ายขวา (เลื่อนขึ้นลงได้) · คอลัมน์หมวดตรึงซ้าย · หน้าไม่ล้น',
+    geo.max<=46&&geo.wrap===0&&!geo.scrollable&&!geo.pageOver&&geo.sticky==='sticky',JSON.stringify(geo));
+  await q.screenshot({path:'/tmp/planning-1440.png'}); await q.setViewportSize({width:1280,height:800}); await q.waitForTimeout(400); const o1280=await q.evaluate(()=>{const sc=document.querySelector('.pl-scroll');return sc.scrollWidth>sc.clientWidth+1;}); await q.screenshot({path:'/tmp/planning-1280.png'}); await q.setViewportSize({width:1440,height:950}); await q.waitForTimeout(300);
+  check('Planning: จอ 1280px ก็พอดีไม่ต้องเลื่อนซ้ายขวา',!o1280);
   const refTxt=async(name)=>(await prow(name).locator('.pl-ref-cell').innerText()).trim();
   check('Planning: ค่าเฉลี่ยย้อนหลัง — เงินเดือน 22,500 · ผ่อนรถ 2,500 (เฉลี่ย 2 เดือนล่าสุดที่มีข้อมูล)',
     pnum(await refTxt('เงินเดือน'))===22500&&pnum(await refTxt('ผ่อนรถ'))===2500,`${await refTxt('เงินเดือน')} / ${await refTxt('ผ่อนรถ')}`);
