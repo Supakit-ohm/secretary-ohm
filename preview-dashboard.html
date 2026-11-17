@@ -7400,11 +7400,11 @@ function HealthPage({data,persist}) {
             <div className="hl-inline">
               <select className="modal-input hl-sel" value={exType} onChange={e=>setExType(e.target.value)}>{EXERCISE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
               <input type="number" inputMode="numeric" className="modal-input hl-num" value={exMin} onChange={e=>setExMin(e.target.value)}/><span>นาที</span>
-              <button className="db-chip" onClick={addEx}>+ เพิ่ม</button>
+              <button className="db-chip pf-ok" onClick={addEx}>+ เพิ่มการออกกำลังกาย</button>
             </div>
             <div className="hl-inline hl-quick">{[15,30,45,60].map(m=><button key={m} type="button" className={`db-chip${String(m)===String(exMin)?" pf-ok":""}`} onClick={()=>setExMin(String(m))}>{m}'</button>)}</div>
             <div className="hl-sub">⚖️ น้ำหนัก (กก.)</div>
-            <div className="hl-inline"><input type="number" inputMode="decimal" className="modal-input hl-num hl-num-w" value={form.weight} onChange={e=>f("weight",e.target.value)}/><button className="db-chip pf-ok" onClick={save} disabled={!dirty}>บันทึก</button></div>
+            <div className="hl-inline"><input type="number" inputMode="decimal" className="modal-input hl-num hl-num-w" value={form.weight} onChange={e=>f("weight",e.target.value)}/>{touched.weight&&<button className="db-chip pf-ok" onClick={save}>บันทึกน้ำหนัก</button>}</div>
           </div>
           <div className="jr-actions"><div className="jr-hint">นอน/ก้าว/ชีพจร Jack ซิงก์จาก Garmin ให้เอง · น้ำ ออกกำลังกาย น้ำหนัก จดเอง (หรือพิมพ์บอก Jack ใน LINE)</div>{dirty&&<button className="modal-btn-save" onClick={save}>บันทึก</button>}</div>
         </div>
