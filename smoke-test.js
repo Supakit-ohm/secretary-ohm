@@ -601,6 +601,26 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('Expenses: All time ระบุว่าเก็บข้อมูลตั้งแต่เดือน/ปีไหน',/ตั้งแต่ .*2026 · \d+ เดือน/.test(allNote),allNote.replace(/\n/g,' '));
   check('Expenses: All time ยอดรวมต้องไม่น้อยกว่ายอดเดือนเดียว',Number((await catCard.locator('.fin-scope-note b').innerText()).replace(/[^\d]/g,''))>=Number(monthTotal.replace(/[^\d]/g,'')),monthTotal);
 
+  // ข้อ 79 (B3): หลอดหมวดแสดงใช้จริง/งบจาก Planning (เฉพาะโหมดเดือน)
+  const allBud=await catCard.locator('.fin-bud-sum,.fin-bud-of,.fin-bud-left').count();
+  check('Expenses (B3): โหมด All time ไม่แสดงงบ (งบเป็นรายเดือน)',allBud===0);
+  await catCard.locator('.fin-scope-toggle button').first().click(); await p.waitForTimeout(400);
+  const bud=await p.evaluate(()=>{
+    const row=document.querySelector('.fin-page .fin-agg-row[data-cat="อาหาร"]'); if(!row) return null;
+    const n=(t)=>Number(String(t).replace(/[^0-9.]/g,''))||0;
+    const amt=row.querySelector('.fin-agg-amt'); const of=row.querySelector('.fin-bud-of'); const left=row.querySelector('.fin-bud-left');
+    const fill=row.querySelector('.fin-agg-bar-fill');
+    return {used:n(amt.childNodes[0].textContent),usedTxt:amt.childNodes[0].textContent,bud:of?n(of.textContent):0,left:left?left.textContent:'',color:getComputedStyle(fill).backgroundColor,width:fill.style.width,
+      sum:(document.querySelector('.fin-bud-sum')||{}).textContent||'',over:row.classList.contains('over')};
+  });
+  const pctB=bud&&bud.bud?(/^\+/.test(bud.usedTxt)?0:bud.used/bud.bud):0;
+  const wantCol=pctB>1?'rgb(248, 113, 113)':pctB>0.85?'rgb(251, 191, 36)':'rgb(52, 211, 153)';
+  check('Expenses (B3): หมวดอาหารแสดง ใช้จริง / งบ 8,000 (จาก Planning) + เหลือ/เกิน + สีตามเกณฑ์ 85%/100%',
+    !!bud&&bud.bud===8000&&/(เหลือ|เกิน)/.test(bud.left)&&!/-/.test(bud.left)&&bud.color===wantCol&&parseFloat(bud.width)<=100,JSON.stringify(bud));
+  check('Expenses (B3): มีบรรทัดสรุป งบรวม · ใช้ไป · เหลือ/เกิน ที่หัวการ์ด',!!bud&&/งบรวม ฿8,000/.test(bud.sum)&&/(เหลือ|เกิน)/.test(bud.sum),bud&&bud.sum);
+  const noBud=await p.evaluate(()=>{const rows=[...document.querySelectorAll('.fin-page .fin-agg-row')].filter(r=>!r.classList.contains('has-bud'));return rows.length>0&&rows.every(r=>!r.querySelector('.fin-bud-left'));});
+  check('Expenses (B3): หมวดที่ไม่มีงบแสดงหลอดแบบเดิม ไม่มีข้อความเหลือ/เกิน',noBud);
+
   console.log('\n[ข้อ 24/3] หน้า Investments รีดีไซน์ตามธรรมนูญข้อ 32');
   await p.locator('button:has-text("Investments")').first().click(); await p.waitForTimeout(2000);
   const inv=await p.evaluate(()=>{
@@ -892,7 +912,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   if(await startBtn.count()) await startBtn.click(); await p.waitForTimeout(600);
   const finishBtn=p.locator('.book-page .db-row',{hasText:'หนังสือทดสอบข้อ 50'}).locator('button',{hasText:'อ่านจบแล้ว'}).first();
   if(await finishBtn.count()) await finishBtn.click(); await p.waitForTimeout(600);
-  const today=new Date().toISOString().slice(0,10);
+  const today=(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;})();
   const advancedBook=await p.evaluate(()=>JSON.parse(localStorage.getItem('secretary-dashboard-v1')).bookQueue.find(b=>b.title==='หนังสือทดสอบข้อ 50'));
   check('กด "เริ่มอ่าน"/"อ่านจบแล้ว" แล้วตั้ง startedDate/finishedDate อัตโนมัติ',
     !!advancedBook&&advancedBook.status==='done'&&advancedBook.startedDate===today&&advancedBook.finishedDate===today,

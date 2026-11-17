@@ -3491,6 +3491,16 @@ function FinanceExpensesTab({finance,persist}) {
   const monthLabel=monthOptions.includes(selectedMonth)?new Date(`${selectedMonth}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Select month";
   const catRows=viewAll?sortedCategories:categoryData.map(d=>[d.name,d.value]);
   const catRowsTotal=catRows.reduce((a,x)=>a+x[1],0);
+  /* ข้อ 79 (B3): โหมดรายเดือน — แต่ละหมวดเทียบงบจาก Planning (getBudget รวมค่าเฉพาะเดือน) · หมวดที่ตั้งงบแต่ยังไม่มีรายจ่ายก็แสดง (เหลือเต็มงบ) */
+  const budRows=viewAll?catRows.map(([c,t])=>({cat:c,total:t,bud:0})):(()=>{
+    const m=new Map(catRows.map(([c,t])=>[c,t]));
+    Object.keys(finance.budgets||{}).forEach(c=>{ if(!m.has(c)&&getBudget(finance,c,selectedMonth).amount>0) m.set(c,0); });
+    return [...m.entries()].map(([c,t])=>({cat:c,total:t,bud:getBudget(finance,c,selectedMonth).amount}))
+      .sort((x,y)=>(y.total-x.total)||String(x.cat).localeCompare(String(y.cat),"th"));
+  })();
+  const budSum=budRows.reduce((a,r)=>r.bud>0?{bud:a.bud+r.bud,used:a.used+Math.max(0,r.total)}:a,{bud:0,used:0});
+  const budMax=Math.max(...budRows.map(r=>r.total),1);
+  const budColor=(pct)=>pct>1?"#f87171":pct>0.85?"#fbbf24":"#34d399";
   const allExpenses=(finance.finance.expenses||[]).slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const [fMonth,setFMonth]=useState("all");
   const [fCat,setFCat]=useState("all");
@@ -3613,17 +3623,33 @@ function FinanceExpensesTab({finance,persist}) {
         </div>
         <FinScopeNote all={viewAll} monthLabel={monthLabel} since={expSince} total={catRowsTotal} sign="-" color="var(--orange-soft)"/>
         {catRows.length===0&&<div className="db-empty">{viewAll?"ยังไม่มีรายจ่าย":"ไม่มีรายจ่ายในเดือนนี้"}</div>}
-        {catRows.map(([cat,total],i)=>(
-          <div key={cat} className="fin-agg-row">
+        {!viewAll&&budSum.bud>0&&(
+          <div className="fin-bud-sum db-note">
+            งบรวม ฿{dbNum(budSum.bud)} · ใช้ไป ฿{dbNum(budSum.used)} · {budSum.used>budSum.bud
+              ?<b style={{color:"#f87171"}}>เกิน ฿{dbNum(budSum.used-budSum.bud)}</b>
+              :<b style={{color:"#34d399"}}>เหลือ ฿{dbNum(budSum.bud-budSum.used)}</b>} <span>(เฉพาะหมวดที่ตั้งงบใน Planning)</span>
+          </div>
+        )}
+        {budRows.map((r,i)=>{
+          const used=Math.max(0,r.total); /* เดือนที่คืนเงินมากกว่าจ่าย = ใช้ 0 ไม่ให้ % ติดลบ */
+          const pct=r.bud>0?used/r.bud:0;
+          const col=r.bud>0?budColor(pct):COLORS[i%COLORS.length];
+          const width=r.bud>0?Math.min(pct,1)*100:(r.total/budMax)*100;
+          return (
+          <div key={r.cat} className={`fin-agg-row ${r.bud>0?"has-bud":""} ${pct>1?"over":""}`} data-cat={r.cat}>
             <div className="fin-agg-row-top">
-              <span className="fin-agg-name">{cat}</span>
-              <span className="fin-agg-amt db-mono" style={{color:"var(--orange-soft)"}}>-฿{total.toLocaleString()}</span>
+              <span className="fin-agg-name">{r.cat}</span>
+              <span className="fin-agg-amt db-mono" style={{color:r.bud>0?col:"var(--orange-soft)"}}>
+                {r.total<0?`+฿${Math.abs(r.total).toLocaleString()}`:`-฿${r.total.toLocaleString()}`}{r.bud>0&&<span className="fin-bud-of"> / ฿{r.bud.toLocaleString()}</span>}
+              </span>
             </div>
             <div className="fin-agg-bar">
-              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...catRows.map(x=>x[1]))||1))*100}%`}}/>
+              <div className="fin-agg-bar-fill" style={{background:col,width:`${width}%`}}/>
             </div>
+            {r.bud>0&&<div className="fin-bud-left db-mono" style={{color:col}}>{pct>1?`เกิน ฿${Math.round(used-r.bud).toLocaleString()} (${Math.round(pct*100)}%)`:`เหลือ ฿${Math.round(r.bud-used).toLocaleString()} (ใช้ ${Math.round(pct*100)}%)`}</div>}
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="db-card">
         <div className="db-head txn-head">

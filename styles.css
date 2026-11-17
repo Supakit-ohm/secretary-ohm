@@ -1740,3 +1740,10 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pl-namebox{gap:4px;}
 .pl-card{padding:12px 10px 8px;}
 @media (max-width:1100px){.pl-grid{min-width:1040px;}}
+
+/* ข้อ 79 (B3): หลอดหมวดหน้า Expenses แสดงใช้จริง/งบ */
+.fin-bud-sum{margin:2px 0 10px;}
+.fin-bud-sum span{color:var(--ink-5);}
+.fin-bud-of{color:var(--ink-5);font-size:11px;}
+.fin-bud-left{font-size:11px;margin-top:3px;text-align:right;}
+.fin-agg-row.over .fin-agg-bar{box-shadow:0 0 0 1px rgba(248,113,113,.45);}
