@@ -1747,3 +1747,10 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .fin-bud-of{color:var(--ink-5);font-size:11px;}
 .fin-bud-left{font-size:11px;margin-top:3px;text-align:right;}
 .fin-agg-row.over .fin-agg-bar{box-shadow:0 0 0 1px rgba(248,113,113,.45);}
+
+/* ข้อ 80 (B4) */
+.pl-edit{border:0;background:transparent;color:var(--ink-5);cursor:pointer;font-size:12px;line-height:1;padding:0 2px;flex:none;opacity:.55;}
+.pl-edit:hover{color:var(--ink-3);opacity:1;}
+.pl-alias-row{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;}
+.pl-alias-from{flex:0 0 170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-4);}
+.pl-alias-sel{flex:1;min-width:0;}

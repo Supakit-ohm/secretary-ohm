@@ -1705,6 +1705,7 @@ const DEFAULT_DATA = {
   budgets:{},
   reviews:{},
   plan:{},
+  catAlias:{},
 };
 /* ═══ Budget & monthly review ═══ */
 const FIXED_HINTS=["ผ่อน","ภาษี","สาธารณูปโภค","ประกัน","ค่าเช่า","รายการหักประจำเดือน","ค่าน้ำ","ค่าไฟ","อินเทอร์เน็ต","ค่าเน็ต","ค่าโทร","ค่าเทอม"];
@@ -1860,7 +1861,7 @@ function applyResets(data) {
 /* ข้อ 55: แยกขั้น "ทำข้อมูลที่โหลดมาให้เป็นรูปปัจจุบัน" (migration + reset) ออกมา
    ใช้ทั้งตอนบูต และตอนได้ข้อมูลใหม่จากเครื่องอื่นผ่าน Firestore (event "secretary-remote-data") */
 function prepareLoadedData(parsed) {
-        const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,mediaReviews:parsed.mediaReviews||DEFAULT_DATA.mediaReviews,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{},plan:parsed.plan||{}};
+        const withTodos={...parsed,todos:normalizeTodos(parsed.todos),events:parsed.events||DEFAULT_EVENTS,notes:parsed.notes||[],finance:parsed.finance||DEFAULT_DATA.finance,goals:normalizeGoals(parsed.goals||DEFAULT_DATA.goals),habits:parsed.habits||DEFAULT_DATA.habits,health:parsed.health||DEFAULT_DATA.health,documents:parsed.documents||DEFAULT_DATA.documents,bookQueue:parsed.bookQueue||DEFAULT_DATA.bookQueue,journal:parsed.journal||DEFAULT_DATA.journal,mediaReviews:parsed.mediaReviews||DEFAULT_DATA.mediaReviews,activity:parsed.activity||[],budgets:parsed.budgets||{},reviews:parsed.reviews||{},plan:parsed.plan||{},catAlias:parsed.catAlias||{}};
         // migration: แก้ format วันที่รายจ่ายที่นำเข้าจาก CSV ให้เป็น ISO (YYYY-MM-DD) เพื่อให้ตัวกรองเดือนทำงานถูกต้อง
         let dateFixed=false;
         const fixedExpenses=(withTodos.finance.expenses||[]).map(exp=>{
@@ -2855,6 +2856,16 @@ function FinanceIncomeTab({finance,persist}) {
   const sortedSourcesMonth=sourceData.map(d=>[d.name,d.value]);
   const sourceRows=viewAll?sortedSourcesAll:sortedSourcesMonth;
   const sourceRowsTotal=sourceRows.reduce((a,x)=>a+x[1],0);
+  /* ข้อ 79b: โหมดรายเดือน — หลอดรายรับเทียบแผนจาก Planning (planValue รวมค่าเฉพาะเดือน) · แหล่งที่ตั้งแผนไว้แต่ยังไม่เข้า แสดงเป็น "ขาด" */
+  const incBudRows=viewAll?sourceRows.map(([c,t])=>({cat:c,total:t,plan:0})):(()=>{
+    const m=new Map(sourceRows.map(([c,t])=>[c,t]));
+    const pk=new Set([...Object.keys((finance.plan||{}).inc||{}),...Object.keys((((finance.plan||{}).months||{})[selectedMonth]||{}).inc||{})]);
+    pk.forEach(c=>{ if(!m.has(c)&&planValue(finance,"inc",c,selectedMonth)>0) m.set(c,0); });
+    return [...m.entries()].map(([c,t])=>({cat:c,total:t,plan:planValue(finance,"inc",c,selectedMonth)}))
+      .sort((x,y)=>(y.total-x.total)||String(x.cat).localeCompare(String(y.cat),"th"));
+  })();
+  const incPlanSum=incBudRows.reduce((a,r)=>r.plan>0?{plan:a.plan+r.plan,got:a.got+Math.max(0,r.total)}:a,{plan:0,got:0});
+  const incBudMax=Math.max(...incBudRows.map(r=>r.total),1);
   const incSince=finSinceInfo((finance.finance.income||[]).map(i=>i.month||monthYearKey(i.date)));
   const monthOptions = Object.keys(incomeByMonth).filter(m=>/^\d{4}-\d{2}$/.test(m)).sort().reverse();
   const monthLabel=monthOptions.includes(selectedMonth)?new Date(`${selectedMonth}-01`).toLocaleDateString("en-US",{month:"long",year:"numeric"}):"Select month";
@@ -2922,7 +2933,9 @@ function FinanceIncomeTab({finance,persist}) {
           </div>
           <div>
             <label className="field-label">Source</label>
-            <input placeholder="เช่น เงินเดือน, ค่าสอน..." value={incSource} onChange={e=>setIncSource(e.target.value)} className="modal-input"/>
+            <input placeholder="เช่น เงินเดือน, ค่าสอน..." list="plan-inc-srcs" value={incSource} onChange={e=>setIncSource(e.target.value)} className="modal-input"/>
+            <datalist id="plan-inc-srcs">{Object.keys((finance.plan||{}).inc||{}).map(c=><option key={c} value={c}/>)}</datalist>
+            {incSource.trim()&&((finance.plan||{}).inc||{})[incSource.trim()]==null&&<div className="db-note">แหล่งใหม่ — จะเพิ่มเข้าแผนใน Planning ให้อัตโนมัติ</div>}
           </div>
           <div>
             <label className="field-label">Note</label>
@@ -2937,17 +2950,33 @@ function FinanceIncomeTab({finance,persist}) {
         </div>
         <FinScopeNote all={viewAll} monthLabel={monthLabel} since={incSince} total={sourceRowsTotal} sign="+" color="var(--accent-soft)"/>
         {sourceRows.length===0&&<div className="db-empty">{viewAll?"ยังไม่มีรายรับ":"ไม่มีรายรับในเดือนนี้"}</div>}
-        {sourceRows.map(([src,total],i)=>(
-          <div key={src} className="fin-agg-row">
+        {!viewAll&&incPlanSum.plan>0&&(
+          <div className="fin-bud-sum db-note">
+            แผนรายรับ ฿{dbNum(incPlanSum.plan)} · ได้รับ ฿{dbNum(incPlanSum.got)} · {incPlanSum.got>=incPlanSum.plan
+              ?<b style={{color:"#34d399"}}>ครบแผน{incPlanSum.got>incPlanSum.plan?` (เกิน ฿${dbNum(incPlanSum.got-incPlanSum.plan)})`:""}</b>
+              :<b style={{color:"#fbbf24"}}>ขาด ฿{dbNum(incPlanSum.plan-incPlanSum.got)}</b>} <span>(เฉพาะแหล่งที่ตั้งแผนใน Planning)</span>
+          </div>
+        )}
+        {incBudRows.map((r,i)=>{
+          const got=Math.max(0,r.total);
+          const pct=r.plan>0?got/r.plan:0;
+          const col=r.plan>0?(pct>=1?"#34d399":"#fbbf24"):COLORS[i%COLORS.length];
+          const width=r.plan>0?Math.min(pct,1)*100:(r.total/incBudMax)*100;
+          return (
+          <div key={r.cat} className={`fin-agg-row ${r.plan>0?"has-bud":""}`} data-src={r.cat}>
             <div className="fin-agg-row-top">
-              <span className="fin-agg-name">{src}</span>
-              <span className="fin-agg-amt db-mono" style={{color:"var(--accent-soft)"}}>+฿{total.toLocaleString()}</span>
+              <span className="fin-agg-name">{r.cat}</span>
+              <span className="fin-agg-amt db-mono" style={{color:r.plan>0?col:"var(--accent-soft)"}}>
+                +฿{r.total.toLocaleString()}{r.plan>0&&<span className="fin-bud-of"> / ฿{r.plan.toLocaleString()}</span>}
+              </span>
             </div>
             <div className="fin-agg-bar">
-              <div className="fin-agg-bar-fill" style={{background:COLORS[i%COLORS.length],width:`${(total/(Math.max(...sourceRows.map(x=>x[1]))||1))*100}%`}}/>
+              <div className="fin-agg-bar-fill" style={{background:col,width:`${width}%`}}/>
             </div>
+            {r.plan>0&&<div className="fin-bud-left db-mono" style={{color:col}}>{pct>=1?(got>r.plan?`เกินแผน ฿${Math.round(got-r.plan).toLocaleString()} (${Math.round(pct*100)}%)`:"ครบแผน (100%)"):`ขาด ฿${Math.round(r.plan-got).toLocaleString()} (ได้ ${Math.round(pct*100)}%)`}</div>}
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="db-card">
         <div className="db-head txn-head">
@@ -3418,7 +3447,7 @@ function FinanceExpensesTab({finance,persist}) {
           if(catNorm===INVEST_CSV_CATEGORY){ invests.push({id:uid(),date,amount:amt,note:memo,category:INVEST_CSV_CATEGORY}); continue; }
           let useCat=cat, guessed=false;
           if(VAGUE.includes(catNorm)){
-            const g=guessCategory(memo,impMap);
+            const g=guessCategory(memo,impMap,finance.catAlias);
             if(g){ useCat=g.cat; guessed=true; guessedCount++; }
           }
           newExpenses.push({id:uid(),date,amount:amt,category:useCat,memo:memo,source:"kbank-csv",...(guessed?{guessedCategory:true}:{})});
@@ -3608,7 +3637,9 @@ function FinanceExpensesTab({finance,persist}) {
           </div>
           <div>
             <label className="field-label">Category</label>
-            <input placeholder="เช่น อาหาร, ค่าน้ำมัน..." value={expCategory} onChange={e=>setExpCategory(e.target.value)} className="modal-input"/>
+            <input placeholder="เช่น อาหาร, ค่าน้ำมัน..." list="plan-exp-cats" value={expCategory} onChange={e=>setExpCategory(e.target.value)} className="modal-input"/>
+            <datalist id="plan-exp-cats">{Object.keys(finance.budgets||{}).map(c=><option key={c} value={c}/>)}</datalist>
+            {expCategory.trim()&&!(finance.budgets||{})[expCategory.trim()]&&<div className="db-note">หมวดใหม่ — จะเพิ่มเข้าแผนใน Planning ให้อัตโนมัติ</div>}
           </div>
           <div>
             <label className="field-label">Note</label>
@@ -5484,11 +5515,13 @@ const CATEGORY_RULES=[
   {cat:"ค่าธรรมเนียม/ดอกเบี้ย",kw:["ค่าธรรมเนียม","ธรรมเนียม","fee","ดอกเบี้ย","interest","ปรับ"]},
 ];
 /* คืน {cat,by} — by = "learned" (เคยย้ายเอง) | "rule" (กฎคำค้น) | null */
-function guessCategory(memo,map){
+/* alias (ข้อ 80/B4) = catAlias จาก Planning: ชื่อหมวดที่ระบบเดา → หมวดในแผนของ ohm (เช่น "อาหาร/เครื่องดื่ม" → "อาหาร") */
+function guessCategory(memo,map,alias){
   const k=memoKey(memo);
   if(!k) return null;
-  if(map&&map[k]) return {cat:map[k],by:"learned"};
-  for(const r of CATEGORY_RULES){ if(r.kw.some(w=>k.includes(w))) return {cat:r.cat,by:"rule"}; }
+  const al=(c)=>(alias&&alias[c])||c;
+  if(map&&map[k]) return {cat:al(map[k]),by:"learned"};
+  for(const r of CATEGORY_RULES){ if(r.kw.some(w=>k.includes(w))) return {cat:al(r.cat),by:"rule"}; }
   return null;
 }
 function RecategorizeModal({finance,persist,onClose,startCat}) {
@@ -5512,7 +5545,7 @@ function RecategorizeModal({finance,persist,onClose,startCat}) {
     if(!groups[k]) groups[k]={memo:k,ids:[],total:0,count:0};
     groups[k].ids.push(e.id); groups[k].total+=expOut(e); groups[k].count++;
   });
-  Object.values(groups).forEach(g=>{ g.guess=g.memo==="(ไม่มีโน้ต)"?null:guessCategory(g.memo,catMap); });
+  Object.values(groups).forEach(g=>{ g.guess=g.memo==="(ไม่มีโน้ต)"?null:guessCategory(g.memo,catMap,finance.catAlias); });
   const groupList=Object.values(groups).sort((a,b)=>b.total-a.total);
   /* สรุปข้อเสนอ: จัดกลุ่มที่เดาได้ตามหมวดปลายทาง เพื่อกดเลือกทีเดียวทั้งหมวด */
   const suggestions={};
@@ -5807,6 +5840,50 @@ function FinanceReviewTab({finance,persist,initialMonth,onBack}) {
    ในตาราง: คอลัมน์ "ทุกเดือน" = ค่ามาตรฐาน · ช่องของแต่ละเดือน = ค่าเฉพาะเดือน (ถ้าต่างจากมาตรฐานจะเป็นสีทอง)
    คอลัมน์ "เฉลี่ย N เดือน" = ค่าอ้างอิงจากรายการจริงย้อนหลัง (เฉลี่ยทุกเดือนในช่วง รวมเดือนที่ไม่มีรายการเป็น 0)
    ตรรกะทั้งหมดเป็นฟังก์ชันล้วน (planValue/setPlanValue/buildPlanGrid) — หน้า UI แค่เรียกใช้ */
+/* ข้อ 80 (B4): Planning เป็นต้นทางของหมวด — ทุกหมวดรายจ่าย/แหล่งรายรับที่มีรายการจริงต้องมีแถวใน Planning
+   (budgets[cat] / plan.inc[src] เติมเป็น 0 ถ้ายังไม่มี) ไม่แก้ค่าที่ตั้งไว้ · คืน data เดิมถ้าไม่มีอะไรต้องเติม */
+function ensurePlanCats(data){
+  const f=data&&data.finance; if(!f) return data;
+  const budgets=data.budgets||{}, inc=((data.plan||{}).inc)||{};
+  let nb=null, ni=null;
+  (f.expenses||[]).forEach(e=>{ const c=e.category&&String(e.category).trim(); if(c&&!budgets[c]&&!(nb&&nb[c])) (nb=nb||{})[c]={amount:0,type:guessCategoryType(c)}; });
+  (f.income||[]).forEach(i=>{ const c=i.source&&String(i.source).trim(); if(c&&inc[c]==null&&!(ni&&ni[c]!=null)) (ni=ni||{})[c]=0; });
+  if(!nb&&!ni) return data;
+  const next={...data};
+  if(nb) next.budgets={...budgets,...nb};
+  if(ni) next.plan={...(data.plan||{}),inc:{...inc,...ni}};
+  return next;
+}
+/* เปลี่ยนชื่อ/รวมหมวด (group "exp"|"inc") — ย้ายรายการจริง + แผน (มาตรฐาน/เฉพาะเดือน) + หนี้ที่ผูกหมวด + ตารางจับคู่ CSV ไปที่ชื่อใหม่ในครั้งเดียว
+   ถ้าชื่อใหม่มีอยู่แล้ว = รวมกัน (แผนบวกกัน) */
+function renamePlanKey(data,group,from,to){
+  const F=String(from), T=String(to).trim();
+  if(!T||T===F) return data;
+  const f=data.finance, plan=data.plan||{};
+  const next={...data};
+  const months={};
+  Object.entries(plan.months||{}).forEach(([m,cur])=>{
+    const g={...((cur&&cur[group])||{})};
+    if(g[F]!=null){ g[T]=(g[T]!=null?Number(g[T])||0:0)+(Number(g[F])||0); delete g[F]; }
+    const n={...cur}; if(Object.keys(g).length) n[group]=g; else delete n[group];
+    if(Object.keys(n).length) months[m]=n;
+  });
+  next.plan={...plan,months};
+  if(group==="exp"){
+    const b={...(data.budgets||{})}; const bf=b[F], bt=b[T];
+    if(bf){ b[T]={amount:(Number(bf.amount)||0)+(bt?Number(bt.amount)||0:0),type:(bt&&bt.type)||bf.type||guessCategoryType(T)}; delete b[F]; }
+    next.budgets=b;
+    next.finance={...f,expenses:(f.expenses||[]).map(e=>e.category===F?{...e,category:T}:e),
+      debts:(f.debts||[]).map(d=>d.linkedExpenseCategory===F?{...d,linkedExpenseCategory:T}:d)};
+    const al={}; Object.entries(data.catAlias||{}).forEach(([k,v])=>{ al[k]=v===F?T:v; }); next.catAlias=al;
+  } else {
+    const pi={...(plan.inc||{})};
+    if(pi[F]!=null){ pi[T]=(pi[T]!=null?Number(pi[T])||0:0)+(Number(pi[F])||0); delete pi[F]; }
+    next.plan={...next.plan,inc:pi};
+    next.finance={...f,income:(f.income||[]).map(i=>i.source===F?{...i,source:T}:i)};
+  }
+  return next;
+}
 function planMonth(data,m){ return ((data.plan||{}).months||{})[m]||{}; }
 function planStd(data,group,key){
   if(group==="exp") return getBudget(data,key).amount;
@@ -5931,13 +6008,14 @@ function PlanCell({value,onCommit,r,c}) {
       }}/>
   );
 }
-function PlanGridRow({row,r,label,onStd,onMonth,onApplyAvg,onType,onRemove}) {
+function PlanGridRow({row,r,label,onStd,onMonth,onApplyAvg,onType,onRemove,onRename}) {
   return (
     <tr className={`pl-tr g-${row.group}`} data-key={row.key}>
       <td className="pl-name-cell">
         <div className="pl-namebox">
           {onType&&<button className={`pl-type ${row.type==="fixed"?"fixed":""}`} title="กดเพื่อสลับ คุมได้ / คงที่" onClick={()=>onType(row.type==="fixed"?"variable":"fixed")}>{row.type==="fixed"?"คงที่":"คุมได้"}</button>}
           <span className="pl-name" title={label}>{label}</span>
+          {onRename&&<button className="pl-edit" title="เปลี่ยนชื่อ / รวมกับหมวดอื่น" onClick={onRename}>✎</button>}
           {!row.used&&<button className="pl-x" title="ลบแถว (ยังไม่เคยมีรายการจริงในหมวดนี้)" onClick={onRemove}>×</button>}
         </div>
       </td>
@@ -6012,12 +6090,76 @@ function AddPlanItemModal({existing,onClose,onSave}) {
     </div>
   );
 }
+/* เปลี่ยนชื่อ/รวมหมวด — ต้องกดยืนยัน แสดงจำนวนรายการที่จะถูกย้ายก่อน */
+function RenamePlanCatModal({data,group,from,names,onClose,onDone}) {
+  const [to,setTo]=useState(from);
+  const f=data.finance;
+  const count=group==="exp"?(f.expenses||[]).filter(e=>e.category===from).length:(f.income||[]).filter(i=>i.source===from).length;
+  const T=to.trim();
+  const merge=!!T&&T!==from&&names.includes(T);
+  const ready=!!T&&T!==from;
+  const go=()=>{
+    if(!ready) return;
+    if(group==="exp"){
+      const mm=loadMemoCatMap(); let ch=false; const nm={};
+      Object.entries(mm).forEach(([k,v])=>{ if(v===from){ nm[k]=T; ch=true; } else nm[k]=v; });
+      if(ch) saveMemoCatMap(nm);
+    }
+    onDone(renamePlanKey(data,group,from,T),merge?`รวม “${from}” เข้ากับ “${T}” แล้ว (${count} รายการ)`:`เปลี่ยนชื่อ “${from}” เป็น “${T}” แล้ว (${count} รายการ)`);
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>✎ เปลี่ยนชื่อ / รวมหมวด</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          <div className="db-note">{group==="exp"?"หมวดรายจ่าย":"แหล่งรายรับ"}เดิม: <b>{from}</b></div>
+          <div style={{marginTop:10}}><label className="field-label">ชื่อใหม่ (พิมพ์ชื่อหมวดที่มีอยู่ = รวมเข้าหมวดนั้น)</label>
+            <input className="modal-input pl-rename-input" list="pl-rename-names" value={to} onChange={e=>setTo(e.target.value)} autoFocus/>
+            <datalist id="pl-rename-names">{names.filter(n=>n!==from).map(n=><option key={n} value={n}/>)}</datalist></div>
+          <div className="db-note pl-rename-note" style={{marginTop:10,color:merge?"#fbbf24":undefined}}>
+            {ready?<>จะย้ายรายการจริง <b>{count}</b> รายการ + แผน{group==="exp"?" และหนี้ที่ผูกหมวด":""} ไปที่ “{T}”{merge?" · เป็นการรวม — แผนของสองหมวดจะบวกกัน":""} · ย้อนกลับไม่ได้</>:"พิมพ์ชื่อใหม่ที่ต่างจากเดิม"}
+          </div>
+          <button className="modal-btn-save pl-rename-save" style={{marginTop:12,width:"100%"}} disabled={!ready} onClick={go}>{merge?"รวมหมวด":"เปลี่ยนชื่อ"}</button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ยกเลิก</button></div>
+      </div>
+    </div>
+  );
+}
+/* ตารางจับคู่ชื่อหมวดที่ระบบเดาตอนนำเข้า CSV → หมวดในแผน (เก็บที่ root catAlias) */
+function CatAliasModal({data,planCats,onClose,onSave}) {
+  const [al,setAl]=useState({...(data.catAlias||{})});
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{maxWidth:480}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><span>จับคู่หมวดตอนนำเข้า CSV</span><button className="modal-close" onClick={onClose}><X size={15}/></button></div>
+        <div className="modal-body">
+          <div className="db-note">ตอนนำเข้า CSV ระบบเดาหมวดจากชื่อร้าน (ชื่อตามช่องซ้าย) — เลือกว่าให้ลงหมวดไหนในแผนของคุณ ใช้กับการนำเข้าครั้งต่อไปและตอน “จัดหมวดใหม่” (รายการเก่าที่นำเข้าไปแล้วใช้ “เปลี่ยนชื่อ/รวมหมวด”)</div>
+          {CATEGORY_RULES.map(r=>(
+            <div key={r.cat} className="pl-alias-row">
+              <span className="pl-alias-from">{r.cat}</span>
+              <span>→</span>
+              <select className="modal-input pl-alias-sel" data-from={r.cat} value={al[r.cat]||""} onChange={e=>{ const v=e.target.value; setAl(a=>{ const n={...a}; if(v) n[r.cat]=v; else delete n[r.cat]; return n; }); }}>
+                <option value="">ใช้ชื่อเดิม</option>
+                {planCats.filter(c=>c!==r.cat).map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          ))}
+          <button className="modal-btn-save pl-alias-save" style={{marginTop:12,width:"100%"}} onClick={()=>onSave(al)}>บันทึก</button>
+        </div>
+        <div className="modal-foot"><button className="modal-btn-cancel" onClick={onClose}>ปิด</button></div>
+      </div>
+    </div>
+  );
+}
 function FinancePlanningTab({finance,persist}) {
   const cur=currentMonthKey();
   const [year,setYear]=useState(Number(cur.slice(0,4)));
   const [avgN,setAvgN]=useState(3);
   const [showAdd,setShowAdd]=useState(false);
   const [showRecat,setShowRecat]=useState(false);
+  const [showAlias,setShowAlias]=useState(false);
+  const [renaming,setRenaming]=useState(null);
   const [msg,setMsg]=useState("");
   useEffect(()=>{ if(!msg) return; const t=setTimeout(()=>setMsg(""),4500); return ()=>clearTimeout(t); },[msg]);
   const f=finance.finance;
@@ -6056,12 +6198,15 @@ function FinancePlanningTab({finance,persist}) {
   const renderRows=(arr,g,labelOf,withType)=>arr.map(row=>(
     <PlanGridRow key={g+row.key} row={row} r={ri++} label={labelOf(row.key)}
       onStd={onStd(g,row.key)} onMonth={onMonth(g,row.key)} onApplyAvg={onApplyAvg(g,row.key,row.avg)}
-      onType={withType?(t)=>setType(row.key,t):null} onRemove={remove(g,row.key)}/>
+      onType={withType?(t)=>setType(row.key,t):null} onRemove={remove(g,row.key)}
+      onRename={(g==='exp'||g==='inc')?()=>setRenaming({group:g,key:row.key}):null}/>
   ));
   return (
     <div className="fin-section fin-page">
       {showAdd&&<AddPlanItemModal existing={existing} onClose={()=>setShowAdd(false)} onSave={addItem}/>}
       {showRecat&&<RecategorizeModal finance={finance} persist={persist} startCat={null} onClose={()=>setShowRecat(false)}/>}
+      {showAlias&&<CatAliasModal data={finance} planCats={existing.exp} onClose={()=>setShowAlias(false)} onSave={(al)=>{ persist({...finance,catAlias:al}); setShowAlias(false); setMsg("บันทึกการจับคู่หมวด CSV แล้ว"); }}/>}
+      {renaming&&<RenamePlanCatModal data={finance} group={renaming.group} from={renaming.key} names={existing[renaming.group]} onClose={()=>setRenaming(null)} onDone={(next,m)=>{ persist(next); setRenaming(null); setMsg(m); }}/>}
       <div className="db-hero">
         <div>
           <h1 className="db-hero-title">Planning <span>· วางแผนการเงิน</span></h1>
@@ -6080,6 +6225,7 @@ function FinancePlanningTab({finance,persist}) {
             <button className="db-btn primary pl-add" onClick={()=>setShowAdd(true)}><Plus size={14}/> เพิ่มหมวด</button>
             <button className="db-btn pl-fill" onClick={fillFromAvg}>เติมช่องว่างด้วยค่าเฉลี่ย</button>
             <button className="db-btn pl-recat" onClick={()=>setShowRecat(true)}><FileText size={14}/> จัดหมวดใหม่</button>
+            <button className="db-btn pl-alias" onClick={()=>setShowAlias(true)}>จับคู่หมวด CSV</button>
           </div>
           {msg&&<div className="db-note pl-msg">{msg}</div>}
         </div>
@@ -6152,7 +6298,8 @@ function FinancePlanningTab({finance,persist}) {
     </div>
   );
 }
-function FinancePage({data,persist}) {
+function FinancePage({data,persist:persistRaw}) {
+  const persist=(next)=>persistRaw(ensurePlanCats(next));   /* B4: หมวด/แหล่งรายรับใหม่จากทุกหน้า (เพิ่มเอง · CSV · สลิป · จัดหมวดใหม่) เข้าแผนอัตโนมัติ */
   const [tab,setTab]=useState("overview");
   const [reviewMonth,setReviewMonth]=useState(null);
   const tabs=[

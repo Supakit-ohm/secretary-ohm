@@ -486,6 +486,66 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   const yrSum=await q.evaluate(()=>{const g=(cls)=>[...document.querySelector(`.pl-grid tbody tr.pl-sumrow.${cls}`).querySelectorAll('td.pl-m-cell')].map(td=>Number(td.textContent.replace(/[^0-9.]/g,''))||0).reduce((a,b)=>a+b,0);
     return {inc:g('inc'),tot:Number(document.querySelector('.pl-grid tbody tr.pl-sumrow.inc .pl-tot-cell').textContent.replace(/[^0-9.]/g,''))||0};});
   check('Planning: "รวมปี" = ผลรวม 12 เดือน',yrSum.inc===yrSum.tot&&yrSum.tot>0,JSON.stringify(yrSum));
+  // ข้อ 79b: หลอดรายรับหน้า Income เทียบแผนจาก Planning
+  await q.locator('.fin-tab-btn:has-text("Income")').first().click(); await q.waitForTimeout(1200);
+  const ib=await q.evaluate(()=>{
+    const row=document.querySelector('.fin-page .fin-agg-row[data-src="เงินเดือน"]'); if(!row) return null;
+    const fill=row.querySelector('.fin-agg-bar-fill');
+    return {of:(row.querySelector('.fin-bud-of')||{}).textContent||'',left:(row.querySelector('.fin-bud-left')||{}).textContent||'',color:getComputedStyle(fill).backgroundColor,
+      sum:(document.querySelector('.fin-bud-sum')||{}).textContent||''};
+  });
+  check('Income (B3b): หลอดเงินเดือนแสดง ได้รับ / แผน 22,500 + "เกินแผน ฿22,500" สีเขียว (ได้ 45,000)',
+    !!ib&&/22,500/.test(ib.of)&&/เกินแผน ฿22,500/.test(ib.left)&&ib.color==='rgb(52, 211, 153)',JSON.stringify(ib));
+  check('Income (B3b): บรรทัดสรุป แผนรายรับ · ได้รับ · ครบแผน',!!ib&&/แผนรายรับ ฿22,500 · ได้รับ ฿45,000/.test(ib.sum)&&/ครบแผน/.test(ib.sum),ib&&ib.sum);
+  await q.locator('.fin-tab-btn:has-text("Planning")').first().click(); await q.waitForTimeout(1200);
+  await q.selectOption('.pl-year-select','2026'); await q.waitForTimeout(500);
+  // ข้อ 80 (B4): หมวดใหม่จากหน้าอื่นเข้าแผนอัตโนมัติ · เปลี่ยนชื่อ/รวมหมวด · จับคู่หมวด CSV
+  await q.locator('.fin-tab-btn:has-text("Expenses")').first().click(); await q.waitForTimeout(1200);
+  await q.locator('.fin-page .fin-add-btn').click(); await q.waitForTimeout(400);
+  const dlOpts=await q.evaluate(()=>[...document.querySelectorAll('#plan-exp-cats option')].map(o=>o.value));
+  await q.locator('.fin-page .modal input[type=date]').first().fill('2026-07-22');
+  await q.locator('.fin-page .modal input[type=number]').first().fill('150');
+  await q.locator('.fin-page .modal input[list="plan-exp-cats"]').fill('หมวดใหม่ B4');
+  const newHint=await q.locator('.fin-page .modal .db-note:has-text("หมวดใหม่")').count();
+  await q.locator('.fin-page .modal-btn-save').click(); await q.waitForTimeout(900);
+  d=await LS();
+  check('B4: ช่องหมวดแนะนำจากแผน (datalist มี อาหาร) + แสดงข้อความ "หมวดใหม่" เมื่อพิมพ์ชื่อที่ไม่มีในแผน',dlOpts.includes('อาหาร')&&newHint===1,dlOpts.join(','));
+  check('B4: เพิ่มรายจ่ายหมวดใหม่จากหน้า Expenses → เข้า budgets ในแผนเป็น 0 อัตโนมัติ',d.budgets['หมวดใหม่ B4']&&d.budgets['หมวดใหม่ B4'].amount===0,JSON.stringify(d.budgets['หมวดใหม่ B4']));
+  await q.locator('.fin-tab-btn:has-text("Income")').first().click(); await q.waitForTimeout(1000);
+  await q.locator('.fin-page .fin-add-btn').click(); await q.waitForTimeout(400);
+  await q.locator('.fin-page .modal input[type=date]').first().fill('2026-07-23');
+  await q.locator('.fin-page .modal input[type=number]').first().fill('777');
+  await q.locator('.fin-page .modal input[list="plan-inc-srcs"]').fill('แหล่งใหม่ B4');
+  await q.locator('.fin-page .modal-btn-save').click(); await q.waitForTimeout(900);
+  d=await LS();
+  check('B4: เพิ่มรายรับแหล่งใหม่ → เข้า plan.inc เป็น 0 อัตโนมัติ',d.plan.inc&&d.plan.inc['แหล่งใหม่ B4']===0,JSON.stringify(d.plan.inc));
+  await q.locator('.fin-tab-btn:has-text("Planning")').first().click(); await q.waitForTimeout(1200);
+  await q.selectOption('.pl-year-select','2026'); await q.waitForTimeout(500);
+  check('B4: Planning แสดงแถวหมวดใหม่ทั้งรายจ่ายและรายรับทันที',await prow('หมวดใหม่ B4').count()===1&&await prow('แหล่งใหม่ B4').count()===1);
+  // เปลี่ยนชื่อ → รวมกับ อาหาร
+  await pcell('หมวดใหม่ B4',0).fill('300'); await pcell('หมวดใหม่ B4',0).blur(); await q.waitForTimeout(500);
+  const b4s=await LS(); const foodBefore=b4s.budgets['อาหาร'].amount;
+  await prow('หมวดใหม่ B4').locator('.pl-edit').click(); await q.waitForTimeout(400);
+  await q.locator('.pl-rename-input').fill('อาหาร'); await q.waitForTimeout(200);
+  const rnNote=await q.locator('.pl-rename-note').innerText();
+  check('B4: โมดัลเปลี่ยนชื่อแจ้งจำนวนรายการที่ย้าย + แจ้งว่าเป็นการรวม',/1<\/b>|1 รายการ/.test(rnNote)&&/รวม/.test(rnNote),rnNote);
+  await q.locator('.pl-rename-save').click(); await q.waitForTimeout(900);
+  d=await LS();
+  const moved=d.finance.expenses.filter(e=>e.category==='อาหาร'&&e.amount===-150).length;
+  check('B4: รวมหมวด → รายการย้ายไป อาหาร · แผนบวกกัน (อาหาร +300) · หมวดเก่าหายจาก budgets',
+    moved===1&&d.budgets['อาหาร'].amount===foodBefore+300&&!d.budgets['หมวดใหม่ B4']&&!d.finance.expenses.some(e=>e.category==='หมวดใหม่ B4'),JSON.stringify({moved,food:d.budgets['อาหาร']}));
+  await prow('แหล่งใหม่ B4').locator('.pl-edit').click(); await q.waitForTimeout(400);
+  await q.locator('.pl-rename-input').fill('รายได้เสริม'); await q.locator('.pl-rename-save').click(); await q.waitForTimeout(800);
+  d=await LS();
+  check('B4: เปลี่ยนชื่อแหล่งรายรับ → รายการและ plan.inc ใช้ชื่อใหม่',d.finance.income.some(i=>i.source==='รายได้เสริม'&&i.amount===777)&&d.plan.inc['รายได้เสริม']===0&&d.plan.inc['แหล่งใหม่ B4']==null,JSON.stringify(d.plan.inc));
+  // จับคู่หมวด CSV
+  await q.locator('.pl-alias').click(); await q.waitForTimeout(400);
+  await q.selectOption('.pl-alias-sel[data-from="อาหาร/เครื่องดื่ม"]','อาหาร');
+  await q.locator('.pl-alias-save').click(); await q.waitForTimeout(700);
+  d=await LS();
+  check('B4: จับคู่หมวด CSV "อาหาร/เครื่องดื่ม" → "อาหาร" เก็บที่ root catAlias',d.catAlias&&d.catAlias['อาหาร/เครื่องดื่ม']==='อาหาร',JSON.stringify(d.catAlias));
+  const gtest=await q.evaluate(()=>{ try{ return typeof guessCategory==='function'?guessCategory('starbucks',{}, {"อาหาร/เครื่องดื่ม":"อาหาร"}):null; }catch(e){ return 'err'; } });
+  check('B4: guessCategory ใช้ alias (starbucks → อาหาร)',!!gtest&&gtest!=='err'&&gtest.cat==='อาหาร',JSON.stringify(gtest));
   // เพิ่ม/ลบหมวด
   await q.locator('.pl-add').click(); await q.waitForTimeout(500);
   await q.locator('.pl-add-name').fill('หมวดทดสอบ B'); await q.locator('.pl-add-amount').fill('1234');
@@ -513,7 +573,7 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   // ปีถัดไป
   await q.selectOption('.pl-year-select','2027').catch(()=>{}); await q.waitForTimeout(700);
   const y27=await pcell('อาหาร',5).inputValue().catch(()=>'');
-  check('Planning: ปี 2027 แสดงค่ามาตรฐาน (อาหาร 9500) ตามไปทุกเดือน',y27==='9500',y27);
+  check('Planning: ปี 2027 แสดงค่ามาตรฐาน (อาหาร 9800 หลังรวมหมวด) ตามไปทุกเดือน',y27==='9800',y27);
   const planScan=await q.evaluate(()=>{
     const purple=(r,g,b)=>b>g+18&&r>g+4&&b>60;
     const bad=[]; for(const e of document.querySelectorAll('.fin-page *')){ if(e.offsetParent===null) continue; const m=/rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(e).color||''); if(m&&purple(+m[1],+m[2],+m[3])) bad.push(e.className); }
