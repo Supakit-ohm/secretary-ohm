@@ -1754,3 +1754,25 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pl-alias-row{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;}
 .pl-alias-from{flex:0 0 170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-4);}
 .pl-alias-sel{flex:1;min-width:0;}
+
+/* ข้อ 81 (ขั้น C): พยากรณ์เงินสะสม */
+.pl-fc{margin-bottom:12px;}
+.pl-fc-cells{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:10px 0;}
+.pl-fc-cell{background:var(--surface-sunken);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;min-width:0;}
+.pl-fc-m{font-size:11px;color:var(--ink-5);white-space:nowrap;}
+.pl-fc-v{font-size:14px;font-weight:600;white-space:nowrap;}
+.pl-fc-d,.pl-fc-l{font-size:11px;white-space:nowrap;opacity:.85;}
+.pl-fc-verdict span{color:var(--ink-5);}
+.pl-fc-simbox{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);}
+.pl-fc-inputs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.pl-fc-inputs label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-4);white-space:nowrap;}
+.pl-fc-inputs input{width:110px;}
+.pl-fc-simres span{color:var(--ink-5);}
+.pl-cash-row td{font-weight:600;}
+.pl-cash-row .pos{color:#34d399;}
+@media (max-width:700px){.pl-fc-cells{grid-template-columns:repeat(3,minmax(0,1fr));}}
+.pl-grid tfoot .pl-cash-row td{bottom:0;}
+.pl-grid tfoot .pl-left-row td{bottom:34px;border-top:1px solid rgba(255,255,255,.12);}
+.pl-grid tfoot .pl-cash-row td{border-top:1px dashed rgba(255,255,255,.12);}
+.pl-fc .db-head{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.pl-fc .db-head .db-btn{width:auto;flex:none;white-space:nowrap;}

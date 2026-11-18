@@ -546,6 +546,34 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
   check('B4: จับคู่หมวด CSV "อาหาร/เครื่องดื่ม" → "อาหาร" เก็บที่ root catAlias',d.catAlias&&d.catAlias['อาหาร/เครื่องดื่ม']==='อาหาร',JSON.stringify(d.catAlias));
   const gtest=await q.evaluate(()=>{ try{ return typeof guessCategory==='function'?guessCategory('starbucks',{}, {"อาหาร/เครื่องดื่ม":"อาหาร"}):null; }catch(e){ return 'err'; } });
   check('B4: guessCategory ใช้ alias (starbucks → อาหาร)',!!gtest&&gtest!=='err'&&gtest.cat==='อาหาร',JSON.stringify(gtest));
+  // ข้อ 81 (ขั้น C): พยากรณ์เงินสะสม
+  const fc=await q.evaluate(()=>{
+    const num=(t)=>Number(String(t).replace(/[^0-9.\-]/g,''))||0;
+    const cells=[...document.querySelectorAll('.pl-fc-cell')].map(c=>({m:c.dataset.m,cum:num(c.querySelector('.pl-fc-v').textContent),d:num(c.querySelector('.pl-fc-d').textContent)}));
+    const cur=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');})();
+    const idx=[...document.querySelectorAll('.pl-grid thead th')].findIndex(th=>th.classList.contains('cur'));
+    const cashRow=[...document.querySelectorAll('.pl-cash-row td')].map(td=>td.textContent.trim());
+    return {n:cells.length,cells,cur,first:cells[0]&&cells[0].m,note:(document.querySelector('.pl-fc .db-note')||{}).textContent||'',verdict:(document.querySelector('.pl-fc-verdict')||{}).textContent||'',
+      cashCell:idx>=0?num(cashRow[idx]):null,warn:!!document.querySelector('.pl-fc .pl-fc-warn')};
+  });
+  const chain=fc.cells.every((c,i)=>i===0||Math.abs(c.cum-(fc.cells[i-1].cum+c.d))<=2);
+  check('Planning (ขั้น C): การ์ดพยากรณ์ 6 เดือนเริ่มจากเดือนปัจจุบัน · เงินสดตอนนี้ 80,000 · เตือนยอดเก่าเกิน 30 วัน',
+    fc.n===6&&fc.first===fc.cur&&/80,000/.test(fc.note)&&fc.warn,JSON.stringify({n:fc.n,first:fc.first,cur:fc.cur,note:fc.note.slice(0,80),warn:fc.warn}));
+  check('Planning (ขั้น C): เงินสะสมต่อเนื่อง (สะสมเดือนนี้ = สะสมเดือนก่อน + การเปลี่ยนแปลง) · เดือนแรก = เงินสด + ส่วนที่เหลือของแผน',
+    chain&&Math.abs(fc.cells[0].cum-(80000+fc.cells[0].d))<=2,JSON.stringify(fc.cells.slice(0,3)));
+  check('Planning (ขั้น C): แถว "เงินสะสม" ในตารางของเดือนปัจจุบันตรงกับการ์ด · มีข้อความสรุปพอ/ไม่พอ',
+    fc.cashCell!==null&&Math.abs(fc.cashCell-fc.cells[0].cum)<=2&&/(พอตลอด|ติดลบเริ่ม)/.test(fc.verdict),JSON.stringify({cashCell:fc.cashCell,v:fc.verdict.slice(0,60)}));
+  await q.locator('.pl-fc-sim').click(); await q.waitForTimeout(300);
+  await q.locator('.pl-fc-amt').fill('120000'); await q.locator('.pl-fc-rate').fill('12'); await q.locator('.pl-fc-term').fill('12'); await q.waitForTimeout(400);
+  const ln=await q.evaluate(()=>{
+    const num=(t)=>Number(String(t).replace(/[^0-9.\-]/g,''))||0;
+    const c0=document.querySelectorAll('.pl-fc-cell')[0], c1=document.querySelectorAll('.pl-fc-cell')[1];
+    return {res:(document.querySelector('.pl-fc-simres')||{}).textContent||'',cum0:num(c0.querySelector('.pl-fc-v').textContent),l0:num(c0.querySelector('.pl-fc-l').textContent.replace('มีกู้','')),
+      cum1:num(c1.querySelector('.pl-fc-v').textContent),l1:num(c1.querySelector('.pl-fc-l').textContent.replace('มีกู้',''))};
+  });
+  check('Planning (ขั้น C): จำลองกู้ 120,000 ดอก 12%/ปี 12 งวด → ผ่อน ฿10,662/เดือน · ดอกเบี้ยรวม ≈ ฿7,942 · เงินสะสมมีกู้เดือนแรก +120,000',
+    /10,662/.test(ln.res)&&/7,9\d\d/.test(ln.res)&&Math.abs(ln.l0-ln.cum0-120000)<=2&&Math.abs((ln.l1-ln.cum1)-(120000-10662))<=3,JSON.stringify(ln).slice(0,300));
+  await q.locator('.pl-fc-sim').click(); await q.waitForTimeout(300);
   // เพิ่ม/ลบหมวด
   await q.locator('.pl-add').click(); await q.waitForTimeout(500);
   await q.locator('.pl-add-name').fill('หมวดทดสอบ B'); await q.locator('.pl-add-amount').fill('1234');

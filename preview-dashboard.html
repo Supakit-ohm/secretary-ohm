@@ -6090,6 +6090,106 @@ function AddPlanItemModal({existing,onClose,onSave}) {
     </div>
   );
 }
+/* ═══ ข้อ 81 (ขั้น C): พยากรณ์เงินสะสม — เงินสดตอนนี้ + แผนรายเดือน (รายรับ − รายจ่าย − ออม − หนี้) ต่อเนื่อง 12 เดือนนับจากเดือนนี้
+   - เดือนนี้ใช้ "ส่วนที่ยังเหลือของแผน" = Σ max(0, แผน − ที่เกิดจริงแล้ว) ต่อหมวด (เพราะเงินสดตอนนี้รวมที่เกิดจริงแล้วอยู่แล้ว) · หนี้นับตามแผนเต็ม
+   - ไม่คิดดอกเบี้ยหนี้เดิม / รายจ่ายนอกแผน / เงินสดที่ไม่ได้ใส่ในบัญชี · จำลองการกู้: ได้เงินสิ้นเดือนนี้ ผ่อนเท่ากันทุกเดือนเริ่มเดือนถัดไป (สูตร PMT) */
+function pmtCalc(L,ratePct,n){
+  L=Number(L)||0; n=Math.max(1,Math.round(Number(n)||0)); const i=(Number(ratePct)||0)/1200;
+  return i>0?L*i/(1-Math.pow(1+i,-n)):L/n;
+}
+function buildCashForecast(data,loan){
+  const cur=currentMonthKey(); const y=Number(cur.slice(0,4));
+  const grids=[buildPlanGrid(data,y,3),buildPlanGrid(data,y+1,3)];
+  const f=data.finance;
+  const act={inc:{},exp:{},sav:{}};
+  (f.income||[]).forEach(i=>{ if((i.month||monthYearKey(i.date))===cur) act.inc[i.source]=(act.inc[i.source]||0)+(Number(i.amount)||0); });
+  (f.expenses||[]).forEach(e=>{ if(monthYearKey(e.date)===cur) act.exp[e.category]=(act.exp[e.category]||0)+expOut(e); });
+  (f.investments||[]).forEach(v=>{ if(monthYearKey(v.date)===cur) act.sav[v.type||"other"]=(act.sav[v.type||"other"]||0)+(Number(v.amount)||0); });
+  const months=Array.from({length:12},(_,k)=>addMonthKey(cur,k));
+  const left={};
+  months.forEach((m,k)=>{
+    const G=grids[Number(m.slice(0,4))===y?0:1]; const idx=G.months.indexOf(m);
+    if(k===0){
+      const rem=(g)=>G.rows[g].reduce((a,r)=>a+Math.max(0,r.vals[idx]-(act[g][r.key]||0)),0);
+      left[m]=rem("inc")-rem("exp")-rem("sav")-G.T.debt[idx];
+    } else left[m]=G.T.left[idx];
+  });
+  const cash=totalCash(data);
+  const accounts=(f.cashAccounts||[]);
+  const dates=accounts.map(a=>a.updatedAt).filter(Boolean).sort();
+  const staleDays=dates.length?Math.floor((Date.now()-new Date(dates[0]).getTime())/86400000):null;
+  const pmt=loan&&loan.amount>0?pmtCalc(loan.amount,loan.rate,loan.term):0;
+  const n=loan&&loan.amount>0?Math.max(1,Math.round(Number(loan.term)||0)):0;
+  let c=cash, cl=cash;
+  const rows=months.map((m,k)=>{
+    c+=left[m];
+    cl+=left[m]+(k===0?(loan&&loan.amount>0?Number(loan.amount):0):0)-((k>=1&&k<=n)?pmt:0);
+    return {m,left:left[m],cum:c,cumLoan:cl};
+  });
+  const win=rows.slice(0,6);
+  const low=win.reduce((a,r)=>r.cum<a.cum?r:a,win[0]);
+  const lowLoan=win.reduce((a,r)=>r.cumLoan<a.cumLoan?r:a,win[0]);
+  const neg=win.find(r=>r.cum<0)||null, negLoan=win.find(r=>r.cumLoan<0)||null;
+  return {cash,staleDays,hasCash:accounts.length>0,rows,byMonth:Object.fromEntries(rows.map(r=>[r.m,r])),low,lowLoan,neg,negLoan,pmt,n,
+    totalInterest:pmt*n-(loan&&loan.amount>0?Number(loan.amount):0)};
+}
+const thMonthLabel=(m)=>new Date(`${m}-01`).toLocaleDateString("th-TH",{month:"short",year:"2-digit"});
+function CashForecastCard({finance}) {
+  const [sim,setSim]=useState(false);
+  const [amt,setAmt]=useState("");
+  const [rate,setRate]=useState("");
+  const [term,setTerm]=useState("12");
+  const loan=sim&&Number(amt)>0?{amount:Number(amt),rate:Number(rate)||0,term:Number(term)||12}:null;
+  const F=buildCashForecast(finance,loan);
+  const win=F.rows.slice(0,6);
+  const sgn=(v)=>(v<0?"-":"")+"฿"+dbNum(Math.abs(Math.round(v)));
+  const col=(v)=>v<0?"#f87171":"#34d399";
+  return (
+    <div className="db-card pl-fc">
+      <div className="db-head">
+        <div className="db-title">พยากรณ์เงินสะสม 6 เดือนข้างหน้า</div>
+        <button className="db-btn pl-fc-sim" onClick={()=>setSim(v=>!v)}>{sim?"ปิดการจำลองกู้":"ลองจำลองการกู้"}</button>
+      </div>
+      {!F.hasCash
+        ? <div className="db-note pl-fc-warn">ยังไม่ได้ใส่ยอดเงินสดในบัญชี — ไปใส่ที่ Overview (การ์ดเงินสด) พยากรณ์จะเริ่มจาก ฿0</div>
+        : <div className="db-note">เงินสดตอนนี้ <b className="db-mono">฿{dbNum(F.cash)}</b>{F.staleDays!=null&&<> · อัปเดตล่าสุด {F.staleDays} วันก่อน{F.staleDays>30&&<b className="pl-fc-warn" style={{color:"#fbbf24"}}> (เก่าเกิน 30 วัน — ควรอัปเดตยอด)</b>}</>}</div>}
+      <div className="pl-fc-cells">
+        {win.map((r,i)=>(
+          <div key={r.m} className="pl-fc-cell" data-m={r.m}>
+            <div className="pl-fc-m">{thMonthLabel(r.m)}{i===0&&" (เหลือ)"}</div>
+            <div className="pl-fc-v db-mono" style={{color:col(r.cum)}}>{sgn(r.cum)}</div>
+            <div className="pl-fc-d db-mono" style={{color:col(r.left)}}>{r.left<0?"":"+"}{sgn(r.left)}</div>
+            {loan&&<div className="pl-fc-l db-mono" style={{color:col(r.cumLoan)}}>มีกู้ {sgn(r.cumLoan)}</div>}
+          </div>
+        ))}
+      </div>
+      <div className="pl-fc-verdict db-note">
+        {F.neg
+          ? <><b style={{color:"#f87171"}}>เงินสดติดลบเริ่ม {thMonthLabel(F.neg.m)}</b> · ต่ำสุด {sgn(F.low.cum)} ({thMonthLabel(F.low.m)}) — ตามแผนปัจจุบันไม่พอใน 6 เดือน</>
+          : <><b style={{color:"#34d399"}}>เงินสดพอตลอด 6 เดือนตามแผน</b> · ต่ำสุด {sgn(F.low.cum)} ({thMonthLabel(F.low.m)})</>}
+        <span> · ตัวเลขใต้เดือน = เงินสะสมสิ้นเดือน และการเปลี่ยนแปลงของเดือนนั้น (ไม่รวมดอกเบี้ยหนี้เดิม/รายจ่ายนอกแผน)</span>
+      </div>
+      {sim&&(
+        <div className="pl-fc-simbox">
+          <div className="pl-fc-inputs">
+            <label>วงเงินกู้ ฿<input className="modal-input pl-fc-amt" inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="เช่น 100000"/></label>
+            <label>ดอกเบี้ย %/ปี<input className="modal-input pl-fc-rate" inputMode="decimal" value={rate} onChange={e=>setRate(e.target.value)} placeholder="เช่น 15"/></label>
+            <label>ผ่อน (เดือน)<input className="modal-input pl-fc-term" inputMode="numeric" value={term} onChange={e=>setTerm(e.target.value)}/></label>
+          </div>
+          {loan
+            ? <div className="db-note pl-fc-simres">
+                ผ่อนเดือนละ <b className="db-mono">฿{dbNum(Math.round(F.pmt))}</b> × {F.n} งวด · ดอกเบี้ยรวม <b className="db-mono">฿{dbNum(Math.max(0,Math.round(F.totalInterest)))}</b> ·{" "}
+                {F.negLoan
+                  ? <b style={{color:"#f87171"}}>แม้กู้แล้วยังติดลบเริ่ม {thMonthLabel(F.negLoan.m)} (ต่ำสุด {sgn(F.lowLoan.cumLoan)})</b>
+                  : <b style={{color:"#34d399"}}>กู้แล้วเงินสดไม่ติดลบใน 6 เดือน (ต่ำสุด {sgn(F.lowLoan.cumLoan)} ใน {thMonthLabel(F.lowLoan.m)})</b>}
+                <span> · เงินกู้เข้าสิ้นเดือนนี้ ผ่อนเริ่มเดือนหน้า · ค่างวดนี้ยังกระทบหลัง 6 เดือนด้วย (ผ่อนอีก {Math.max(0,F.n-5)} งวด)</span>
+              </div>
+            : <div className="db-note">ใส่วงเงินกู้เพื่อดูว่าเงินสะสมเปลี่ยนไปอย่างไร (จำลองเท่านั้น ไม่บันทึกข้อมูล)</div>}
+        </div>
+      )}
+    </div>
+  );
+}
 /* เปลี่ยนชื่อ/รวมหมวด — ต้องกดยืนยัน แสดงจำนวนรายการที่จะถูกย้ายก่อน */
 function RenamePlanCatModal({data,group,from,names,onClose,onDone}) {
   const [to,setTo]=useState(from);
@@ -6194,6 +6294,7 @@ function FinancePlanningTab({finance,persist}) {
   };
   const existing={exp:G.rows.exp.map(r=>r.key),inc:G.rows.inc.map(r=>r.key),sav:G.rows.sav.map(r=>r.key)};
   const curIdx=G.months.indexOf(cur);
+  const CF=buildCashForecast(finance,null);
   let ri=0;   // ลำดับแถวที่กรอกได้ — ใช้ให้ Enter/ลูกศรย้ายช่องได้
   const renderRows=(arr,g,labelOf,withType)=>arr.map(row=>(
     <PlanGridRow key={g+row.key} row={row} r={ri++} label={labelOf(row.key)}
@@ -6244,6 +6345,7 @@ function FinancePlanningTab({finance,persist}) {
           </div>
         </div>
       </div>
+      <CashForecastCard finance={finance}/>
       <div className="db-card pl-card">
         <div className="db-note pl-help">กรอกในช่องของแต่ละเดือนได้เลย (Enter/ลูกศรขึ้นลง = ย้ายช่อง) · ช่อง “ทุกเดือน” ใช้กับทุกเดือนที่ไม่ได้แก้เอง · ช่องสีทอง = เดือนที่ตั้งต่างจาก “ทุกเดือน” · คลิกตัวเลขเฉลี่ยเพื่อใช้เป็นแผน</div>
         <div className="pl-scroll">
@@ -6290,6 +6392,13 @@ function FinancePlanningTab({finance,persist}) {
                 <td className={`pl-std-cell db-mono ${stdLeft<0?"neg":"pos"}`}>{(stdLeft<0?"-":"")+dbNum(Math.abs(stdLeft))}</td>
                 {G.T.left.map((v,i)=><td key={i} className={`pl-m-cell db-mono ${v<0?"neg":"pos"}`}>{(v<0?"-":"")+dbNum(Math.abs(v))}</td>)}
                 <td className={`pl-tot-cell db-mono ${leftNeg?"neg":"pos"}`}>{(leftNeg?"-":"")+dbNum(Math.abs(G.year.left))}</td>
+              </tr>
+              <tr className="pl-cash-row">
+                <td className="pl-name-cell"><div className="pl-namebox"><span className="pl-name" title="เงินสดตอนนี้ + เหลือสะสมตามแผน (เดือนนี้นับเฉพาะส่วนที่ยังเหลือ)">เงินสะสม</span></div></td>
+                <td className="pl-ref-cell db-mono">{CF.hasCash?dbNum(CF.cash):"—"}</td>
+                <td className="pl-std-cell">&nbsp;</td>
+                {G.months.map((m,i)=>{ const r=CF.byMonth[m]; return <td key={m} className={`pl-m-cell db-mono ${r?(r.cum<0?"neg":"pos"):""}`}>{r?((r.cum<0?"-":"")+dbNum(Math.abs(Math.round(r.cum)))):"—"}</td>; })}
+                <td className="pl-tot-cell">&nbsp;</td>
               </tr>
             </tfoot>
           </table>
