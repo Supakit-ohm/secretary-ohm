@@ -1776,3 +1776,17 @@ input:focus,textarea:focus{border-color:var(--line-hover);}
 .pl-grid tfoot .pl-cash-row td{border-top:1px dashed rgba(255,255,255,.12);}
 .pl-fc .db-head{display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .pl-fc .db-head .db-btn{width:auto;flex:none;white-space:nowrap;}
+
+/* ข้อ 81b: จำลองการกู้เป็น popup */
+.pl-fc-how{background:var(--surface-sunken);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:10px 12px;margin-bottom:12px;}
+.pl-fc-how-t{font-size:13px;font-weight:600;margin-bottom:4px;}
+.pl-fc-how ol{margin:0 0 6px;padding-left:18px;font-size:12.5px;line-height:1.6;color:var(--ink-3);}
+.pl-fc-simres{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0;}
+.pl-fc-kpi{background:var(--surface-sunken);border-radius:10px;padding:8px 10px;}
+.pl-fc-kpi .l{font-size:11px;color:var(--ink-5);}
+.pl-fc-kpi .v{font-size:14px;font-weight:600;}
+.pl-fcm{width:100%;border-collapse:collapse;font-size:12.5px;}
+.pl-fcm th{font-size:11px;color:var(--ink-5);font-weight:600;text-align:right;padding:4px 8px;}
+.pl-fcm th:first-child,.pl-fcm td:first-child{text-align:left;}
+.pl-fcm td{padding:5px 8px;text-align:right;border-top:1px solid rgba(255,255,255,.06);white-space:nowrap;}
+.pl-fc-modal .pl-fc-inputs{margin-bottom:4px;}

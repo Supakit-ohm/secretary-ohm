@@ -563,17 +563,25 @@ function check(name,ok,detail){ results.push({name,ok:!!ok,detail:detail||""}); 
     chain&&Math.abs(fc.cells[0].cum-(80000+fc.cells[0].d))<=2,JSON.stringify(fc.cells.slice(0,3)));
   check('Planning (ขั้น C): แถว "เงินสะสม" ในตารางของเดือนปัจจุบันตรงกับการ์ด · มีข้อความสรุปพอ/ไม่พอ',
     fc.cashCell!==null&&Math.abs(fc.cashCell-fc.cells[0].cum)<=2&&/(พอตลอด|ติดลบเริ่ม)/.test(fc.verdict),JSON.stringify({cashCell:fc.cashCell,v:fc.verdict.slice(0,60)}));
-  await q.locator('.pl-fc-sim').click(); await q.waitForTimeout(300);
+  check('Planning (C): ไม่มีกล่องจำลองกู้ค้างหน้า — มีแต่ปุ่ม · กดแล้วเปิด popup พร้อมวิธีใช้',
+    await q.locator('.pl-fc-amt').count()===0&&await q.locator('.modal-backdrop').count()===0);
+  await q.locator('.pl-fc-sim').click(); await q.waitForTimeout(400);
+  const howTxt=await q.locator('.pl-fc-how').innerText();
+  check('Planning (C): popup จำลองกู้มีวิธีใช้ 4 ข้อ + สมมติฐาน',/วิธีใช้/.test(howTxt)&&(await q.locator('.pl-fc-how li').count())===4&&/สมมติฐาน/.test(howTxt));
+  check('Planning (C): popup ยังไม่ใส่วงเงิน → ขึ้นคำแนะนำให้ใส่',await q.locator('.pl-fc-empty').count()===1);
   await q.locator('.pl-fc-amt').fill('120000'); await q.locator('.pl-fc-rate').fill('12'); await q.locator('.pl-fc-term').fill('12'); await q.waitForTimeout(400);
   const ln=await q.evaluate(()=>{
     const num=(t)=>Number(String(t).replace(/[^0-9.\-]/g,''))||0;
-    const c0=document.querySelectorAll('.pl-fc-cell')[0], c1=document.querySelectorAll('.pl-fc-cell')[1];
-    return {res:(document.querySelector('.pl-fc-simres')||{}).textContent||'',cum0:num(c0.querySelector('.pl-fc-v').textContent),l0:num(c0.querySelector('.pl-fc-l').textContent.replace('มีกู้','')),
-      cum1:num(c1.querySelector('.pl-fc-v').textContent),l1:num(c1.querySelector('.pl-fc-l').textContent.replace('มีกู้',''))};
+    const rows=[...document.querySelectorAll('.pl-fcm-row')].map(r=>({nl:num(r.querySelector('.nl').textContent),wl:num(r.querySelector('.wl').textContent)}));
+    const k=[...document.querySelectorAll('.pl-fc-kpi .v')].map(x=>num(x.textContent));
+    return {rows,k,txt:(document.querySelector('.pl-fc-modal')||{}).innerText||''};
   });
-  check('Planning (ขั้น C): จำลองกู้ 120,000 ดอก 12%/ปี 12 งวด → ผ่อน ฿10,662/เดือน · ดอกเบี้ยรวม ≈ ฿7,942 · เงินสะสมมีกู้เดือนแรก +120,000',
-    /10,662/.test(ln.res)&&/7,9\d\d/.test(ln.res)&&Math.abs(ln.l0-ln.cum0-120000)<=2&&Math.abs((ln.l1-ln.cum1)-(120000-10662))<=3,JSON.stringify(ln).slice(0,300));
-  await q.locator('.pl-fc-sim').click(); await q.waitForTimeout(300);
+  check('Planning (C): จำลองกู้ 120,000 / 12% / 12 งวด → ค่างวด 10,662 · ดอกเบี้ยรวม ≈7,9xx · จ่ายรวม ≈127,9xx',
+    ln.k[0]===10662&&ln.k[1]>=7900&&ln.k[1]<=8000&&ln.k[2]>=127900&&ln.k[2]<=128000,JSON.stringify(ln.k));
+  check('Planning (C): ตารางเทียบ 6 เดือน — เดือนแรก "ถ้ากู้" = ไม่กู้ + 120,000 · เดือนถัดไป +120,000 − ค่างวด',
+    ln.rows.length===6&&Math.abs(ln.rows[0].wl-ln.rows[0].nl-120000)<=2&&Math.abs(ln.rows[1].wl-ln.rows[1].nl-(120000-10662))<=3,JSON.stringify(ln.rows.slice(0,2)));
+  await q.locator('.pl-fc-close').click(); await q.waitForTimeout(300);
+  check('Planning (C): ปิด popup แล้วหน้าไม่เปลี่ยน/ไม่บันทึกข้อมูลกู้ลงแผน',await q.locator('.modal-backdrop').count()===0&&!JSON.stringify((await LS()).plan).includes('120000'));
   // เพิ่ม/ลบหมวด
   await q.locator('.pl-add').click(); await q.waitForTimeout(500);
   await q.locator('.pl-add-name').fill('หมวดทดสอบ B'); await q.locator('.pl-add-amount').fill('1234');
